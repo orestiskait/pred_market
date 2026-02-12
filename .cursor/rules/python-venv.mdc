@@ -1,0 +1,14 @@
+---
+description: Use pred_env virtual environment for Python commands
+alwaysApply: true
+---
+
+# Python Virtual Environment
+
+When running Python commands in this project (pip, python, pytest, etc.), use the **pred_env** virtual environment:
+
+- **Run Python scripts:** `pred_env/bin/python script.py` or `pred_env/bin/python3 script.py`
+- **Run pip:** `pred_env/bin/pip install package` or `pred_env/bin/pip install -r requirements.txt`
+- **Alternative:** Activate first with `source pred_env/bin/activate`, then run `python` / `pip` as usual
+
+The venv is at the project root: `pred_market/pred_env/`.

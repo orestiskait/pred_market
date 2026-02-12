@@ -1,0 +1,12 @@
+{
+  "orderbook": {
+    "no": null,
+    "no_dollars": null,
+    "yes": null,
+    "yes_dollars": null
+  },
+  "orderbook_fp": {
+    "no_dollars": null,
+    "yes_dollars": null
+  }
+}
