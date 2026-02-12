@@ -1,0 +1,48 @@
+# ============================================================
+# Kalshi Market Data Collector — Configuration
+# ============================================================
+
+kalshi:
+  # API credentials.  Set here OR via env vars KALSHI_API_KEY_ID / KALSHI_PRIVATE_KEY_PATH.
+  api_key_id: ""
+  private_key_path: ""
+
+  base_url: "https://api.elections.kalshi.com/trade-api/v2"
+  ws_url:   "wss://api.elections.kalshi.com/trade-api/ws/v2"
+
+# Event tickers to track (uppercase).  Each event contains multiple contracts.
+# Example: KXHIGHCHI-26FEB11  →  all temperature-range contracts for Chicago Feb 11.
+events:
+  - "KXHIGHCHI-26FEB11"
+  # - "KXHIGHNY-26FEB11"
+
+# ----------------------------------------------------------
+# Snapshot collection
+# ----------------------------------------------------------
+collection:
+  # Default seconds between snapshots (used when no time_schedule matches).
+  default_interval_seconds: 60
+
+  # Higher-frequency windows.  Checked in order; first match wins.
+  time_schedules:
+    # Peak importance: around NWS daily-high determination (~2-4 PM local)
+    - start: "14:00"
+      end:   "16:00"
+      timezone: "America/Chicago"
+      interval_seconds: 15
+
+    # Moderate importance: midday buildup
+    - start: "12:00"
+      end:   "14:00"
+      timezone: "America/Chicago"
+      interval_seconds: 30
+
+# ----------------------------------------------------------
+# Storage
+# ----------------------------------------------------------
+storage:
+  # Relative to this config file's directory.
+  data_dir: "data"
+
+  # How often to flush in-memory buffers to parquet (seconds).
+  flush_interval_seconds: 300
