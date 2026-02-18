@@ -57,18 +57,18 @@ die() { echo "Error: $1" >&2; exit 1; }
 
 discover_compartment() {
   # Uses tenancy (root) from ~/.oci/config if -c not set
-  oci iam compartment list --compartment-id-in-subtree true --all --query 'data[0].id' -r 2>/dev/null | tr -d '"' || \
-  oci iam compartment list --query 'data[0].id' -r 2>/dev/null | tr -d '"'
+  oci iam compartment list --compartment-id-in-subtree true --all --query 'data[0].id' --raw-output 2>/dev/null | tr -d '"' || \
+  oci iam compartment list --query 'data[0].id' --raw-output 2>/dev/null | tr -d '"'
 }
 
 discover_ad() {
   local cid="${1:-$COMPARTMENT_ID}"
-  oci iam availability-domain list -c "$cid" --query 'data[0].name' -r 2>/dev/null | tr -d '"'
+  oci iam availability-domain list -c "$cid" --query 'data[0].name' --raw-output 2>/dev/null | tr -d '"'
 }
 
 discover_subnet() {
   local cid="${1:-$COMPARTMENT_ID}"
-  oci network subnet list -c "$cid" --query 'data[0].id' -r 2>/dev/null | tr -d '"'
+  oci network subnet list -c "$cid" --query 'data[0].id' --raw-output 2>/dev/null | tr -d '"'
 }
 
 discover_image() {
@@ -79,12 +79,12 @@ discover_image() {
     --operating-system-version "22.04" \
     --shape "${SHAPE}" \
     --limit 1 \
-    --query 'data[0].id' -r 2>/dev/null | tr -d '"' || \
+    --query 'data[0].id' --raw-output 2>/dev/null | tr -d '"' || \
   oci compute image list -c "$cid" \
     --operating-system "Canonical Ubuntu" \
     --operating-system-version "22.04" \
     --limit 1 \
-    --query 'data[0].id' -r 2>/dev/null | tr -d '"'
+    --query 'data[0].id' --raw-output 2>/dev/null | tr -d '"'
 }
 
 # --- Resolve IDs ---

@@ -93,22 +93,27 @@ write_files:
         chmod 600 "$KEY_PATH"
         chown ubuntu:ubuntu "$KEY_PATH" "$ENV_PATH"
 
-        cat > "$CONFIG_PATH" << 'CONFIGEOF'
-      kalshi:
-        private_key_path: "/home/ubuntu/.kalshi/kalshi_key.pem"
-        base_url: "https://api.elections.kalshi.com/trade-api/v2"
-        ws_url: "wss://api.elections.kalshi.com/trade-api/ws/v2"
-      events:
-        - "KXHIGHCHI-26FEB12"
-      collection:
-        interval_seconds: 60
-        spike_threshold_cents: 3
-        spike_cooldown_seconds: 2
-      storage:
-        data_dir: "data"
-        flush_interval_seconds: 300
-      CONFIGEOF
-        sed -i 's/^      //' "$CONFIG_PATH"
+        # Patch private_key_path in the repo's config.yaml rather than overwriting it.
+        # This preserves the events list and all other settings from the repo.
+        if [[ -f "$CONFIG_PATH" ]]; then
+          sed -i "s|private_key_path:.*|private_key_path: \"$KEY_PATH\"|" "$CONFIG_PATH"
+        else
+          # Fallback: write a minimal config if not present in repo
+          cat > "$CONFIG_PATH" << 'CONFIGEOF'
+kalshi:
+  private_key_path: "/home/ubuntu/.kalshi/kalshi_key.pem"
+  base_url: "https://api.elections.kalshi.com/trade-api/v2"
+  ws_url: "wss://api.elections.kalshi.com/trade-api/ws/v2"
+events: []
+collection:
+  interval_seconds: 60
+  spike_threshold_cents: 3
+  spike_cooldown_seconds: 2
+storage:
+  data_dir: "data"
+  flush_interval_seconds: 300
+CONFIGEOF
+        fi
         chown ubuntu:ubuntu "$CONFIG_PATH"
 
         echo "Starting collector..."

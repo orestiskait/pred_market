@@ -13,8 +13,8 @@ kalshi:
 # Event tickers to track (uppercase).  Each event contains multiple contracts.
 # Example: KXHIGHCHI-26FEB11  →  all temperature-range contracts for Chicago Feb 11.
 events:
-  - "KXHIGHCHI-26FEB12"
-  # - "KXHIGHNY-26FEB11"
+  - "KXHIGHCHI-26FEB18"
+  - "KXHIGHNY-26FEB18"
 
 # ----------------------------------------------------------
 # Snapshot collection
