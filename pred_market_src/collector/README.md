@@ -237,7 +237,18 @@ Works on **local** and **cloud** (e.g. Oracle Cloud / EC2):
 - **Local**: Run `collector.py` in a terminal or background process.
 - **Cloud**: Run as a systemd service or under `screen`/`tmux` so it survives SSH disconnect.
 
-Example systemd unit (`/etc/systemd/system/kalshi-collector.service`):
+### OCI (Oracle Cloud) — first-time setup
+
+Use the OCI CLI to launch an instance that clones from GitHub and runs the collector:
+
+```bash
+cd scripts/oci_collector
+./launch.sh
+```
+
+See [scripts/oci_collector/README.md](../../scripts/oci_collector/README.md) for full instructions (credentials, SSH, systemd).
+
+### Example systemd unit (`/etc/systemd/system/kalshi-collector.service`)
 
 ```ini
 [Unit]

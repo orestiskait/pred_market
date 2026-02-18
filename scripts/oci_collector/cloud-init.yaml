@@ -1,0 +1,133 @@
+#cloud-config
+# Cloud-init for OCI: Kalshi collector (private repo)
+# Reads GITHUB_TOKEN, KALSHI_API_KEY_ID, KALSHI_PRIVATE_KEY_B64 from instance metadata
+# and performs full setup: clone, install, configure, start collector
+package_update: true
+package_upgrade: true
+
+packages:
+  - python3
+  - python3-venv
+  - python3-pip
+  - git
+  - curl
+
+write_files:
+  - path: /etc/systemd/system/kalshi-collector.service
+    content: |
+      [Unit]
+      Description=Kalshi market data collector
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=simple
+      User=ubuntu
+      WorkingDirectory=/home/ubuntu/pred_market
+      EnvironmentFile=-/home/ubuntu/pred_market/pred_market_src/collector/.env
+      ExecStart=/home/ubuntu/pred_market/pred_env/bin/python pred_market_src/collector/collector.py --config /home/ubuntu/pred_market/pred_market_src/collector/config.yaml
+      Restart=on-failure
+      RestartSec=30
+      StandardOutput=journal
+      StandardError=journal
+
+      [Install]
+      WantedBy=multi-user.target
+    permissions: '0644'
+
+  - path: /home/ubuntu/bootstrap_collector.sh
+    content: |
+      #!/bin/bash
+      # Bootstrap: read metadata, clone repo, configure, start collector
+      set -e
+      REPO="https://github.com/orestiskait/pred_market.git"
+      REPO_DIR="/home/ubuntu/pred_market"
+      METADATA_BASE="http://169.254.169.254/opc/v1/instance/metadata"
+
+      get_metadata() {
+        local key="$1"
+        local val
+        val=$(curl -sf -m 5 "$METADATA_BASE/$key" 2>/dev/null || true)
+        if [[ -z "$val" ]]; then
+          val=$(curl -sf -m 5 -H "Authorization: Bearer Oracle" "http://169.254.169.254/opc/v2/instance/metadata/$key" 2>/dev/null || true)
+        fi
+        echo "$val"
+      }
+
+      echo "Waiting for metadata service..."
+      for i in $(seq 1 12); do
+        val=$(curl -sf -m 5 "$METADATA_BASE/ssh_authorized_keys" 2>/dev/null || curl -sf -m 5 -H "Authorization: Bearer Oracle" "http://169.254.169.254/opc/v2/instance/metadata/ssh_authorized_keys" 2>/dev/null)
+        [[ -n "$val" ]] && break
+        sleep 5
+      done
+
+      GITHUB_TOKEN=$(get_metadata "GITHUB_TOKEN")
+      KALSHI_API_KEY_ID=$(get_metadata "KALSHI_API_KEY_ID")
+      KALSHI_PRIVATE_KEY_B64=$(get_metadata "KALSHI_PRIVATE_KEY_B64")
+
+      if [[ -z "$GITHUB_TOKEN" ]]; then
+        echo "Error: GITHUB_TOKEN not found in instance metadata. Launch with: GITHUB_TOKEN=ghp_xxx ./launch.sh"
+        exit 1
+      fi
+
+      echo "Cloning repo..."
+      mkdir -p "$(dirname $REPO_DIR)"
+      git clone "https://${GITHUB_TOKEN}@github.com/orestiskait/pred_market.git" "$REPO_DIR"
+      chown -R ubuntu:ubuntu "$REPO_DIR"
+
+      echo "Installing dependencies..."
+      su - ubuntu -c "cd $REPO_DIR && python3 -m venv pred_env && pred_env/bin/pip install -r pred_market_src/collector/requirements.txt"
+
+      mkdir -p /home/ubuntu/.kalshi
+      chown ubuntu:ubuntu /home/ubuntu/.kalshi
+
+      CONFIG_PATH="$REPO_DIR/pred_market_src/collector/config.yaml"
+      ENV_PATH="$REPO_DIR/pred_market_src/collector/.env"
+      KEY_PATH="/home/ubuntu/.kalshi/kalshi_key.pem"
+
+      if [[ -n "$KALSHI_API_KEY_ID" && -n "$KALSHI_PRIVATE_KEY_B64" ]]; then
+        echo "Configuring Kalshi credentials..."
+        echo "KALSHI_API_KEY_ID=$KALSHI_API_KEY_ID" > "$ENV_PATH"
+        echo "KALSHI_PRIVATE_KEY_PATH=$KEY_PATH" >> "$ENV_PATH"
+        echo "$KALSHI_PRIVATE_KEY_B64" | base64 -d > "$KEY_PATH"
+        chmod 600 "$KEY_PATH"
+        chown ubuntu:ubuntu "$KEY_PATH" "$ENV_PATH"
+
+        cat > "$CONFIG_PATH" << 'CONFIGEOF'
+      kalshi:
+        private_key_path: "/home/ubuntu/.kalshi/kalshi_key.pem"
+        base_url: "https://api.elections.kalshi.com/trade-api/v2"
+        ws_url: "wss://api.elections.kalshi.com/trade-api/ws/v2"
+      events:
+        - "KXHIGHCHI-26FEB12"
+      collection:
+        interval_seconds: 60
+        spike_threshold_cents: 3
+        spike_cooldown_seconds: 2
+      storage:
+        data_dir: "data"
+        flush_interval_seconds: 300
+      CONFIGEOF
+        sed -i 's/^      //' "$CONFIG_PATH"
+        chown ubuntu:ubuntu "$CONFIG_PATH"
+
+        echo "Starting collector..."
+        systemctl daemon-reload
+        systemctl enable kalshi-collector
+        systemctl start kalshi-collector
+        sleep 2
+        systemctl status kalshi-collector --no-pager || true
+        echo "Collector running. Data: $REPO_DIR/pred_market_src/collector/data/"
+      else
+        echo "Kalshi credentials not in metadata. Add .env, config.yaml, key to $REPO_DIR/pred_market_src/collector/ and ~/.kalshi/"
+        echo "Then run: sudo systemctl start kalshi-collector"
+      fi
+
+      # Clear token from process env
+      unset GITHUB_TOKEN
+    permissions: '0700'
+
+runcmd:
+  - /home/ubuntu/bootstrap_collector.sh
+
+final_message: "Kalshi collector bootstrap complete. Check: systemctl status kalshi-collector"
