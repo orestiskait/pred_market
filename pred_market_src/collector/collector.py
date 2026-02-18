@@ -20,7 +20,6 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from datetime import datetime, timezone
 from typing import Dict, List
-from zoneinfo import ZoneInfo
 
 import websockets
 import yaml
@@ -57,8 +56,9 @@ class LiveCollector:
 
         # Collection schedule
         ccfg = config["collection"]
-        self.default_interval = ccfg["default_interval_seconds"]
-        self.time_schedules = ccfg.get("time_schedules", [])
+        self.snapshot_interval = ccfg.get("interval_seconds", 60)
+        self.spike_threshold = ccfg.get("spike_threshold_cents", 3)
+        self.spike_cooldown = ccfg.get("spike_cooldown_seconds", 2)
 
         # In-memory state
         self.market_tickers: List[str] = []
@@ -70,6 +70,10 @@ class LiveCollector:
         self._market_buf: List[dict] = []
         self._ob_buf: List[dict] = []
         self._running = False
+
+        # Spike detection: previous prices for delta comparison
+        self._prev_prices: Dict[str, dict] = {}
+        self._last_event_snapshot: float = 0
 
     # ------------------------------------------------------------------ #
     # Market discovery                                                     #
@@ -96,20 +100,13 @@ class LiveCollector:
             logger.info("  %d contracts found", len(markets))
         logger.info("Tracking %d total contracts", len(self.market_tickers))
 
-    # ------------------------------------------------------------------ #
-    # Dynamic snapshot interval                                            #
-    # ------------------------------------------------------------------ #
-
-    def _current_interval(self) -> float:
-        """Return snapshot interval for the current time of day."""
-        for sched in self.time_schedules:
-            tz = ZoneInfo(sched.get("timezone", "UTC"))
-            now = datetime.now(tz).time()
-            start = datetime.strptime(sched["start"], "%H:%M").time()
-            end = datetime.strptime(sched["end"], "%H:%M").time()
-            if start <= now <= end:
-                return sched["interval_seconds"]
-        return self.default_interval
+        # Seed previous prices for spike detection (from REST initial state)
+        for tk, info in self.market_info.items():
+            self._prev_prices[tk] = {
+                "yes_bid": info.get("yes_bid", 0),
+                "yes_ask": info.get("yes_ask", 0),
+                "last_price": info.get("last_price", 0),
+            }
 
     # ------------------------------------------------------------------ #
     # WebSocket message handling                                           #
@@ -146,6 +143,10 @@ class LiveCollector:
                     if f in data:
                         self.market_info[tk][f] = data[f]
 
+                # Event-driven snapshot on sharp price move (spike detection)
+                if self.spike_threshold > 0:
+                    self._maybe_snapshot_on_spike(tk, data)
+
         elif mtype == "error":
             logger.error("WS error: %s", data)
         elif mtype == "subscribed":
@@ -153,12 +154,41 @@ class LiveCollector:
         else:
             logger.debug("Unhandled WS message type: %s", mtype)
 
+    def _maybe_snapshot_on_spike(self, tk: str, data: dict):
+        """Snapshot immediately when price moves ≥ spike_threshold since last snapshot.
+
+        _prev_prices is only updated when a snapshot is taken (periodic or here),
+        so cumulative moves during cooldown are never silently absorbed.
+        """
+        prev = self._prev_prices.get(tk)
+        if prev is None:
+            return
+
+        now_mono = time.monotonic()
+        if now_mono - self._last_event_snapshot < self.spike_cooldown:
+            return
+
+        for key in ("yes_bid", "yes_ask", "last_price"):
+            old_val = prev.get(key, 0) or 0
+            new_val = data.get(key) if data.get(key) is not None else old_val
+            if abs(new_val - old_val) >= self.spike_threshold:
+                logger.info(
+                    "Spike on %s: %s %d → %d (Δ%d)",
+                    tk, key, old_val, new_val, abs(new_val - old_val),
+                )
+                self._take_snapshot(trigger="spike")
+                self._last_event_snapshot = now_mono
+                return
+
     # ------------------------------------------------------------------ #
     # Snapshot and flush                                                   #
     # ------------------------------------------------------------------ #
 
-    def _take_snapshot(self):
-        """Capture current in-memory state into buffers."""
+    def _take_snapshot(self, trigger: str = "periodic"):
+        """Capture current in-memory state into buffers.
+
+        trigger: "periodic" (timer) or "spike" (event-driven).
+        """
         ts = datetime.now(timezone.utc)
 
         for tk in self.market_tickers:
@@ -173,6 +203,7 @@ class LiveCollector:
                 "last_price": info.get("last_price", 0),
                 "volume": info.get("volume", 0),
                 "open_interest": info.get("open_interest", 0),
+                "trigger": trigger,
             })
 
             ob = self.orderbooks.get(tk, {"yes": {}, "no": {}})
@@ -187,12 +218,18 @@ class LiveCollector:
                             "quantity": float(qty),
                         })
 
+            # Update baseline for spike detection
+            self._prev_prices[tk] = {
+                "yes_bid": info.get("yes_bid", 0),
+                "yes_ask": info.get("yes_ask", 0),
+                "last_price": info.get("last_price", 0),
+            }
+
         logger.info(
-            "Snapshot @ %s | mkt_rows=%d ob_rows=%d | interval=%.0fs",
-            ts.strftime("%H:%M:%S"),
+            "Snapshot [%s] @ %s | mkt_rows=%d ob_rows=%d",
+            trigger, ts.strftime("%H:%M:%S"),
             len(self._market_buf),
             len(self._ob_buf),
-            self._current_interval(),
         )
 
     def _flush(self):
@@ -245,14 +282,13 @@ class LiveCollector:
                 await asyncio.sleep(10)
 
     async def _snapshot_loop(self):
-        """Periodically snapshot state and flush buffers."""
+        """Periodic baseline snapshots + buffer flush."""
         last_flush = time.monotonic()
         while self._running:
-            interval = self._current_interval()
-            await asyncio.sleep(interval)
+            await asyncio.sleep(self.snapshot_interval)
             if not self._running:
                 break
-            self._take_snapshot()
+            self._take_snapshot(trigger="periodic")
             if time.monotonic() - last_flush >= self.flush_interval:
                 self._flush()
                 last_flush = time.monotonic()

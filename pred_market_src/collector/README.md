@@ -88,12 +88,9 @@ events:
   - "KXHIGHNY-26FEB12"
 
 collection:
-  default_interval_seconds: 60
-  time_schedules:
-    - start: "14:00"
-      end:   "16:00"
-      timezone: "America/Chicago"
-      interval_seconds: 15    # More frequent around 3pm (weather-critical)
+  interval_seconds: 60          # Baseline periodic snapshot interval
+  spike_threshold_cents: 3      # Immediate snapshot when price moves ≥ N cents
+  spike_cooldown_seconds: 2     # Min gap between spike-triggered snapshots
 
 storage:
   data_dir: "data"
@@ -101,8 +98,9 @@ storage:
 ```
 
 - **events**: Uppercase event tickers. Each event has many contracts (e.g. temperature ranges).
-- **default_interval_seconds**: Snapshot interval when no `time_schedules` match.
-- **time_schedules**: Checked in order; first match sets the interval. Useful for 2–4 PM when NWS determines daily high.
+- **interval_seconds**: Baseline snapshot interval. One snapshot per cycle regardless of activity.
+- **spike_threshold_cents**: When `yes_bid`, `yes_ask`, or `last_price` moves by ≥ N cents *since the last snapshot*, take an immediate snapshot. Compared against last-snapshotted price, so cumulative moves during cooldown are never missed. Set to `0` to disable.
+- **spike_cooldown_seconds**: Minimum seconds between spike-triggered snapshots (prevents burst writes when multiple contracts spike simultaneously).
 - **flush_interval_seconds**: How often to write in-memory buffers to disk.
 
 ---
@@ -124,6 +122,7 @@ storage:
 | `last_price` | int | Last traded price |
 | `volume` | int64 | Total contracts traded |
 | `open_interest` | int64 | Outstanding contracts |
+| `trigger` | string | "periodic" or "spike" |
 
 **orderbook_snapshots.parquet** — one row per (timestamp, contract, side, price level):
 

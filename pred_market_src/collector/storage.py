@@ -23,6 +23,7 @@ MARKET_SNAPSHOT_SCHEMA = pa.schema([
     ("last_price",    pa.int32()),
     ("volume",        pa.int64()),
     ("open_interest", pa.int64()),
+    ("trigger",       pa.string()),
 ])
 
 ORDERBOOK_SNAPSHOT_SCHEMA = pa.schema([
@@ -124,4 +125,7 @@ class ParquetStorage:
             files = [f for f in files if f.stem <= end_date.isoformat()]
         if not files:
             return pd.DataFrame()
-        return pa.concat_tables([pq.read_table(f) for f in files]).to_pandas()
+        return pa.concat_tables(
+            [pq.read_table(f) for f in files],
+            promote_options="default",
+        ).to_pandas()

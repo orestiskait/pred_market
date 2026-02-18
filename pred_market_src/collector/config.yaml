@@ -20,22 +20,18 @@ events:
 # Snapshot collection
 # ----------------------------------------------------------
 collection:
-  # Default seconds between snapshots (used when no time_schedule matches).
-  default_interval_seconds: 60
+  # Baseline: snapshot every N seconds regardless of price activity.
+  interval_seconds: 60
 
-  # Higher-frequency windows.  Checked in order; first match wins.
-  time_schedules:
-    # Peak importance: around NWS daily-high determination (~2-4 PM local)
-    - start: "14:00"
-      end:   "16:00"
-      timezone: "America/Chicago"
-      interval_seconds: 15
+  # Spike detection: snapshot immediately when any contract's yes_bid, yes_ask,
+  # or last_price moves by ≥ threshold cents since the *last snapshot*.
+  # Compared against the last-snapshotted price (not the last WS message),
+  # so cumulative moves during cooldown are never missed.
+  spike_threshold_cents: 3
 
-    # Moderate importance: midday buildup
-    - start: "12:00"
-      end:   "14:00"
-      timezone: "America/Chicago"
-      interval_seconds: 30
+  # Min seconds between event-driven snapshots (prevents burst writes when
+  # multiple contracts spike simultaneously or prices oscillate).
+  spike_cooldown_seconds: 2
 
 # ----------------------------------------------------------
 # Storage
