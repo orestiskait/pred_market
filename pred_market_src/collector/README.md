@@ -70,12 +70,16 @@ Key constraint: **Kalshi does not offer historical orderbook data**. The REST AP
 
 ## Configuration
 
-Edit `config.yaml` (or pass `--config path/to/config.yaml`):
+Edit `config.yaml` (or pass `--config path/to/config.yaml`). Set credentials via environment variables (see `.env.example`):
+
+```bash
+export KALSHI_API_KEY_ID=your-key-id
+export KALSHI_PRIVATE_KEY_PATH=/path/to/key.pem
+```
 
 ```yaml
 kalshi:
-  api_key_id: "your-key-id"           # or set KALSHI_API_KEY_ID
-  private_key_path: "/path/to/key.pem" # or set KALSHI_PRIVATE_KEY_PATH
+  private_key_path: "/path/to/key.pem" # optional; KALSHI_PRIVATE_KEY_PATH overrides
   base_url: "https://api.elections.kalshi.com/trade-api/v2"
   ws_url:   "wss://api.elections.kalshi.com/trade-api/ws/v2"
 

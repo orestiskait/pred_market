@@ -2,4 +2,5 @@ pred_env/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+.env
 pred_market_src/collector/config.yaml

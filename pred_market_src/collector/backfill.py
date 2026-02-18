@@ -9,8 +9,14 @@ import argparse
 import logging
 import os
 import time
-from datetime import datetime, timezone
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env from collector directory so KALSHI_API_KEY_ID etc. are available
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
+from datetime import datetime, timezone
 
 import yaml
 
