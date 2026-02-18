@@ -65,14 +65,13 @@ write_files:
       KALSHI_API_KEY_ID=$(get_metadata "KALSHI_API_KEY_ID")
       KALSHI_PRIVATE_KEY_B64=$(get_metadata "KALSHI_PRIVATE_KEY_B64")
 
-      if [[ -z "$GITHUB_TOKEN" ]]; then
-        echo "Error: GITHUB_TOKEN not found in instance metadata. Launch with: GITHUB_TOKEN=ghp_xxx ./launch.sh"
-        exit 1
-      fi
-
       echo "Cloning repo..."
       mkdir -p "$(dirname $REPO_DIR)"
-      git clone "https://${GITHUB_TOKEN}@github.com/orestiskait/pred_market.git" "$REPO_DIR"
+      if [[ -n "$GITHUB_TOKEN" ]]; then
+        git clone "https://${GITHUB_TOKEN}@github.com/orestiskait/pred_market.git" "$REPO_DIR"
+      else
+        git clone "$REPO" "$REPO_DIR"
+      fi
       chown -R ubuntu:ubuntu "$REPO_DIR"
 
       echo "Installing dependencies..."
@@ -95,25 +94,7 @@ write_files:
 
         # Patch private_key_path in the repo's config.yaml rather than overwriting it.
         # This preserves the events list and all other settings from the repo.
-        if [[ -f "$CONFIG_PATH" ]]; then
-          sed -i "s|private_key_path:.*|private_key_path: \"$KEY_PATH\"|" "$CONFIG_PATH"
-        else
-          # Fallback: write a minimal config if not present in repo
-          cat > "$CONFIG_PATH" << 'CONFIGEOF'
-kalshi:
-  private_key_path: "/home/ubuntu/.kalshi/kalshi_key.pem"
-  base_url: "https://api.elections.kalshi.com/trade-api/v2"
-  ws_url: "wss://api.elections.kalshi.com/trade-api/ws/v2"
-events: []
-collection:
-  interval_seconds: 60
-  spike_threshold_cents: 3
-  spike_cooldown_seconds: 2
-storage:
-  data_dir: "data"
-  flush_interval_seconds: 300
-CONFIGEOF
-        fi
+        sed -i "s|private_key_path:.*|private_key_path: \"$KEY_PATH\"|" "$CONFIG_PATH"
         chown ubuntu:ubuntu "$CONFIG_PATH"
 
         echo "Starting collector..."

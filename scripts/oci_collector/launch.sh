@@ -33,7 +33,7 @@ IMAGE_ID="${IMAGE_ID:-}"  # Auto-detected if empty
 SSH_KEY_FILE="${SSH_KEY_FILE:-}"  # Default: ~/.ssh/id_rsa.pub or ~/.ssh/id_ed25519.pub
 
 # Credentials for private repo + Kalshi (all setup happens on VM via metadata)
-GITHUB_TOKEN="${GITHUB_TOKEN:-}"           # Required: GitHub PAT for private repo
+GITHUB_TOKEN="${GITHUB_TOKEN:-}"           # Optional: GitHub PAT (only needed for private repos)
 KALSHI_API_KEY_ID="${KALSHI_API_KEY_ID:-}" # Optional: for auto-start
 KALSHI_PRIVATE_KEY_FILE="${KALSHI_PRIVATE_KEY_FILE:-}"  # Optional: path to PEM file
 
@@ -107,7 +107,6 @@ if [[ -z "$SSH_KEY_FILE" ]]; then
   done
 fi
 [[ -z "$SSH_KEY_FILE" || ! -f "$SSH_KEY_FILE" ]] && die "SSH public key not found. Create one with ssh-keygen or set SSH_KEY_FILE"
-[[ -z "$GITHUB_TOKEN" ]] && die "GITHUB_TOKEN required for private repo. Create a PAT at: https://github.com/settings/tokens"
 SSH_KEY=$(cat "$SSH_KEY_FILE")
 
 # Encode Kalshi key if provided
@@ -128,7 +127,7 @@ echo ""
 # Build metadata JSON (escape for JSON)
 escape_json() { printf '%s' "$1" | python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))"; }
 METADATA_OBJ="\"ssh_authorized_keys\": $(escape_json "$SSH_KEY")"
-METADATA_OBJ="$METADATA_OBJ, \"GITHUB_TOKEN\": $(escape_json "$GITHUB_TOKEN")"
+[[ -n "$GITHUB_TOKEN" ]] && METADATA_OBJ="$METADATA_OBJ, \"GITHUB_TOKEN\": $(escape_json "$GITHUB_TOKEN")"
 [[ -n "$KALSHI_API_KEY_ID" ]] && METADATA_OBJ="$METADATA_OBJ, \"KALSHI_API_KEY_ID\": $(escape_json "$KALSHI_API_KEY_ID")"
 [[ -n "$KALSHI_PRIVATE_KEY_B64" ]] && METADATA_OBJ="$METADATA_OBJ, \"KALSHI_PRIVATE_KEY_B64\": $(escape_json "$KALSHI_PRIVATE_KEY_B64")"
 METADATA_JSON="{${METADATA_OBJ}}"
