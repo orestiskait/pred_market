@@ -4,8 +4,8 @@
 
 kalshi:
   # API credentials.  Set here OR via env vars KALSHI_API_KEY_ID / KALSHI_PRIVATE_KEY_PATH.
-  api_key_id: ""
-  private_key_path: ""
+  api_key_id: "950e7438-858c-4e04-a0eb-6afaf8d50495"
+  private_key_path: "/home/kaitores/.kalshi/kalshi_api_key.txt"
 
   base_url: "https://api.elections.kalshi.com/trade-api/v2"
   ws_url:   "wss://api.elections.kalshi.com/trade-api/ws/v2"
@@ -13,7 +13,7 @@ kalshi:
 # Event tickers to track (uppercase).  Each event contains multiple contracts.
 # Example: KXHIGHCHI-26FEB11  →  all temperature-range contracts for Chicago Feb 11.
 events:
-  - "KXHIGHCHI-26FEB11"
+  - "KXHIGHCHI-26FEB12"
   # - "KXHIGHNY-26FEB11"
 
 # ----------------------------------------------------------

@@ -64,6 +64,7 @@ Key constraint: **Kalshi does not offer historical orderbook data**. The REST AP
 | `storage.py` | Parquet schemas and append-friendly I/O |
 | `collector.py` | Live WebSocket daemon; snapshots at configurable intervals |
 | `backfill.py` | Historical REST fetcher for candlesticks and trades |
+| `fetch_nws_temps.py` | NWS hourly observation fetcher (e.g. NYC Central Park KNYC) → `data/nws_temps/` |
 
 ---
 
