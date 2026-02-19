@@ -10,6 +10,7 @@ Run the Kalshi market data collector 24/7 on an OCI ARM instance (Always Free ti
 | `cloud-init.yaml` | Runs on first boot: installs Docker, git, fail2ban, sets up passwordless sudo |
 | `setup.sh` | Run on the VM: clones repo, builds Docker image, configures Kalshi credentials |
 | `run_collector.sh` | Start / stop / logs / status for the collector container |
+| `update.sh` | Pull latest code, rebuild image, restart collector (skip if already up to date) |
 
 ## Prerequisites
 
@@ -148,11 +149,42 @@ scp -r ubuntu@<PUBLIC_IP>:~/collector-data ./collector_data_backup/
 
 ## Updating Code
 
-From your local machine:
+`update.sh` pulls the latest code from GitHub, rebuilds the Docker image, and restarts the collector. It skips everything if the VM is already on the latest commit.
+
+### One-off update (from your local machine)
 
 ```bash
-ssh ubuntu@<PUBLIC_IP> 'cd ~/pred_market && git pull && cd scripts/oci_collector && ./setup.sh && ./run_collector.sh'
+ssh ubuntu@<PUBLIC_IP> '~/pred_market/scripts/oci_collector/update.sh'
 ```
+
+Or on the VM directly:
+
+```bash
+cd ~/pred_market/scripts/oci_collector && ./update.sh
+```
+
+### Automatic updates (cron)
+
+To auto-pull every 6 hours, add a cron entry on the VM:
+
+```bash
+ssh ubuntu@<PUBLIC_IP>
+crontab -e
+```
+
+Add this line:
+
+```
+0 */6 * * * /home/ubuntu/pred_market/scripts/oci_collector/update.sh >> /home/ubuntu/collector-data/update.log 2>&1
+```
+
+The update log is written to `~/collector-data/update.log`. Check it anytime:
+
+```bash
+tail -50 ~/collector-data/update.log
+```
+
+To change the frequency, adjust the cron schedule (e.g. `*/30 * * * *` for every 30 minutes, `0 * * * *` for hourly).
 
 ## VM Layout
 
