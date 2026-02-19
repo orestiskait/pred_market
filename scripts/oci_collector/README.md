@@ -1,87 +1,143 @@
 # OCI Deployment: Kalshi Collector
 
-Run the Kalshi market data collector on Oracle Cloud Infrastructure (OCI) so it collects data 24/7.
+Run the Kalshi market data collector 24/7 on an OCI ARM instance (Always Free tier eligible).
 
-## Existing VM (Docker)
+## Overview
 
-If you already have an OCI VM running:
+| Script | What it does |
+|--------|-------------|
+| `launch.sh` | Creates the OCI VM (A2→A1 shape swap trick), prints the public IP |
+| `cloud-init.yaml` | Runs on first boot: installs Docker, git, fail2ban, sets up passwordless sudo |
+| `setup.sh` | Run on the VM: clones repo, builds Docker image, configures Kalshi credentials |
+| `run_collector.sh` | Start / stop / logs / status for the collector container |
 
-### 1. Deploy from your machine (one command)
+## Prerequisites
+
+1. **OCI CLI** installed and configured (`oci setup config`)
+2. **SSH key pair** — public key at `~/.ssh/id_ed25519.pub` or `~/.ssh/id_rsa.pub`
+3. **VCN and public subnet** in OCI (the subnet must allow public IPs)
+4. **Kalshi credentials** — API key ID and private key PEM file
+
+## Quick Start
+
+### 1. Launch the VM
 
 ```bash
 cd scripts/oci_collector
-chmod +x deploy_to_vm.sh
-
-# With interactive credential prompts:
-./deploy_to_vm.sh <PUBLIC_IP>
-
-# Non-interactive (key must already be on VM at ~/.kalshi/kalshi_key.pem):
-./deploy_to_vm.sh <PUBLIC_IP> your-api-key-id /home/ubuntu/.kalshi/kalshi_key.pem
+chmod +x launch.sh setup.sh run_collector.sh
+./launch.sh
 ```
 
-Or SSH in and run manually:
+The launch script uses the **A2→A1 shape swap trick** to work around A1.Flex capacity limits:
 
-### 1b. SSH in (manual)
+1. Creates a `VM.Standard.A2.Flex` instance (usually has availability)
+2. Stops the instance
+3. Updates the shape to `VM.Standard.A1.Flex`
+4. Starts the instance on the A1 shape
+
+Final specs: **4 OCPUs · 24 GB RAM · 150 GB boot volume** (aarch64).
+
+The script auto-detects compartment, availability domain, subnet, and Ubuntu image. To override:
+
+```bash
+COMPARTMENT_ID=ocid1... AD=lqls:US-ASHBURN-AD-1 SUBNET_ID=ocid1... ./launch.sh
+
+# Custom SSH key:
+SSH_PUBLIC_KEY_FILE=~/.ssh/my_key.pub ./launch.sh
+```
+
+At the end it prints the public IP.
+
+### 2. SSH into the VM
+
+Wait ~2 minutes for cloud-init to install Docker, then:
 
 ```bash
 ssh ubuntu@<PUBLIC_IP>
 ```
 
-### 2. Clone repo (if needed)
+To verify cloud-init finished:
 
 ```bash
-cd /home/ubuntu
-git clone https://github.com/orestiskait/pred_market.git pred_market
-cd pred_market/scripts/oci_collector
-chmod +x setup.sh run_collector.sh
+ssh ubuntu@<PUBLIC_IP> 'tail -5 /var/log/cloud-init-output.log'
 ```
 
-For a private repo: `GITHUB_TOKEN=ghp_xxx git clone "https://${GITHUB_TOKEN}@github.com/orestiskait/pred_market.git" pred_market`
+You should see `[cloud-init] Done`.
 
-If the repo exists: `cd /home/ubuntu/pred_market && git pull`, then `cd scripts/oci_collector`.
+### 3. Copy the Kalshi private key to the VM
 
-### 3. Run setup
+From your local machine:
 
 ```bash
+scp ~/.kalshi/kalshi_api_key.txt ubuntu@<PUBLIC_IP>:~/.kalshi/
+```
+
+### 4. Clone the repo and run setup
+
+On the VM:
+
+```bash
+git clone https://github.com/orestiskait/pred_market.git ~/pred_market
+cd ~/pred_market/scripts/oci_collector
 ./setup.sh
 ```
 
-On first run you’ll be prompted for:
-- **KALSHI_API_KEY_ID**
-- **Path to Kalshi private key PEM file** (e.g. `/home/ubuntu/.kalshi/kalshi_key.pem`)
+Setup will prompt for:
+- **KALSHI_API_KEY_ID** — your Kalshi API key ID
+- **Path to Kalshi private key** — e.g. `/home/ubuntu/.kalshi/kalshi_api_key.txt`
 
-If the key isn’t on the VM yet, copy it first from your machine:
+Or pass them non-interactively:
 
 ```bash
-scp /path/to/kalshi_key.pem ubuntu@<PUBLIC_IP>:/home/ubuntu/.kalshi/
+KALSHI_API_KEY_ID=your-key-id \
+  KALSHI_PRIVATE_KEY_FILE=/home/ubuntu/.kalshi/kalshi_api_key.txt \
+  ./setup.sh
 ```
 
-Non-interactive: `KALSHI_API_KEY_ID=xxx KALSHI_PRIVATE_KEY_FILE=/path/to/key.pem ./setup.sh`
-
-### 4. Start the collector
+### 5. Start the collector
 
 ```bash
 ./run_collector.sh
 ```
 
-### 5. Verify
+### 6. Verify
 
 ```bash
-./run_collector.sh status
-./run_collector.sh logs
-ls -la /home/ubuntu/collector-data/market_snapshots/
+./run_collector.sh status    # container running?
+./run_collector.sh logs      # tail live logs
+ls -la ~/collector-data/market_snapshots/
 ```
 
-### VM layout (unchanged by setup)
+## SSH Reference
 
-| Path | Purpose |
-|------|---------|
-| `/home/ubuntu/pred_market` | Repo |
-| `/home/ubuntu/.kalshi/collector.env` | Credentials (env vars for Docker) |
-| `/home/ubuntu/collector-data` | Parquet output (market_snapshots, orderbook_snapshots) |
-| `/home/ubuntu/collector-cron.log` | Daily restart cron output |
+**Connect:**
 
-### Commands
+```bash
+ssh ubuntu@<PUBLIC_IP>
+```
+
+**Find the public IP** (if you lost it):
+
+```bash
+# From your local machine with OCI CLI configured:
+oci compute instance list -c <COMPARTMENT_ID> \
+  --display-name kalshi-collector \
+  --query 'data[0].id' --raw-output \
+  | xargs -I{} oci compute instance list-vnics --instance-id {} \
+    --query 'data[0]."public-ip"' --raw-output
+```
+
+**Copy files to/from the VM:**
+
+```bash
+# Upload:
+scp local_file.txt ubuntu@<PUBLIC_IP>:~/
+
+# Download collected data:
+scp -r ubuntu@<PUBLIC_IP>:~/collector-data ./collector_data_backup/
+```
+
+## Collector Commands
 
 | Command | Action |
 |---------|--------|
@@ -90,102 +146,32 @@ ls -la /home/ubuntu/collector-data/market_snapshots/
 | `./run_collector.sh logs` | Tail logs |
 | `./run_collector.sh status` | Container status |
 
----
+## Updating Code
 
-## Prerequisites
-
-1. **OCI CLI** installed and configured (`oci setup config`)
-2. **SSH public key** at `~/.ssh/id_rsa.pub` or `~/.ssh/id_ed25519.pub`
-3. **GitHub PAT** with `repo` scope (private repo): https://github.com/settings/tokens
-4. **VCN and subnet** in OCI (public subnet for SSH)
-
-## First-Time Setup
-
-### 1. Discover your OCI IDs (optional; script can auto-detect)
+From your local machine:
 
 ```bash
-# Compartment
-oci iam compartment list --compartment-id-in-subtree true --all
-
-# Availability domain
-oci iam availability-domain list -c <COMPARTMENT_ID>
-
-# Subnet (use a *public* subnet so the instance gets a public IP)
-oci network subnet list -c <COMPARTMENT_ID>
-
-# Ubuntu image (optional; launch script auto-detects)
-oci compute image list -c <COMPARTMENT_ID> --operating-system "Canonical Ubuntu" --operating-system-version "22.04" --limit 1
+ssh ubuntu@<PUBLIC_IP> 'cd ~/pred_market && git pull && cd scripts/oci_collector && ./setup.sh && ./run_collector.sh'
 ```
 
-### 2. Launch the instance (one command does everything)
+## VM Layout
 
-The launch script uses the **A2→A1 shape swap trick** to get around A1.Flex capacity limits:
-
-1. Creates a `VM.Standard.A2.Flex` instance (usually available)
-2. Stops the instance once it's running
-3. Updates the shape to `VM.Standard.A1.Flex`
-4. Starts the instance on the new shape
-
-Final specs: **4 OCPUs · 24 GB RAM · 150 GB boot volume**.
-
-```bash
-cd scripts/oci_collector
-chmod +x launch.sh cloud-init.sh
-
-# Auto-detects OCI IDs:
-./launch.sh
-
-# Pass OCI IDs explicitly if auto-detect fails:
-COMPARTMENT_ID=ocid1... AD=xxx:PHX-AD-1 SUBNET_ID=ocid1... ./launch.sh
-
-# Use a custom SSH key:
-SSH_PUBLIC_KEY_FILE=~/.ssh/my_key.pub ./launch.sh
-```
-
-### 3. SSH in and run setup
-
-Cloud-init pre-installs Docker and basic packages (~2 min). Then SSH in and use the existing `setup.sh` and `run_collector.sh`:
-
-```bash
-ssh ubuntu@<PUBLIC_IP>
-cd ~/pred_market/scripts/oci_collector
-./setup.sh            # clone repo, build image, configure credentials
-./run_collector.sh    # start the collector
-```
-
-## Updating code from GitHub
-
-```bash
-ssh ubuntu@$IP 'cd /home/ubuntu/pred_market && git pull && cd scripts/oci_collector && ./setup.sh && ./run_collector.sh'
-```
-
-## Data location
-
-Collected data lives at `/home/ubuntu/collector-data/` (Docker volume):
+| Path | Purpose |
+|------|---------|
+| `/home/ubuntu/pred_market` | Repo clone |
+| `/home/ubuntu/.kalshi/collector.env` | Credentials (env vars for Docker) |
+| `/home/ubuntu/.kalshi/kalshi_api_key.txt` | Kalshi private key |
+| `/home/ubuntu/collector-data/` | Parquet output (mounted into Docker container) |
 
 ```
 /home/ubuntu/collector-data/
-├── market_snapshots/
-├── orderbook_snapshots/
-└── historical/
+├── market_snapshots/       # price/volume snapshots (one parquet per day)
+├── orderbook_snapshots/    # orderbook depth data
+└── historical/             # backfill data
 ```
 
-To pull data locally:
+## Security
 
-```bash
-scp -r ubuntu@$IP:collector-data ./collector_data_backup/
-```
-
-## Optional: OCI Object Storage for persistence
-
-To persist data beyond the instance lifecycle, add a cron job or script to sync `data/` to OCI Object Storage. Example:
-
-```bash
-oci os object bulk-upload -ns <NAMESPACE> -bn kalshi-collector-data --src-dir /home/ubuntu/pred_market/pred_market_src/collector/data
-```
-
-## Security group (ingress)
-
-Ensure the instance's subnet/security list allows:
-- **SSH (22)** from your IP (or 0.0.0.0/0 for convenience; restrict in production)
-- Outbound HTTPS for Kalshi API and GitHub
+- Cloud-init installs **fail2ban** for SSH brute-force protection.
+- Ensure the subnet's security list allows **inbound SSH (port 22)** from your IP.
+- Outbound HTTPS is needed for Kalshi API and GitHub.

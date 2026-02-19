@@ -43,8 +43,8 @@ class LiveCollector:
 
         # Auth
         kcfg = config["kalshi"]
-        api_key_id = kcfg.get("api_key_id") or os.environ.get("KALSHI_API_KEY_ID", "")
-        pk_path = kcfg.get("private_key_path") or os.environ.get("KALSHI_PRIVATE_KEY_PATH", "")
+        api_key_id = os.environ.get("KALSHI_API_KEY_ID") or kcfg.get("api_key_id", "")
+        pk_path = os.environ.get("KALSHI_PRIVATE_KEY_PATH") or kcfg.get("private_key_path", "")
         self.auth = KalshiAuth(api_key_id, pk_path)
         self.rest = KalshiRestClient(kcfg["base_url"], self.auth)
         self.ws_url = kcfg["ws_url"]

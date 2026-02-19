@@ -21,10 +21,9 @@ CONTAINER="kalshi-collector"
 # ── Docker ────────────────────────────────────────────────────────────────────
 if ! command -v docker &>/dev/null; then
   echo "[setup] Installing Docker..."
-  curl -fsSL https://get.docker.com | sh
-  usermod -aG docker ubuntu
+  curl -fsSL https://get.docker.com | sudo sh
+  sudo usermod -aG docker ubuntu
   echo "[setup] Docker installed. If docker commands fail, log out/in to refresh group."
-  # Run remaining docker commands via sudo in this session
   DOCKER="sudo docker"
 else
   DOCKER="docker"
