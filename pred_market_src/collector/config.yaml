@@ -10,11 +10,17 @@ kalshi:
   base_url: "https://api.elections.kalshi.com/trade-api/v2"
   ws_url:   "wss://api.elections.kalshi.com/trade-api/ws/v2"
 
-# Event tickers to track (uppercase).  Each event contains multiple contracts.
-# Example: KXHIGHCHI-26FEB11  →  all temperature-range contracts for Chicago Feb 11.
-events:
-  - "KXHIGHCHI-26FEB18"
-  - "KXHIGHNY-26FEB18"
+# Series prefixes to track (uppercase).  At startup the collector queries the
+# Kalshi API for currently-open events in each series and picks the active one
+# automatically — no manual date updates needed.
+# Example: KXHIGHCHI  →  auto-resolves to KXHIGHCHI-26FEB18 (or whatever is open today)
+event_series:
+  - "KXHIGHCHI"
+  - "KXHIGHNY"
+
+# Optional: pin specific dated event tickers here (legacy / override).
+# events:
+#   - "KXHIGHCHI-26FEB18"
 
 # ----------------------------------------------------------
 # Snapshot collection
@@ -32,6 +38,16 @@ collection:
   # Min seconds between event-driven snapshots (prevents burst writes when
   # multiple contracts spike simultaneously or prices oscillate).
   spike_cooldown_seconds: 2
+
+  # Max orderbook depth saved per side (yes/no) per contract per snapshot.
+  # Levels are kept by best price (highest bids first for yes, no sides).
+  # Set to 0 to save all levels.
+  max_orderbook_depth: 5
+
+  # Delta compression: write full orderbook baselines every N snapshots,
+  # and only changed/removed levels in between. Saves ~80-90% of OB rows.
+  # Set to 1 to disable (every snapshot is a baseline, i.e. original behavior).
+  baseline_every_n_snapshots: 60
 
 # ----------------------------------------------------------
 # Storage

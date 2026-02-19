@@ -1,6 +1,96 @@
 # OCI Deployment: Kalshi Collector
 
-Run the Kalshi market data collector on Oracle Cloud Infrastructure (OCI) so it collects data 24/7. All setup runs **on the VM** via cloud-init: clone from GitHub, install deps, configure credentials, start the collector.
+Run the Kalshi market data collector on Oracle Cloud Infrastructure (OCI) so it collects data 24/7.
+
+## Existing VM (Docker)
+
+If you already have an OCI VM running:
+
+### 1. Deploy from your machine (one command)
+
+```bash
+cd scripts/oci_collector
+chmod +x deploy_to_vm.sh
+
+# With interactive credential prompts:
+./deploy_to_vm.sh <PUBLIC_IP>
+
+# Non-interactive (key must already be on VM at ~/.kalshi/kalshi_key.pem):
+./deploy_to_vm.sh <PUBLIC_IP> your-api-key-id /home/ubuntu/.kalshi/kalshi_key.pem
+```
+
+Or SSH in and run manually:
+
+### 1b. SSH in (manual)
+
+```bash
+ssh ubuntu@<PUBLIC_IP>
+```
+
+### 2. Clone repo (if needed)
+
+```bash
+cd /home/ubuntu
+git clone https://github.com/orestiskait/pred_market.git pred_market
+cd pred_market/scripts/oci_collector
+chmod +x setup.sh run_collector.sh
+```
+
+For a private repo: `GITHUB_TOKEN=ghp_xxx git clone "https://${GITHUB_TOKEN}@github.com/orestiskait/pred_market.git" pred_market`
+
+If the repo exists: `cd /home/ubuntu/pred_market && git pull`, then `cd scripts/oci_collector`.
+
+### 3. Run setup
+
+```bash
+./setup.sh
+```
+
+On first run you’ll be prompted for:
+- **KALSHI_API_KEY_ID**
+- **Path to Kalshi private key PEM file** (e.g. `/home/ubuntu/.kalshi/kalshi_key.pem`)
+
+If the key isn’t on the VM yet, copy it first from your machine:
+
+```bash
+scp /path/to/kalshi_key.pem ubuntu@<PUBLIC_IP>:/home/ubuntu/.kalshi/
+```
+
+Non-interactive: `KALSHI_API_KEY_ID=xxx KALSHI_PRIVATE_KEY_FILE=/path/to/key.pem ./setup.sh`
+
+### 4. Start the collector
+
+```bash
+./run_collector.sh
+```
+
+### 5. Verify
+
+```bash
+./run_collector.sh status
+./run_collector.sh logs
+ls -la /home/ubuntu/collector-data/market_snapshots/
+```
+
+### VM layout (unchanged by setup)
+
+| Path | Purpose |
+|------|---------|
+| `/home/ubuntu/pred_market` | Repo |
+| `/home/ubuntu/.kalshi/collector.env` | Credentials (env vars for Docker) |
+| `/home/ubuntu/collector-data` | Parquet output (market_snapshots, orderbook_snapshots) |
+| `/home/ubuntu/collector-cron.log` | Daily restart cron output |
+
+### Commands
+
+| Command | Action |
+|---------|--------|
+| `./run_collector.sh` or `./run_collector.sh start` | Start / restart |
+| `./run_collector.sh stop` | Stop |
+| `./run_collector.sh logs` | Tail logs |
+| `./run_collector.sh status` | Container status |
+
+---
 
 ## Prerequisites
 
@@ -66,16 +156,15 @@ ls -la ~/pred_market/pred_market_src/collector/data/
 ## Updating code from GitHub
 
 ```bash
-ssh ubuntu@$IP 'cd pred_market && git pull'
-sudo systemctl restart kalshi-collector
+ssh ubuntu@$IP 'cd /home/ubuntu/pred_market && git pull && cd scripts/oci_collector && ./setup.sh && ./run_collector.sh'
 ```
 
 ## Data location
 
-Collected data lives on the instance at:
+Collected data lives at `/home/ubuntu/collector-data/` (Docker volume):
 
 ```
-/home/ubuntu/pred_market/pred_market_src/collector/data/
+/home/ubuntu/collector-data/
 ├── market_snapshots/
 ├── orderbook_snapshots/
 └── historical/
@@ -84,7 +173,7 @@ Collected data lives on the instance at:
 To pull data locally:
 
 ```bash
-scp -r ubuntu@$IP:pred_market/pred_market_src/collector/data ./collector_data_backup/
+scp -r ubuntu@$IP:collector-data ./collector_data_backup/
 ```
 
 ## Optional: OCI Object Storage for persistence

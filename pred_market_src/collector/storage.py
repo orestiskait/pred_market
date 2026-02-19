@@ -27,11 +27,12 @@ MARKET_SNAPSHOT_SCHEMA = pa.schema([
 ])
 
 ORDERBOOK_SNAPSHOT_SCHEMA = pa.schema([
-    ("snapshot_ts",   pa.timestamp("us", tz="UTC")),
-    ("market_ticker", pa.string()),
-    ("side",          pa.string()),
-    ("price_cents",   pa.int32()),
-    ("quantity",      pa.float64()),
+    ("snapshot_ts",    pa.timestamp("us", tz="UTC")),
+    ("market_ticker",  pa.string()),
+    ("side",           pa.string()),
+    ("price_cents",    pa.int32()),
+    ("quantity",       pa.float64()),
+    ("snapshot_type",  pa.string()),  # "baseline" (full book) or "delta" (changes only)
 ])
 
 CANDLESTICK_SCHEMA = pa.schema([
@@ -129,3 +130,63 @@ class ParquetStorage:
             [pq.read_table(f) for f in files],
             promote_options="default",
         ).to_pandas()
+
+    def reconstruct_orderbooks(
+        self,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> pd.DataFrame:
+        """Reconstruct full orderbook state at every snapshot timestamp.
+
+        Reads the raw baseline+delta parquet data, replays deltas on top of
+        baselines, and returns a DataFrame with the same schema as if every
+        snapshot had been a full baseline.
+        """
+        raw = self.read_parquets("orderbook", start_date, end_date)
+        if raw.empty:
+            return raw
+
+        # Legacy data without snapshot_type: already full snapshots
+        if "snapshot_type" not in raw.columns:
+            return raw
+
+        raw = raw.sort_values("snapshot_ts")
+        timestamps = raw["snapshot_ts"].unique()
+
+        # book[ticker][side][price] = qty
+        book: Dict[str, Dict[str, Dict[int, float]]] = {}
+        rows: list[dict] = []
+
+        for ts in timestamps:
+            snap = raw[raw["snapshot_ts"] == ts]
+            snap_type = snap["snapshot_type"].iloc[0]
+
+            if snap_type == "baseline":
+                for tk in snap["market_ticker"].unique():
+                    book[tk] = {"yes": {}, "no": {}}
+                    tk_rows = snap[snap["market_ticker"] == tk]
+                    for _, r in tk_rows.iterrows():
+                        book[tk][r["side"]][r["price_cents"]] = r["quantity"]
+            else:
+                for _, r in snap.iterrows():
+                    tk = r["market_ticker"]
+                    book.setdefault(tk, {"yes": {}, "no": {}})
+                    if r["quantity"] == 0:
+                        book[tk][r["side"]].pop(r["price_cents"], None)
+                    else:
+                        book[tk][r["side"]][r["price_cents"]] = r["quantity"]
+
+            for tk, sides in book.items():
+                for side, levels in sides.items():
+                    for price, qty in levels.items():
+                        if qty > 0:
+                            rows.append({
+                                "snapshot_ts": ts,
+                                "market_ticker": tk,
+                                "side": side,
+                                "price_cents": price,
+                                "quantity": qty,
+                                "snapshot_type": "reconstructed",
+                            })
+
+        return pd.DataFrame(rows)

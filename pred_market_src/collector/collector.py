@@ -59,6 +59,7 @@ class LiveCollector:
         self.snapshot_interval = ccfg.get("interval_seconds", 60)
         self.spike_threshold = ccfg.get("spike_threshold_cents", 3)
         self.spike_cooldown = ccfg.get("spike_cooldown_seconds", 2)
+        self.baseline_every = ccfg.get("baseline_every_n_snapshots", 60)
 
         # In-memory state
         self.market_tickers: List[str] = []
@@ -75,13 +76,45 @@ class LiveCollector:
         self._prev_prices: Dict[str, dict] = {}
         self._last_event_snapshot: float = 0
 
+        # Delta compression: track which OB levels changed since last snapshot
+        self._snapshot_count = 0
+        self._last_ob: Dict[str, Dict[str, Dict[int, float]]] = {}
+        self._dirty_levels: Dict[str, Dict[str, set]] = {}  # tk -> side -> {prices}
+
     # ------------------------------------------------------------------ #
     # Market discovery                                                     #
     # ------------------------------------------------------------------ #
 
+    def _resolve_event_tickers(self) -> list[str]:
+        """Return the list of event tickers to track.
+
+        Supports two config keys (can be combined):
+        - ``event_series``: list of series prefixes (e.g. ``KXHIGHCHI``).
+          The collector queries the API for currently-open events and picks
+          the one with the latest ``close_time`` for each series.
+        - ``events``: list of exact event tickers (legacy / override).
+        """
+        tickers: list[str] = []
+
+        for series in self.config.get("event_series", []):
+            logger.info("Resolving series %s → open events", series)
+            events = self.rest.get_events_for_series(series, status="open")
+            if not events:
+                logger.warning("  No open events found for series %s", series)
+                continue
+            # Pick the event whose close_time is soonest in the future (i.e.
+            # the one actively trading today).  Fall back to ticker sort.
+            events.sort(key=lambda e: e.get("close_time") or e.get("ticker", ""))
+            chosen = events[0]["event_ticker"]
+            logger.info("  → %s (%d open event(s) found)", chosen, len(events))
+            tickers.append(chosen)
+
+        tickers.extend(self.config.get("events", []))
+        return tickers
+
     def discover_markets(self):
         """Fetch all contract tickers for the configured events via REST."""
-        for event_ticker in self.config["events"]:
+        for event_ticker in self._resolve_event_tickers():
             logger.info("Discovering markets for %s", event_ticker)
             markets = self.rest.get_markets_for_event(event_ticker)
             for m in markets:
@@ -124,6 +157,7 @@ class LiveCollector:
                 for price, qty in data.get(side, []):
                     ob[side][price] = qty
             self.orderbooks[tk] = ob
+            self._mark_all_dirty(tk)
 
         elif mtype == "orderbook_delta":
             tk = data.get("market_ticker", "")
@@ -134,6 +168,7 @@ class LiveCollector:
                             self.orderbooks[tk][side].pop(price, None)
                         else:
                             self.orderbooks[tk][side][price] = qty
+                        self._dirty_levels.setdefault(tk, {}).setdefault(side, set()).add(int(price))
 
         elif mtype in ("ticker", "ticker_v2"):
             tk = data.get("market_ticker", "")
@@ -181,6 +216,24 @@ class LiveCollector:
                 return
 
     # ------------------------------------------------------------------ #
+    # Orderbook delta helpers                                              #
+    # ------------------------------------------------------------------ #
+
+    def _mark_all_dirty(self, tk: str):
+        """Mark every level of a ticker dirty (used after a WS full snapshot)."""
+        ob = self.orderbooks.get(tk, {"yes": {}, "no": {}})
+        self._dirty_levels[tk] = {
+            side: {int(p) for p in ob[side]} for side in ("yes", "no")
+        }
+
+    def _trim_ob(self, levels: list[tuple[int, float]]) -> list[tuple[int, float]]:
+        """Sort by best price and apply max_ob_depth."""
+        levels.sort(key=lambda x: x[0], reverse=True)
+        if self.max_ob_depth:
+            levels = levels[: self.max_ob_depth]
+        return levels
+
+    # ------------------------------------------------------------------ #
     # Snapshot and flush                                                   #
     # ------------------------------------------------------------------ #
 
@@ -188,8 +241,19 @@ class LiveCollector:
         """Capture current in-memory state into buffers.
 
         trigger: "periodic" (timer) or "spike" (event-driven).
+
+        Every `baseline_every` snapshots the full orderbook is written (snapshot_type
+        = "baseline"); in between, only levels that changed since the previous snapshot
+        are written (snapshot_type = "delta"), with quantity=0 for removed levels.
         """
         ts = datetime.now(timezone.utc)
+
+        self._snapshot_count += 1
+        is_baseline = (
+            self.baseline_every <= 1
+            or self._snapshot_count % self.baseline_every == 1
+        )
+        snapshot_type = "baseline" if is_baseline else "delta"
 
         for tk in self.market_tickers:
             info = self.market_info.get(tk, {})
@@ -207,27 +271,74 @@ class LiveCollector:
             })
 
             ob = self.orderbooks.get(tk, {"yes": {}, "no": {}})
-            for side in ("yes", "no"):
-                for price, qty in ob[side].items():
-                    if qty > 0:
+
+            if is_baseline:
+                for side in ("yes", "no"):
+                    levels = self._trim_ob(
+                        [(int(p), float(q)) for p, q in ob[side].items() if q > 0]
+                    )
+                    for price, qty in levels:
                         self._ob_buf.append({
                             "snapshot_ts": ts,
                             "market_ticker": tk,
                             "side": side,
-                            "price_cents": int(price),
-                            "quantity": float(qty),
+                            "price_cents": price,
+                            "quantity": qty,
+                            "snapshot_type": "baseline",
+                        })
+                # Reset reference for next delta cycle
+                self._last_ob[tk] = {
+                    side: {int(p): float(q) for p, q in ob[side].items() if q > 0}
+                    for side in ("yes", "no")
+                }
+            else:
+                dirty = self._dirty_levels.get(tk, {})
+                prev_ob = self._last_ob.get(tk, {"yes": {}, "no": {}})
+                for side in ("yes", "no"):
+                    changed_prices = dirty.get(side, set())
+                    cur = {int(p): float(q) for p, q in ob[side].items() if q > 0}
+
+                    # Also detect levels that existed in prev but are now gone
+                    removed = set(prev_ob.get(side, {}).keys()) - set(cur.keys())
+                    changed_prices = changed_prices | removed
+
+                    delta_levels: list[tuple[int, float]] = []
+                    for price in changed_prices:
+                        qty = cur.get(price, 0.0)
+                        old_qty = prev_ob.get(side, {}).get(price, 0.0)
+                        if qty != old_qty:
+                            delta_levels.append((price, qty))
+
+                    delta_levels = self._trim_ob(delta_levels)
+                    for price, qty in delta_levels:
+                        self._ob_buf.append({
+                            "snapshot_ts": ts,
+                            "market_ticker": tk,
+                            "side": side,
+                            "price_cents": price,
+                            "quantity": qty,  # 0.0 = level removed
+                            "snapshot_type": "delta",
                         })
 
-            # Update baseline for spike detection
+                # Update reference for next delta
+                self._last_ob[tk] = {
+                    side: {int(p): float(q) for p, q in ob[side].items() if q > 0}
+                    for side in ("yes", "no")
+                }
+
+            # Spike detection baseline
             self._prev_prices[tk] = {
                 "yes_bid": info.get("yes_bid", 0),
                 "yes_ask": info.get("yes_ask", 0),
                 "last_price": info.get("last_price", 0),
             }
 
+        # Clear dirty set for next cycle
+        self._dirty_levels.clear()
+
         logger.info(
-            "Snapshot [%s] @ %s | mkt_rows=%d ob_rows=%d",
-            trigger, ts.strftime("%H:%M:%S"),
+            "Snapshot [%s/%s] @ %s | mkt_rows=%d ob_rows=%d",
+            trigger, snapshot_type, ts.strftime("%H:%M:%S"),
             len(self._market_buf),
             len(self._ob_buf),
         )

@@ -4,3 +4,5 @@ __pycache__/
 .ipynb_checkpoints/
 .env
 pred_market_src/collector/config.yaml
+pred_market_src/collector/data/market_snapshots/*.parquet
+pred_market_src/collector/data/orderbook_snapshots/*.parquet
