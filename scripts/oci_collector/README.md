@@ -11,6 +11,7 @@ Run the Kalshi market data collector 24/7 on an OCI ARM instance (Always Free ti
 | `setup.sh` | Run on the VM: clones repo, builds Docker image, configures Kalshi credentials |
 | `run_collector.sh` | Start / stop / logs / status for the collector container |
 | `update.sh` | Pull latest code, rebuild image, restart collector (skip if already up to date) |
+| `probe.sh` | Probe from local: VM state, container status, recent logs, data freshness |
 
 ## Prerequisites
 
@@ -146,6 +147,16 @@ scp -r ubuntu@<PUBLIC_IP>:~/collector-data ./collector_data_backup/
 | `./run_collector.sh stop` | Stop |
 | `./run_collector.sh logs` | Tail logs |
 | `./run_collector.sh status` | Container status |
+
+## Probing from Local Machine
+
+Check if the VM is running and actively collecting:
+
+```bash
+./probe.sh
+```
+
+Reports: VM lifecycle state, public IP, container status, last 15 log lines, and data directory freshness. Requires OCI CLI and SSH access.
 
 ## Updating Code
 
