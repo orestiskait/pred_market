@@ -1,0 +1,24 @@
+#cloud-config
+# Minimal OS prep so the VM is ready for setup.sh after SSH-ing in.
+# cloud-config format handles apt locks and user setup natively.
+
+system_info:
+  default_user:
+    name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+
+package_update: true
+
+packages:
+  - git
+  - curl
+  - ca-certificates
+  - fail2ban
+  - unattended-upgrades
+
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - usermod -aG docker ubuntu
+  - systemctl enable --now docker
+  - echo "[cloud-init] Done. SSH in and run setup.sh"

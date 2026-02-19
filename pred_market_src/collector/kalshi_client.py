@@ -80,6 +80,12 @@ class KalshiRestClient:
     def get_event(self, event_ticker: str) -> dict:
         return self._get(f"/events/{event_ticker}")
 
+    def get_events_for_series(self, series_ticker: str, status: str | None = None) -> list:
+        params: dict = {"series_ticker": series_ticker}
+        if status:
+            params["status"] = status
+        return self._get("/events", params=params).get("events", [])
+
     def get_markets_for_event(self, event_ticker: str) -> list:
         return self._get("/markets", params={"event_ticker": event_ticker}).get("markets", [])
 

@@ -119,38 +119,38 @@ oci compute image list -c <COMPARTMENT_ID> --operating-system "Canonical Ubuntu"
 
 ### 2. Launch the instance (one command does everything)
 
-From the project root. **GITHUB_TOKEN is required** for the private repo. Kalshi creds are optional; if you pass them, the collector starts automatically.
+The launch script uses the **A2→A1 shape swap trick** to get around A1.Flex capacity limits:
+
+1. Creates a `VM.Standard.A2.Flex` instance (usually available)
+2. Stops the instance once it's running
+3. Updates the shape to `VM.Standard.A1.Flex`
+4. Starts the instance on the new shape
+
+Final specs: **4 OCPUs · 24 GB RAM · 150 GB boot volume**.
 
 ```bash
 cd scripts/oci_collector
-chmod +x launch.sh
+chmod +x launch.sh cloud-init.sh
 
-# Required: GITHUB_TOKEN
-GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx ./launch.sh
+# Auto-detects OCI IDs:
+./launch.sh
 
-# With Kalshi credentials (auto-starts collector; reads from .env + config.yaml if not passed)
-GITHUB_TOKEN=ghp_xxx KALSHI_API_KEY_ID=your-key-id KALSHI_PRIVATE_KEY_FILE=/path/to/kalshi_key.pem ./launch.sh
+# Pass OCI IDs explicitly if auto-detect fails:
+COMPARTMENT_ID=ocid1... AD=xxx:PHX-AD-1 SUBNET_ID=ocid1... ./launch.sh
 
-# Pass OCI IDs explicitly if auto-detect fails
-COMPARTMENT_ID=ocid1... AD=xxx:PHX-AD-1 SUBNET_ID=ocid1... GITHUB_TOKEN=ghp_xxx ./launch.sh
+# Use a custom SSH key:
+SSH_PUBLIC_KEY_FILE=~/.ssh/my_key.pub ./launch.sh
 ```
 
-### 3. Wait ~3–4 minutes for cloud-init
+### 3. SSH in and run setup
 
-Cloud-init runs everything on the VM:
-- Clone the private repo (using GitHub token)
-- Install Python venv and collector deps
-- If Kalshi creds were passed: write `.env`, `config.yaml`, key file, and **start the collector**
-
-### 4. Verify
+Cloud-init pre-installs Docker and basic packages (~2 min). Then SSH in and use the existing `setup.sh` and `run_collector.sh`:
 
 ```bash
-INSTANCE_ID=$(oci compute instance list -c <COMPARTMENT_ID> --display-name kalshi-collector --query 'data[0].id' -r | tr -d '"')
-oci compute instance list-vnics --instance-id $INSTANCE_ID --query 'data[0]."public-ip"' -r
-
 ssh ubuntu@<PUBLIC_IP>
-sudo systemctl status kalshi-collector
-ls -la ~/pred_market/pred_market_src/collector/data/
+cd ~/pred_market/scripts/oci_collector
+./setup.sh            # clone repo, build image, configure credentials
+./run_collector.sh    # start the collector
 ```
 
 ## Updating code from GitHub
