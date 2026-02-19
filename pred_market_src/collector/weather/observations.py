@@ -183,6 +183,7 @@ class WeatherObservations:
         stations: list[str | StationInfo] | None = None,
         save: bool = True,
         sources: list[str] | None = None,
+        skip_existing: bool = True,
     ) -> dict[str, pd.DataFrame]:
         """Fetch all three data sources for all configured stations.
 
@@ -197,6 +198,8 @@ class WeatherObservations:
         sources : list[str], optional
             Which sources to fetch.  Defaults to all three:
             ["asos_1min", "metar", "daily_climate"].
+        skip_existing : bool, optional
+            If True, skip fetch for stations that already have a parquet file.
 
         Returns
         -------
@@ -209,7 +212,7 @@ class WeatherObservations:
         results: dict[str, pd.DataFrame] = {}
 
         if "asos_1min" in sources:
-            df = self.asos.fetch_many(stns, target_date)
+            df = self.asos.fetch_many(stns, target_date, skip_existing=skip_existing)
             if save and not df.empty:
                 for stn in stns:
                     mask = df["station"] == stn.icao
@@ -218,7 +221,7 @@ class WeatherObservations:
             results["asos_1min"] = df
 
         if "metar" in sources:
-            df = self.metar.fetch_many(stns, target_date)
+            df = self.metar.fetch_many(stns, target_date, skip_existing=skip_existing)
             if save and not df.empty:
                 for stn in stns:
                     mask = df["station"] == stn.icao
@@ -227,7 +230,7 @@ class WeatherObservations:
             results["metar"] = df
 
         if "daily_climate" in sources:
-            df = self.climate.fetch_many(stns, target_date)
+            df = self.climate.fetch_many(stns, target_date, skip_existing=skip_existing)
             if save and not df.empty:
                 for stn in stns:
                     mask = df["station"] == stn.icao
@@ -236,8 +239,11 @@ class WeatherObservations:
             results["daily_climate"] = df
 
         for source, df in results.items():
-            logger.info("%s: %d rows across %d stations",
-                        source, len(df), df["station"].nunique() if not df.empty else 0)
+            if not df.empty:
+                logger.info("%s: %d rows across %d stations",
+                            source, len(df), df["station"].nunique())
+            else:
+                pass  # Avoid logging "0 rows" for skipped data
 
         return results
 
@@ -248,6 +254,7 @@ class WeatherObservations:
         stations: list[str | StationInfo] | None = None,
         save: bool = True,
         sources: list[str] | None = None,
+        skip_existing: bool = True,
     ) -> dict[str, pd.DataFrame]:
         """Fetch all sources for a date range (for backfilling).
 
@@ -259,11 +266,14 @@ class WeatherObservations:
 
         current = start_date
         while current <= end_date:
-            day_results = self.collect_all(current, stations, save, sources)
+            day_results = self.collect_all(
+                current, stations, save, sources, skip_existing
+            )
             for source, df in day_results.items():
                 if not df.empty:
                     all_results.setdefault(source, []).append(df)
             current += timedelta(days=1)
+
 
         return {
             source: pd.concat(frames, ignore_index=True)

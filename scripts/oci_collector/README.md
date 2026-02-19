@@ -6,7 +6,7 @@ Run the Kalshi market data collector 24/7 on an OCI ARM instance (Always Free ti
 
 | Script | What it does |
 |--------|-------------|
-| `launch.sh` | Creates the OCI VM (A2→A1 shape swap trick), prints the public IP |
+| `launch.sh` | Creates the OCI VM (A2→A1 shape swap trick), assigns reserved public IP |
 | `cloud-init.yaml` | Runs on first boot: installs Docker, git, fail2ban, sets up passwordless sudo |
 | `setup.sh` | Run on the VM: clones repo, builds Docker image, configures Kalshi credentials |
 | `run_collector.sh` | Start / stop / logs / status for the collector container |
@@ -32,12 +32,15 @@ chmod +x launch.sh setup.sh run_collector.sh
 
 The launch script uses the **A2→A1 shape swap trick** to work around A1.Flex capacity limits:
 
-1. Creates a `VM.Standard.A2.Flex` instance (usually has availability)
+1. Creates a `VM.Standard.A2.Flex` instance (no ephemeral IP)
 2. Stops the instance
 3. Updates the shape to `VM.Standard.A1.Flex`
 4. Starts the instance on the A1 shape
+5. Assigns a **reserved public IP** (creates one named `kalshi-collector-ip` if it doesn't exist yet, otherwise re-uses it)
 
 Final specs: **4 OCPUs · 24 GB RAM · 150 GB boot volume** (aarch64).
+
+The reserved IP (`129.158.203.11`) persists across VM recreations — if you terminate and re-launch the VM, the same IP is automatically re-attached in step 5.
 
 The script auto-detects compartment, availability domain, subnet, and Ubuntu image. To override:
 
@@ -46,9 +49,12 @@ COMPARTMENT_ID=ocid1... AD=lqls:US-ASHBURN-AD-1 SUBNET_ID=ocid1... ./launch.sh
 
 # Custom SSH key:
 SSH_PUBLIC_KEY_FILE=~/.ssh/my_key.pub ./launch.sh
+
+# Custom reserved IP name:
+RESERVED_IP_NAME=my-ip-name ./launch.sh
 ```
 
-At the end it prints the public IP.
+At the end it prints the (permanent) public IP.
 
 ### 2. SSH into the VM
 
@@ -121,13 +127,22 @@ ssh ubuntu@<PUBLIC_IP>
 **Find the public IP** (if you lost it):
 
 ```bash
-# From your local machine with OCI CLI configured:
+# Option 1 — look up the reserved IP directly by name (always works, even if VM is stopped):
+oci network public-ip list \
+  -c $(grep -m1 '^tenancy=' ~/.oci/config | cut -d= -f2) \
+  --scope REGION \
+  --query 'data[?"display-name"==`kalshi-collector-ip`]."ip-address" | [0]' \
+  --raw-output
+
+# Option 2 — via instance VNIC (VM must be RUNNING):
 oci compute instance list -c <COMPARTMENT_ID> \
   --display-name kalshi-collector \
   --query 'data[0].id' --raw-output \
   | xargs -I{} oci compute instance list-vnics --instance-id {} \
     --query 'data[0]."public-ip"' --raw-output
 ```
+
+The reserved IP is **`129.158.203.11`** (OCID: `ocid1.publicip.oc1.iad.amaaaaaazqlyc2yaslssz2pswhwg7pbrklpifsjyw6wze2jsbhp7blkijjia`).
 
 **Copy files to/from the VM:**
 

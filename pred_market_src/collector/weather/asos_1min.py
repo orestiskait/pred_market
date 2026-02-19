@@ -136,7 +136,7 @@ class ASOS1MinFetcher(WeatherFetcherBase):
         end_date: date,
         **kwargs,
     ) -> pd.DataFrame:
-        """Fetch multiple days of 1-min data, concatenated."""
+        """Fetch multiple days of 1-min data, concatenated (day-by-day)."""
         frames = []
         current = start_date
         while current <= end_date:
@@ -151,3 +151,58 @@ class ASOS1MinFetcher(WeatherFetcherBase):
         if not frames:
             return pd.DataFrame()
         return pd.concat(frames, ignore_index=True)
+
+    def fetch_range_bulk(
+        self,
+        station: StationInfo,
+        start_date: date,
+        end_date: date,
+        *,
+        vars: list[str] | None = None,
+        pad_days: int = 1,
+    ) -> pd.DataFrame:
+        """Fetch a date range in a single API call (much faster for large ranges).
+
+        Adds `pad_days` extra days on each side so that local-standard-time
+        daily max calculations are not clipped at boundaries.
+        """
+        if vars is None:
+            vars = DEFAULT_VARS
+
+        fetch_start = start_date - timedelta(days=pad_days)
+        fetch_end = end_date + timedelta(days=pad_days)
+
+        params = {
+            "station": station.iata,
+            "vars": ",".join(vars),
+            "sts": f"{fetch_start}T00:00Z",
+            "ets": f"{fetch_end}T23:59Z",
+            "sample": "1min",
+            "what": "download",
+            "tz": "UTC",
+        }
+
+        logger.info("Fetching ASOS 1-min bulk for %s (%s): %s → %s",
+                     station.icao, station.iata, fetch_start, fetch_end)
+
+        resp = requests.get(IEM_ASOS_1MIN_URL, params=params, timeout=120)
+        resp.raise_for_status()
+
+        df = pd.read_csv(io.StringIO(resp.text))
+
+        if df.empty:
+            logger.warning("No ASOS 1-min data returned for %s (%s → %s)",
+                           station.icao, fetch_start, fetch_end)
+            return pd.DataFrame()
+
+        df = df.rename(columns={"valid(UTC)": "valid_utc", "station": "station_iata"})
+        df["valid_utc"] = pd.to_datetime(df["valid_utc"], utc=True)
+        df["station"] = station.icao
+
+        for v in vars:
+            if v in df.columns:
+                df[v] = pd.to_numeric(df[v], errors="coerce")
+
+        logger.info("Got %d 1-minute observations for %s (%s → %s)",
+                     len(df), station.icao, fetch_start, fetch_end)
+        return df

@@ -60,11 +60,17 @@ class WeatherFetcherBase(ABC):
         self,
         stations: list[StationInfo],
         target_date: date,
+        skip_existing: bool = False,
         **kwargs,
     ) -> pd.DataFrame:
         """Fetch for multiple stations and concatenate results."""
         frames: list[pd.DataFrame] = []
         for stn in stations:
+            if skip_existing and self.check_exists(stn, target_date):
+                logger.info("Skipping %s for %s on %s (already exists)",
+                            self.SOURCE_NAME, stn.icao, target_date)
+                continue
+
             try:
                 df = self.fetch(stn, target_date, **kwargs)
                 if not df.empty:
@@ -133,3 +139,8 @@ class WeatherFetcherBase(ABC):
         if not frames:
             return pd.DataFrame()
         return pd.concat(frames, ignore_index=True)
+
+    def check_exists(self, station: StationInfo, target_date: date) -> bool:
+        """Check if data already exists for this station/date."""
+        path = self.data_dir / f"{station.icao}_{target_date.isoformat()}.parquet"
+        return path.exists()

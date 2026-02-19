@@ -6,8 +6,11 @@
 #   2. Stop the instance.
 #   3. Update the shape to A1.Flex.
 #   4. Start the instance.
+#   5. Assign a reserved public IP (created if it doesn't exist yet).
 #
 # Specs: 4 OCPUs · 24 GB RAM · 150 GB boot volume · SSH enabled.
+# The instance is launched WITHOUT an ephemeral IP; a reserved IP is assigned
+# in step 5 so the address survives VM recreations.
 #
 # After launch, SSH in and run setup.sh to install the collector.
 #
@@ -17,6 +20,7 @@
 # Optional:
 #   SSH_PUBLIC_KEY_FILE  — defaults to ~/.ssh/id_ed25519.pub or ~/.ssh/id_rsa.pub
 #   DISPLAY_NAME         — instance name (default: kalshi-collector)
+#   RESERVED_IP_NAME     — display name for the reserved IP (default: kalshi-collector-ip)
 #
 # Usage:
 #   ./launch.sh
@@ -25,6 +29,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DISPLAY_NAME="${DISPLAY_NAME:-kalshi-collector}"
+RESERVED_IP_NAME="${RESERVED_IP_NAME:-kalshi-collector-ip}"
 BOOT_VOLUME_GB=150
 TARGET_OCPUS=4
 TARGET_MEMORY_GB=24
@@ -93,7 +98,7 @@ USER_DATA=$(base64 -w0 "$CLOUD_INIT" 2>/dev/null || base64 "$CLOUD_INIT" | tr -d
 
 # ── Step 1: Create as A2.Flex ────────────────────────────────────────────────
 echo ""
-echo "══ Step 1/4: Creating VM.Standard.A2.Flex ══"
+echo "══ Step 1/5: Creating VM.Standard.A2.Flex ══"
 
 INSTANCE_ID=$(oci compute instance launch \
   -c "$COMPARTMENT_ID" \
@@ -104,7 +109,7 @@ INSTANCE_ID=$(oci compute instance launch \
   --image-id "$IMAGE_ID" \
   --boot-volume-size-in-gbs "$BOOT_VOLUME_GB" \
   --subnet-id "$SUBNET_ID" \
-  --assign-public-ip true \
+  --assign-public-ip false \
   --metadata "{\"ssh_authorized_keys\": \"$SSH_PUBLIC_KEY\", \"user_data\": \"$USER_DATA\"}" \
   --query 'data.id' --raw-output)
 
@@ -124,13 +129,13 @@ wait_for_state RUNNING
 
 # ── Step 2: Stop ─────────────────────────────────────────────────────────────
 echo ""
-echo "══ Step 2/4: Stopping instance ══"
+echo "══ Step 2/5: Stopping instance ══"
 oci compute instance action --instance-id "$INSTANCE_ID" --action STOP >/dev/null 2>&1
 wait_for_state STOPPED
 
 # ── Step 3: Swap shape A2 → A1 ──────────────────────────────────────────────
 echo ""
-echo "══ Step 3/4: Updating shape → VM.Standard.A1.Flex ══"
+echo "══ Step 3/5: Updating shape → VM.Standard.A1.Flex ══"
 oci compute instance update --instance-id "$INSTANCE_ID" \
   --shape "VM.Standard.A1.Flex" \
   --shape-config "{\"ocpus\": $TARGET_OCPUS, \"memoryInGBs\": $TARGET_MEMORY_GB}" \
@@ -146,21 +151,54 @@ done
 
 # ── Step 4: Start on A1 ─────────────────────────────────────────────────────
 echo ""
-echo "══ Step 4/4: Starting on A1.Flex ══"
+echo "══ Step 4/5: Starting on A1.Flex ══"
 oci compute instance action --instance-id "$INSTANCE_ID" --action START >/dev/null 2>&1
 wait_for_state RUNNING
 
-# ── Done ─────────────────────────────────────────────────────────────────────
-sleep 5
-PUBLIC_IP=$(oci compute instance list-vnics --instance-id "$INSTANCE_ID" \
-  --query 'data[0]."public-ip"' --raw-output)
+# ── Step 5: Assign reserved public IP ───────────────────────────────────────
+echo ""
+echo "══ Step 5/5: Assigning reserved public IP ══"
 
+# Get the primary private IP OCID for this instance's VNIC
+VNIC_ID=$(oci compute instance list-vnics --instance-id "$INSTANCE_ID" \
+  --query 'data[0].id' --raw-output)
+PRIVATE_IP_ID=$(oci network private-ip list --vnic-id "$VNIC_ID" \
+  --query 'data[?"is-primary"==`true`] | [0].id' --raw-output)
+
+# Check whether a reserved IP with this name already exists in the compartment
+EXISTING_RESERVED_IP_ID=$(oci network public-ip list -c "$COMPARTMENT_ID" \
+  --scope REGION \
+  --query "data[?\"display-name\"=='$RESERVED_IP_NAME'] | [0].id" \
+  --raw-output 2>/dev/null || true)
+
+if [[ -n "$EXISTING_RESERVED_IP_ID" && "$EXISTING_RESERVED_IP_ID" != "null" ]]; then
+  echo "[launch] Re-using existing reserved IP: $EXISTING_RESERVED_IP_ID"
+  oci network public-ip update \
+    --public-ip-id "$EXISTING_RESERVED_IP_ID" \
+    --private-ip-id "$PRIVATE_IP_ID" \
+    --force >/dev/null
+  PUBLIC_IP=$(oci network public-ip get \
+    --public-ip-id "$EXISTING_RESERVED_IP_ID" \
+    --query 'data."ip-address"' --raw-output)
+else
+  echo "[launch] Creating new reserved IP '$RESERVED_IP_NAME'..."
+  PUBLIC_IP=$(oci network public-ip create \
+    -c "$COMPARTMENT_ID" \
+    --lifetime RESERVED \
+    --display-name "$RESERVED_IP_NAME" \
+    --private-ip-id "$PRIVATE_IP_ID" \
+    --query 'data."ip-address"' --raw-output)
+fi
+
+echo "  → $PUBLIC_IP"
+
+# ── Done ─────────────────────────────────────────────────────────────────────
 echo ""
 echo "══ Launch complete ══"
 echo "  Instance:  $INSTANCE_ID"
 echo "  Shape:     VM.Standard.A1.Flex ($TARGET_OCPUS OCPUs, ${TARGET_MEMORY_GB}GB)"
 echo "  Boot vol:  ${BOOT_VOLUME_GB}GB"
-echo "  Public IP: $PUBLIC_IP"
+echo "  Public IP: $PUBLIC_IP (reserved — permanent)"
 echo ""
 echo "  Wait ~2 min for cloud-init, then:"
 echo "    ssh ubuntu@$PUBLIC_IP"
