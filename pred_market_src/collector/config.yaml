@@ -65,3 +65,27 @@ storage:
 
   # How often to flush in-memory buffers to parquet (seconds).
   flush_interval_seconds: 300
+
+# ----------------------------------------------------------
+# LDM — Unidata Local Data Manager (real-time weather ingest)
+# ----------------------------------------------------------
+# The LDM runs as a separate Docker container and receives surface
+# observations in real time from the Unidata IDD relay network.
+# Configuration here is informational; the actual LDM config files
+# are in the ldm/ directory (ldmd.conf, pqact.conf, etc.).
+ldm:
+  # FQDN or public IP of this LDM node (must match upstream ALLOW entry).
+  # Set via LDM_HOSTNAME env var in docker-compose.yml.
+  hostname: "changeme.example.com"
+
+  # Upstream LDM server(s) for data requests.
+  upstream: "idd.unidata.ucar.edu"
+
+  # Feedtype to request (IDS|DDPLUS = domestic surface observations).
+  feedtype: "IDS|DDPLUS"
+
+  # Product filter regex (SA = routine METAR, SP = SPECI).
+  product_filter: "^S[AP]"
+
+  # Contact email for requesting upstream access:
+  # support-idd@unidata.ucar.edu

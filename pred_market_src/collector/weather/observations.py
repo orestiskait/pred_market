@@ -30,6 +30,7 @@ import yaml
 
 from pred_market_src.collector.weather.asos_1min import ASOS1MinFetcher
 from pred_market_src.collector.weather.daily_climate import DailyClimateFetcher
+from pred_market_src.collector.weather.ldm_surface import LDMSurfaceReader
 from pred_market_src.collector.weather.metar import METARFetcher
 from pred_market_src.collector.weather.stations import (
     STATION_REGISTRY,
@@ -61,6 +62,7 @@ class WeatherObservations:
         self.asos = ASOS1MinFetcher(data_dir=base)
         self.metar = METARFetcher(data_dir=base)
         self.climate = DailyClimateFetcher(data_dir=base)
+        self.ldm = LDMSurfaceReader(data_dir=base)
 
     @classmethod
     def from_config(cls, config_path: str | Path) -> WeatherObservations:
@@ -173,6 +175,16 @@ class WeatherObservations:
             self.climate.save_parquet(df, stn, target_date)
         return df
 
+    def fetch_ldm_surface(
+        self,
+        station: str | StationInfo,
+        target_date: date,
+        **kwargs,
+    ) -> pd.DataFrame:
+        """Read LDM-ingested surface data for one station."""
+        stn = self._resolve_station(station)
+        return self.ldm.fetch(stn, target_date, **kwargs)
+
     # ------------------------------------------------------------------
     # Bulk operations
     # ------------------------------------------------------------------
@@ -207,7 +219,7 @@ class WeatherObservations:
         """
         stns = self._resolve_stations(stations)
         if sources is None:
-            sources = ["asos_1min", "metar", "daily_climate"]
+            sources = ["asos_1min", "metar", "daily_climate", "ldm_surface"]
 
         results: dict[str, pd.DataFrame] = {}
 
@@ -237,6 +249,12 @@ class WeatherObservations:
                     if mask.any():
                         self.climate.save_parquet(df[mask], stn, target_date)
             results["daily_climate"] = df
+
+        if "ldm_surface" in sources:
+            # LDM data is already on disk (written by ldm_ingest.py).
+            # We just read what's available — no external API call.
+            df = self.ldm.fetch_many(stns, target_date, skip_existing=False)
+            results["ldm_surface"] = df
 
         for source, df in results.items():
             if not df.empty:

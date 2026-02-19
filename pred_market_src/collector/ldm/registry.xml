@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LDM Registry — registry.xml
+
+  Key settings:
+    hostname     : FQDN or IP of this LDM (must match what upstream sees)
+    reconciliation: use "do nothing" for downstream-only nodes
+    queue/size   : product queue size (256MB is fine for surface data only)
+    queue/slots  : max number of products in queue
+-->
+<registry>
+  <!-- Set to the FQDN or public IP of this machine.
+       For OCI VM: use the public IP or hostname visible to upstream LDM. -->
+  <hostname>changeme.example.com</hostname>
+
+  <!-- Reconciliation mode:
+       "do nothing" = don't push data upstream (we are receive-only) -->
+  <reconciliationMode>do nothing</reconciliationMode>
+
+  <!-- Product queue settings
+       256M is ample for surface obs only (IDS|DDPLUS SA/SP products).
+       Increase to 2G+ if adding model data or radar. -->
+  <queue>
+    <size>256M</size>
+    <slots>default</slots>
+    <path>/home/ldm/var/queues/ldm.pq</path>
+  </queue>
+
+  <!-- Logging -->
+  <log>
+    <count>7</count>
+    <file>/home/ldm/var/logs/ldmd.log</file>
+  </log>
+
+  <!-- Max number of clients that can connect to us (not relevant since
+       we're receive-only, but keep a reasonable default). -->
+  <max-clients>64</max-clients>
+
+  <!-- Time offset in seconds for determining if a product is too old.
+       3600 = discard products older than 1 hour. -->
+  <time-offset>3600</time-offset>
+</registry>

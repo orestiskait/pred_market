@@ -1,0 +1,68 @@
+# =============================================================================
+# Docker Compose — Kalshi Collector + LDM Weather Ingest
+# =============================================================================
+# Runs both services on the OCI VM:
+#
+#   kalshi-collector  — WebSocket-based Kalshi market data collector
+#   ldm               — Unidata LDM receiving real-time surface observations
+#
+# Data from both services is persisted to the same host directory
+# (~/collector-data) so all parquet files are co-located.
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f ldm
+#   docker compose down
+# =============================================================================
+
+services:
+  # ── Kalshi market data collector ──────────────────────────────────────────
+  kalshi-collector:
+    image: kalshi-collector:latest
+    container_name: kalshi-collector
+    restart: unless-stopped
+    env_file:
+      - ${KALSHI_ENV_FILE:-.env}
+    volumes:
+      - ${DATA_DIR:-./data}:/app/data
+    networks:
+      - collector-net
+
+  # ── Unidata LDM — real-time surface observations ─────────────────────────
+  ldm:
+    build:
+      context: .
+      dockerfile: ldm/Dockerfile
+    image: pred-market-ldm:latest
+    container_name: ldm-weather
+    restart: unless-stopped
+    hostname: ${LDM_HOSTNAME:-ldm.changeme.com}
+    ports:
+      # LDM uses port 388 for upstream connections
+      - "388:388"
+    environment:
+      # Where ldm_ingest.py writes parquet files (inside the container)
+      - LDM_WEATHER_DATA_DIR=/app/data/weather_obs/ldm_surface
+      - LDM_LOG_LEVEL=${LDM_LOG_LEVEL:-INFO}
+    volumes:
+      # LDM configuration files (mounted from repo)
+      - ./ldm/ldmd.conf:/home/ldm/etc/ldmd.conf:ro
+      - ./ldm/pqact.conf:/home/ldm/etc/pqact.conf:ro
+      - ./ldm/scour.conf:/home/ldm/etc/scour.conf:ro
+      - ./ldm/registry.xml:/home/ldm/etc/registry.xml:ro
+      # LDM product queue (persisted to survive restarts)
+      - ldm-queue:/home/ldm/var/queues
+      # LDM logs
+      - ${DATA_DIR:-./data}/ldm_logs:/home/ldm/var/logs
+      # Shared data directory — parquet output co-located with Kalshi data
+      - ${DATA_DIR:-./data}:/app/data
+    networks:
+      - collector-net
+
+volumes:
+  ldm-queue:
+    driver: local
+
+networks:
+  collector-net:
+    driver: bridge
