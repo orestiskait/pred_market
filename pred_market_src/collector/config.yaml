@@ -22,6 +22,13 @@ event_series:
 # events:
 #   - "KXHIGHCHI-26FEB18"
 
+# Weather stations to fetch temperature data for.
+# Auto-resolved from event_series above if not specified.
+# Use 4-letter ICAO codes matching the Kalshi resolution stations.
+# weather_stations:
+#   - "KMDW"    # Chicago-Midway  (KXHIGHCHI)
+#   - "KNYC"    # Central Park    (KXHIGHNY)
+
 # ----------------------------------------------------------
 # Snapshot collection
 # ----------------------------------------------------------
