@@ -8,6 +8,8 @@ system_info:
     sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
 
+timezone: America/New_York
+
 package_update: true
 
 packages:

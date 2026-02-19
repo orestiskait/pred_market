@@ -139,6 +139,43 @@ scp local_file.txt ubuntu@<PUBLIC_IP>:~/
 scp -r ubuntu@<PUBLIC_IP>:~/collector-data ./collector_data_backup/
 ```
 
+## Fetching Data Locally
+
+`fetch_data.sh` syncs the collected parquet files from the VM to `pred_market_src/collector/data/` (the path the analysis notebook reads from). It uses `rsync` — only new/changed files are transferred.
+
+```bash
+# Sync all data
+./fetch_data.sh
+
+# Preview what would be transferred without downloading
+./fetch_data.sh --dry-run
+
+# Sync to a custom local path
+LOCAL_DATA_DIR=~/my-data ./fetch_data.sh
+```
+
+The script auto-detects the VM's public IP via OCI CLI. On success it prints a summary of all local parquet files and their sizes.
+
+## Daily Restart (Event Series Roll)
+
+The collector resolves event series prefixes (e.g. `KXHIGHCHI`) to dated tickers (e.g. `KXHIGHCHI-26FEB19`) once at startup. To pick up the next day's events, the collector restarts automatically at **2:00 AM New York time** via a cron job installed by `setup.sh`.
+
+The VM timezone is set to `America/New_York` by cloud-init, so the cron schedule adjusts for daylight saving time automatically.
+
+Restart log: `~/collector-data/daily-restart.log`
+
+To verify the cron is installed:
+
+```bash
+crontab -l | grep run_collector
+```
+
+To change the schedule, edit the crontab on the VM:
+
+```bash
+crontab -e
+```
+
 ## Collector Commands
 
 | Command | Action |
