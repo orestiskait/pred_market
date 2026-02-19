@@ -59,6 +59,7 @@ class LiveCollector:
         self.snapshot_interval = ccfg.get("interval_seconds", 60)
         self.spike_threshold = ccfg.get("spike_threshold_cents", 3)
         self.spike_cooldown = ccfg.get("spike_cooldown_seconds", 2)
+        self.max_ob_depth = ccfg.get("max_orderbook_depth", 0)
         self.baseline_every = ccfg.get("baseline_every_n_snapshots", 60)
 
         # In-memory state
