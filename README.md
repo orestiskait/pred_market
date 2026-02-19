@@ -36,7 +36,7 @@ The collector subscribes to event series (e.g. Chicago and New York daily high m
 | **METAR** | Hourly + specials (Aviation Weather Center) | Near-real-time temps, wind, visibility |
 | **Daily Climate (CLI)** | Official daily high/low (NWS via IEM) | **Resolution source** — same data Kalshi uses to settle contracts |
 
-Station mapping (e.g. `KXHIGHCHI` → KMDW, `KXHIGHNY` → KNYC) is configured in the weather module. See `project_rules/weather_prediction_rules.md` for NWS station types, rounding rules, and implications for betting.
+Station mapping (e.g. `KXHIGHCHI` → KMDW, `KXHIGHNY` → KNYC) is configured in the weather module. See `docs/events/` for NWS station types, rounding rules, and ASOS technical specs.
 
 ---
 
