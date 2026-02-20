@@ -48,6 +48,7 @@ class ASOS1MinFetcher(WeatherFetcherBase):
     """
 
     SOURCE_NAME = "asos_1min"
+    EXPECTED_DAILY_ROWS = 1440
 
     def __init__(self, data_dir: Path | str | None = None, timeout: int = 30):
         super().__init__(data_dir)

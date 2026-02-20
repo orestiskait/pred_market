@@ -68,6 +68,7 @@ class METARFetcher(WeatherFetcherBase):
     """
 
     SOURCE_NAME = "metar"
+    EXPECTED_DAILY_ROWS = 24
 
     def __init__(self, data_dir: Path | str | None = None, timeout: int = 15):
         super().__init__(data_dir)

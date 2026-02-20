@@ -49,6 +49,7 @@ class DailyClimateFetcher(WeatherFetcherBase):
     """
 
     SOURCE_NAME = "daily_climate"
+    EXPECTED_DAILY_ROWS = 1
 
     def __init__(self, data_dir: Path | str | None = None, timeout: int = 15):
         super().__init__(data_dir)

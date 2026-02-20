@@ -18,7 +18,7 @@ from pathlib import Path
 # If START_DATE is None, fetches only END_DATE.
 # If END_DATE is None, defaults to yesterday (relative to run time).
 
-START_DATE = None  # e.g., date(2026, 2, 1)
+START_DATE = date(2026, 2, 1)  # e.g., date(2026, 2, 1)
 END_DATE   = None  # e.g., date(2026, 2, 18) -- None means "Yesterday"
 # ------------------------------------------------------------------------------
 

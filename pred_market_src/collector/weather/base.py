@@ -33,6 +33,7 @@ class WeatherFetcherBase(ABC):
     """
 
     SOURCE_NAME: str = ""  # override in subclass
+    EXPECTED_DAILY_ROWS: int = 0  # override in subclass if applicable
 
     def __init__(self, data_dir: Path | str | None = None):
         if data_dir is None:
@@ -95,16 +96,24 @@ class WeatherFetcherBase(ABC):
 
         path = self.data_dir / f"{station.icao}_{target_date.isoformat()}.parquet"
 
+        combined = df
         if path.exists():
             existing = pd.read_parquet(path)
-            df = pd.concat([existing, df], ignore_index=True)
+            combined = pd.concat([existing, df], ignore_index=True)
             # Deduplicate: keep last occurrence (newest fetch wins)
-            dedup_cols = [c for c in ("valid_utc", "station") if c in df.columns]
+            dedup_cols = [c for c in ("valid_utc", "station") if c in combined.columns]
             if dedup_cols:
-                df = df.drop_duplicates(subset=dedup_cols, keep="last")
+                combined = combined.drop_duplicates(subset=dedup_cols, keep="last")
 
-        df.to_parquet(path, index=False)
-        logger.info("Saved %d rows → %s", len(df), path)
+        if self.EXPECTED_DAILY_ROWS > 0:
+            min_rows = self.EXPECTED_DAILY_ROWS * 0.95
+            if len(combined) < min_rows:
+                logger.warning("Data incomplete for %s/%s: %d rows (expected >= %d). Skipping save.",
+                               station.icao, target_date, len(combined), int(min_rows))
+                return self.data_dir
+
+        combined.to_parquet(path, index=False)
+        logger.info("Saved %d rows → %s", len(combined), path)
         return path
 
     def read_parquet(self, station_icao: str, target_date: date) -> pd.DataFrame:
