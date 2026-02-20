@@ -22,4 +22,8 @@ export KALSHI_PRIVATE_KEY_PATH="$KEY_PATH"
 
 unset KALSHI_PRIVATE_KEY_B64
 
-exec python /app/collector.py --config "$CONFIG"
+if [ $# -gt 0 ]; then
+  exec "$@"
+else
+  exec python /app/collector.py --config "$CONFIG"
+fi
