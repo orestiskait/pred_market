@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pandas as pd
 import requests
+import re
 
 from pred_market_src.collector.weather.base import WeatherFetcherBase
 from pred_market_src.collector.weather.stations import StationInfo
@@ -54,6 +55,30 @@ def _safe_str(val) -> str:
     if val is None:
         return ""
     return str(val)
+
+
+def _parse_high_accuracy_temp(raw_ob: str) -> float | None:
+    """Extract the high-accuracy temperature (0.1 C) from the RMK T-group.
+    Format: Tsnxnxnxnsnmnmnm (e.g. T00610033)"""
+    if not raw_ob:
+        return None
+    m = re.search(r'\bT([01])(\d{3})', raw_ob)
+    if m:
+        sign = 1 if m.group(1) == '0' else -1
+        return sign * int(m.group(2)) / 10.0
+    return None
+
+
+def _parse_6hr_max_temp(raw_ob: str) -> float | None:
+    """Extract the 6-hour max temperature (0.1 C) from the RMK 1-group.
+    Format: 1snxnxnxn (e.g. 10144 for 14.4 C max)"""
+    if not raw_ob:
+        return None
+    m = re.search(r'\b1([01])(\d{3})\b', raw_ob)
+    if m:
+        sign = 1 if m.group(1) == '0' else -1
+        return sign * int(m.group(2)) / 10.0
+    return None
 
 
 class METARFetcher(WeatherFetcherBase):
@@ -134,36 +159,41 @@ class METARFetcher(WeatherFetcherBase):
             if report_time < target_start or report_time >= target_end:
                 continue
 
+            raw_ob = obs.get("rawOb", "")
+            
+            # Use explicit RMK extraction for high accuracy, fallback to AWC parsing
+            parsed_high_acc_c = _parse_high_accuracy_temp(raw_ob)
+            if parsed_high_acc_c is not None:
+                temp_c = parsed_high_acc_c
+            else:
+                temp_c = obs.get("temp")
+
+            parsed_max_6hr_c = _parse_6hr_max_temp(raw_ob)
+            if parsed_max_6hr_c is not None:
+                max_6hr_c = parsed_max_6hr_c
+            else:
+                max_6hr_c = obs.get("maxT")
+
             row = {
                 "station": station.icao,
                 "valid_utc": report_time,
                 "metar_type": obs.get("metarType", ""),  # METAR or SPECI
-                "temp_c": obs.get("temp"),
+                "temp_c": temp_c,
                 "dewp_c": obs.get("dewp"),
-                "temp_f": _c_to_f(obs.get("temp")),
+                "temp_f": _c_to_f(temp_c),
                 "dewp_f": _c_to_f(obs.get("dewp")),
-                "wdir": _safe_str(obs.get("wdir")),
-                "wspd_kt": _safe_float(obs.get("wspd")),
-                "visibility_sm": _safe_float(obs.get("visib")),
-                "altimeter_inhg": _safe_float(obs.get("altim")),
-                "slp_mb": _safe_float(obs.get("slp")),
-                "wx_string": obs.get("wxString", ""),
-                "cover": obs.get("cover", ""),
-                "flt_cat": obs.get("fltCat", ""),
                 # 6-hour extremes (only present at synoptic hours)
-                "max_temp_6hr_c": obs.get("maxT"),
+                "max_temp_6hr_c": max_6hr_c,
                 "min_temp_6hr_c": obs.get("minT"),
-                "max_temp_6hr_f": _c_to_f(obs.get("maxT")),
+                "max_temp_6hr_f": _c_to_f(max_6hr_c),
                 "min_temp_6hr_f": _c_to_f(obs.get("minT")),
                 # 24-hour extremes (less common)
                 "max_temp_24hr_c": obs.get("maxT24"),
                 "min_temp_24hr_c": obs.get("minT24"),
                 "max_temp_24hr_f": _c_to_f(obs.get("maxT24")),
                 "min_temp_24hr_f": _c_to_f(obs.get("minT24")),
-                # Precip
-                "precip_6hr_in": obs.get("pcp6hr"),
                 # Raw METAR text for manual inspection
-                "raw_ob": obs.get("rawOb", ""),
+                "raw_ob": raw_ob,
             }
             rows.append(row)
 
@@ -194,17 +224,31 @@ class METARFetcher(WeatherFetcherBase):
         obs = data[0]  # most recent
         report_time = pd.to_datetime(obs.get("reportTime"), utc=True)
 
+        raw_ob = obs.get("rawOb", "")
+        
+        parsed_high_acc_c = _parse_high_accuracy_temp(raw_ob)
+        if parsed_high_acc_c is not None:
+            temp_c = parsed_high_acc_c
+        else:
+            temp_c = obs.get("temp")
+
+        parsed_max_6hr_c = _parse_6hr_max_temp(raw_ob)
+        if parsed_max_6hr_c is not None:
+            max_6hr_c = parsed_max_6hr_c
+        else:
+            max_6hr_c = obs.get("maxT")
+
         row = {
             "station": station.icao,
             "valid_utc": report_time,
             "metar_type": obs.get("metarType", ""),
-            "temp_c": obs.get("temp"),
-            "temp_f": _c_to_f(obs.get("temp")),
+            "temp_c": temp_c,
+            "temp_f": _c_to_f(temp_c),
             "dewp_c": obs.get("dewp"),
             "dewp_f": _c_to_f(obs.get("dewp")),
-            "max_temp_6hr_c": obs.get("maxT"),
-            "max_temp_6hr_f": _c_to_f(obs.get("maxT")),
-            "raw_ob": obs.get("rawOb", ""),
+            "max_temp_6hr_c": max_6hr_c,
+            "max_temp_6hr_f": _c_to_f(max_6hr_c),
+            "raw_ob": raw_ob,
         }
         return pd.DataFrame([row])
 
