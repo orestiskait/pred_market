@@ -74,7 +74,7 @@ fi
 echo ""
 echo "── Recent logs (last 15 lines) ──"
 ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" \
-  'docker logs --tail 15 kalshi-collector' 2>/dev/null || echo "[probe] Could not fetch logs"
+  'echo "Kalshi Collector:" && docker logs --tail 15 kalshi-collector && echo "---" && echo "Synoptic Listener:" && docker logs --tail 15 synoptic-listener' 2>/dev/null || echo "[probe] Could not fetch logs"
 
 echo ""
 echo "── Data recency ──"
@@ -82,7 +82,7 @@ echo "── Data recency ──"
 ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" 'bash -s' << 'RECENCY'
 STALE_MIN=15
 DATA_DIR=~/collector-data
-NEWEST=$(find "$DATA_DIR/market_snapshots" "$DATA_DIR/orderbook_snapshots" -name "*.parquet" 2>/dev/null \
+NEWEST=$(find "$DATA_DIR/market_snapshots" "$DATA_DIR/orderbook_snapshots" "$DATA_DIR/synoptic_ws" -name "*.parquet" 2>/dev/null \
   | xargs -r stat -c "%Y %n" 2>/dev/null | sort -nr | head -1)
 if [[ -z "$NEWEST" ]]; then
   echo "No parquet files yet"
@@ -107,7 +107,7 @@ RECENCY
 echo ""
 echo "── Data freshness ──"
 ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" \
-  'ls -la ~/collector-data/market_snapshots/ ~/collector-data/orderbook_snapshots/ 2>/dev/null || echo "No data dirs yet"' 2>/dev/null
+  'ls -la ~/collector-data/market_snapshots/ ~/collector-data/orderbook_snapshots/ ~/collector-data/synoptic_ws/ 2>/dev/null || echo "No data dirs yet"' 2>/dev/null
 
 echo ""
 echo "────────────────────────────────────────"

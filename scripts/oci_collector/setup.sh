@@ -75,14 +75,18 @@ else
     read -rp "  Path to Kalshi private key PEM file: " KALSHI_PRIVATE_KEY_FILE
   fi
 
+  if [[ -z "${SYNOPTIC_API_TOKEN:-}" ]]; then
+    read -rp "  SYNOPTIC_API_TOKEN: " SYNOPTIC_API_TOKEN
+  fi
+
   [[ ! -f "$KALSHI_PRIVATE_KEY_FILE" ]] && \
     echo "ERROR: key file not found: $KALSHI_PRIVATE_KEY_FILE" && exit 1
 
   KALSHI_PRIVATE_KEY_B64=$(base64 -w0 "$KALSHI_PRIVATE_KEY_FILE" 2>/dev/null \
     || base64 "$KALSHI_PRIVATE_KEY_FILE" | tr -d '\n')
 
-  printf 'KALSHI_API_KEY_ID=%s\nKALSHI_PRIVATE_KEY_B64=%s\n' \
-    "$KALSHI_API_KEY_ID" "$KALSHI_PRIVATE_KEY_B64" > "$ENV_FILE"
+  printf 'KALSHI_API_KEY_ID=%s\nKALSHI_PRIVATE_KEY_B64=%s\nSYNOPTIC_API_TOKEN=%s\n' \
+    "$KALSHI_API_KEY_ID" "$KALSHI_PRIVATE_KEY_B64" "$SYNOPTIC_API_TOKEN" > "$ENV_FILE"
   chmod 600 "$ENV_FILE"
   echo "[setup] Credentials saved to $ENV_FILE"
   unset KALSHI_PRIVATE_KEY_B64

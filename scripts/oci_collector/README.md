@@ -27,12 +27,19 @@ The VM runs **two Docker containers** side by side:
 │  │  (WebSocket → parquet)│    │  (LDM → pqact → Python →     │   │
 │  │                       │    │   parquet)                     │   │
 │  └───────┬───────────────┘    └──────┬───────────────────────┘   │
+│          │                           │                            │
+│  ┌───────▼──────────────┐            │                            │
+│  │  synoptic-listener   │            │                            │
+│  │  (WebSocket → parquet)│           │                            │
+│  └───────┬──────────────┘            │                            │
+│          │                           │                            │
 │          │                            │                           │
 │          ▼                            ▼                           │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │  ~/collector-data/  (shared volume)                       │   │
 │  │  ├── market_snapshots/     ← Kalshi prices                │   │
 │  │  ├── orderbook_snapshots/  ← Kalshi orderbooks            │   │
+│  │  ├── synoptic_ws/          ← Synoptic Websocket API       │   │
 │  │  ├── weather_obs/                                          │   │
 │  │  │   ├── ldm_surface/      ← LDM real-time METAR/SPECI   │   │
 │  │  │   ├── asos_1min/        ← ASOS 1-min (IEM, ~24h lag)  │   │
@@ -124,12 +131,14 @@ cd ~/pred_market/scripts/oci_collector
 Setup will prompt for:
 - **KALSHI_API_KEY_ID** — your Kalshi API key ID
 - **Path to Kalshi private key** — e.g. `/home/ubuntu/.kalshi/kalshi_api_key.txt`
+- **SYNOPTIC_API_TOKEN** — your Synoptic Push API Token
 
 Or pass them non-interactively:
 
 ```bash
 KALSHI_API_KEY_ID=your-key-id \
   KALSHI_PRIVATE_KEY_FILE=/home/ubuntu/.kalshi/kalshi_api_key.txt \
+  SYNOPTIC_API_TOKEN=your-synoptic-token \
   ./setup.sh
 ```
 

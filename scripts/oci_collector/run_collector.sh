@@ -13,6 +13,7 @@ ENV_FILE="/home/ubuntu/.kalshi/collector.env"
 DATA_DIR="/home/ubuntu/collector-data"
 IMAGE="kalshi-collector:latest"
 CONTAINER="kalshi-collector"
+SYN_CONTAINER="synoptic-listener"
 
 DOCKER="docker"
 $DOCKER info &>/dev/null 2>&1 || DOCKER="sudo docker"
@@ -22,15 +23,20 @@ cmd="${1:-start}"
 case "$cmd" in
   stop)
     echo "[collector] Stopping..."
-    $DOCKER stop "$CONTAINER" 2>/dev/null || echo "(not running)"
+    $DOCKER stop "$CONTAINER" 2>/dev/null || echo "(kalshi-collector not running)"
+    $DOCKER stop "$SYN_CONTAINER" 2>/dev/null || echo "(synoptic-listener not running)"
     ;;
 
   logs)
-    $DOCKER logs -f "$CONTAINER"
+    echo "Kalshi Collector logs:"
+    $DOCKER logs -f "$CONTAINER" &
+    echo "Synoptic Listener logs:"
+    $DOCKER logs -f "$SYN_CONTAINER" &
+    wait
     ;;
 
   status)
-    $DOCKER ps -a --filter "name=$CONTAINER"
+    $DOCKER ps -a --filter "name=$CONTAINER" --filter "name=$SYN_CONTAINER"
     ;;
 
   start)
@@ -39,8 +45,9 @@ case "$cmd" in
 
     # Remove any stopped container with the same name
     $DOCKER rm -f "$CONTAINER" 2>/dev/null || true
+    $DOCKER rm -f "$SYN_CONTAINER" 2>/dev/null || true
 
-    echo "[collector] Starting $IMAGE..."
+    echo "[collector] Starting Kalshi websocket: $IMAGE..."
     $DOCKER run -d \
       --name "$CONTAINER" \
       --env-file "$ENV_FILE" \
@@ -48,9 +55,19 @@ case "$cmd" in
       --restart unless-stopped \
       "$IMAGE"
 
+    echo "[collector] Starting Synoptic listener: $IMAGE..."
+    $DOCKER run -d \
+      --name "$SYN_CONTAINER" \
+      --env-file "$ENV_FILE" \
+      -v "$DATA_DIR:/app/data" \
+      --restart unless-stopped \
+      "$IMAGE" python /app/synoptic_listener.py
+
     echo "[collector] Running. Logs:"
     sleep 2
-    $DOCKER logs "$CONTAINER"
+    $DOCKER logs "$CONTAINER" --tail 10
+    echo "---"
+    $DOCKER logs "$SYN_CONTAINER" --tail 10
     echo ""
     echo "  Tail logs:  ./run_collector.sh logs"
     echo "  Stop:       ./run_collector.sh stop"
