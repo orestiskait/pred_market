@@ -63,6 +63,7 @@ mkdir -p "$LOCAL_DATA_DIR"
 REMOTE_DIRS=(
   "market_snapshots"
   "orderbook_snapshots"
+  "synoptic_ws"
   "historical"
 )
 
