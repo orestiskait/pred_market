@@ -61,6 +61,14 @@ TRADE_SCHEMA = pa.schema([
     ("taker_side",    pa.string()),
 ])
 
+SYNOPTIC_WS_SCHEMA = pa.schema([
+    ("received_ts",   pa.timestamp("us", tz="UTC")),
+    ("ob_timestamp",  pa.timestamp("us", tz="UTC")),
+    ("stid",          pa.string()),
+    ("sensor",        pa.string()),
+    ("value",         pa.float64()),
+])
+
 
 class ParquetStorage:
     """Append-friendly parquet I/O organized by date (live) or event (historical)."""
@@ -70,6 +78,7 @@ class ParquetStorage:
         self.dirs = {
             "market":       self.data_dir / "market_snapshots",
             "orderbook":    self.data_dir / "orderbook_snapshots",
+            "synoptic_ws":  self.data_dir / "synoptic_ws",
             "candlesticks": self.data_dir / "historical" / "candlesticks",
             "trades":       self.data_dir / "historical" / "trades",
         }
@@ -110,6 +119,10 @@ class ParquetStorage:
 
     def write_trades(self, rows: List[Dict], event_ticker: str):
         self._write("trades", f"{event_ticker}.parquet", rows, TRADE_SCHEMA)
+
+    def write_synoptic_ws(self, rows: List[Dict], dt: Optional[date] = None):
+        dt = dt or utc_today()
+        self._write("synoptic_ws", f"{dt.isoformat()}.parquet", rows, SYNOPTIC_WS_SCHEMA)
 
     # -- reading ----------------------------------------------------------
 

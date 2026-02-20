@@ -28,6 +28,19 @@ services:
     networks:
       - collector-net
 
+  # ── Synoptic Data WebSocket collector ─────────────────────────────────────
+  synoptic-listener:
+    image: kalshi-collector:latest
+    container_name: synoptic-listener
+    restart: unless-stopped
+    command: python /app/synoptic_listener.py
+    env_file:
+      - ${KALSHI_ENV_FILE:-.env}
+    volumes:
+      - ${DATA_DIR:-./data}:/app/data
+    networks:
+      - collector-net
+
   # ── Unidata LDM — real-time surface observations ─────────────────────────
   ldm:
     build:
