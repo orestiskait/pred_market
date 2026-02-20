@@ -5,6 +5,8 @@ from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from pred_market_src.collector.tz import utc_today
+
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -91,11 +93,11 @@ class ParquetStorage:
     # -- live snapshots ---------------------------------------------------
 
     def write_market_snapshots(self, rows: List[Dict], dt: Optional[date] = None):
-        dt = dt or date.today()
+        dt = dt or utc_today()
         self._write("market", f"{dt.isoformat()}.parquet", rows, MARKET_SNAPSHOT_SCHEMA)
 
     def write_orderbook_snapshots(self, rows: List[Dict], dt: Optional[date] = None):
-        dt = dt or date.today()
+        dt = dt or utc_today()
         self._write("orderbook", f"{dt.isoformat()}.parquet", rows, ORDERBOOK_SNAPSHOT_SCHEMA)
 
     # -- historical backfill ----------------------------------------------

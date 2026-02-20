@@ -139,7 +139,9 @@ class DailyClimateFetcher(WeatherFetcherBase):
 
         df = pd.DataFrame(rows)
         df["valid_date"] = pd.to_datetime(df["valid_date"]).dt.date
-        # Add valid_utc as midnight UTC for compatibility with base class
+        # valid_utc: synthetic sentinel (midnight UTC on the report date).
+        # Required by the base class for deduplication.
+        # The actual observation covers the full LOCAL calendar day — see valid_date.
         df["valid_utc"] = pd.to_datetime(df["valid_date"])
         df["valid_utc"] = df["valid_utc"].dt.tz_localize("UTC")
 
@@ -198,6 +200,7 @@ class DailyClimateFetcher(WeatherFetcherBase):
 
         df = pd.DataFrame(rows)
         df["valid_date"] = pd.to_datetime(df["valid_date"]).dt.date
+        # valid_utc: synthetic sentinel — see note in fetch() above.
         df["valid_utc"] = pd.to_datetime(df["valid_date"])
         df["valid_utc"] = df["valid_utc"].dt.tz_localize("UTC")
 

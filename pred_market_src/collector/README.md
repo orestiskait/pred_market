@@ -64,13 +64,12 @@ Key constraint: **Kalshi does not offer historical orderbook data**. The REST AP
 | `storage.py` | Parquet schemas and append-friendly I/O |
 | `collector.py` | Live WebSocket daemon; snapshots at configurable intervals |
 | `backfill.py` | Historical REST fetcher for candlesticks and trades |
-| `weather/` | Weather observation fetchers (replaces `fetch_nws_temps.py`) |
+| `weather/` | Weather observation fetchers |
 | `weather/asos_1min.py` | ASOS 1-minute temperature data via IEM (highest-resolution public data) |
 | `weather/metar.py` | METAR observations via Aviation Weather Center (hourly + specials) |
 | `weather/daily_climate.py` | NWS Daily Climate Report via IEM (official high — Kalshi settlement value) |
 | `weather/observations.py` | Orchestrator: config-driven multi-station fetch + save |
 | `run_weather.py` | Script to run daily weather collection (yesterday's data) |
-| `fetch_nws_temps.py` | **Deprecated** — replaced by `weather/` module |
 
 
 ---

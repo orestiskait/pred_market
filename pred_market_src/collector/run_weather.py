@@ -8,6 +8,8 @@ Usage:
 import logging
 import sys
 from datetime import date, timedelta
+
+from pred_market_src.collector.tz import utc_today
 from pathlib import Path
 
 # MEANINGFUL VARIABLES
@@ -36,7 +38,7 @@ def main():
     )
 
     # Resolve dates
-    target_end = END_DATE if END_DATE else date.today() - timedelta(days=1)
+    target_end = END_DATE if END_DATE else utc_today() - timedelta(days=1)
     target_start = START_DATE if START_DATE else target_end
 
     config_path = Path(__file__).resolve().parent / "config.yaml"
