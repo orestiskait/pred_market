@@ -5,7 +5,10 @@ from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from pred_market_src.collector.tz import utc_today
+try:
+    from pred_market_src.collector.tz import utc_today
+except ModuleNotFoundError:
+    from tz import utc_today
 
 import pandas as pd
 import pyarrow as pa
