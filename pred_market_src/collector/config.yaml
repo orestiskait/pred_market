@@ -89,3 +89,27 @@ ldm:
 
   # Contact email for requesting upstream access:
   # support-idd@unidata.ucar.edu
+
+synoptic:
+  stations:
+    - KATL1M
+    - KAUS1M
+    - KBOS1M
+    - KDCA1M
+    - KDEN1M
+    - KDFW1M
+    - KHOU1M
+    - KLAS1M
+    - KLAX1M
+    - KMDW1M
+    - KMIA1M
+    - KMSP1M
+    - KMSY1M
+    - KOKC1M
+    - KPHL1M
+    - KPHX1M
+    - KSAT1M
+    - KSEA1M
+    - KSFO1M
+  vars:
+    - air_temp
