@@ -41,6 +41,19 @@ services:
     networks:
       - collector-net
 
+  # ── Weather Paper Execution Bot ───────────────────────────────────────────
+  weather-bot:
+    image: kalshi-collector:latest
+    container_name: weather-bot
+    restart: unless-stopped
+    command: python /app/weather_bot.py
+    env_file:
+      - ${SHARED_ENV_FILE:-.env}
+    volumes:
+      - ${DATA_DIR:-./data}:/app/data
+    networks:
+      - collector-net
+
   # ── Unidata LDM — real-time surface observations ─────────────────────────
   ldm:
     build:

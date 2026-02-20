@@ -74,7 +74,7 @@ fi
 echo ""
 echo "── Recent logs (last 15 lines) ──"
 ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" \
-  'echo "Kalshi Collector:" && docker logs --tail 15 kalshi-collector && echo "---" && echo "Synoptic Listener:" && docker logs --tail 15 synoptic-listener' 2>/dev/null || echo "[probe] Could not fetch logs"
+  'echo "Kalshi Collector:" && docker logs --tail 15 kalshi-collector && echo "---" && echo "Synoptic Listener:" && docker logs --tail 15 synoptic-listener && echo "---" && echo "Weather Bot:" && docker logs --tail 15 weather-bot' 2>/dev/null || echo "[probe] Could not fetch logs"
 
 echo ""
 echo "── Data recency ──"

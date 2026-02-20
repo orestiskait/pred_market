@@ -12,7 +12,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy collector source
-COPY collector.py kalshi_client.py storage.py backfill.py synoptic_listener.py __init__.py tz.py ./
+COPY collector.py kalshi_client.py storage.py backfill.py synoptic_listener.py weather_bot.py __init__.py tz.py ./
 COPY config.yaml .
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
