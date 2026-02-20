@@ -276,7 +276,9 @@ The script auto-detects the VM's public IP via OCI CLI. On success it prints a s
 
 ## Daily Restart (Event Series Roll)
 
-The Kalshi collector resolves event series prefixes (e.g. `KXHIGHCHI`) to dated tickers (e.g. `KXHIGHCHI-26FEB19`) once at startup. To pick up the next day's events, the collector restarts automatically at **2:00 AM New York time** via a cron job installed by `setup.sh`.
+The Kalshi collector resolves event series prefixes (e.g. `KXHIGHCHI`) to dated tickers (e.g. `KXHIGHCHI-26FEB19`) once at startup. To pick up the next day's events, the collector restarts automatically at **12:01 AM** and **1:01 AM New York time** via cron jobs installed by `setup.sh`.
+
+Two restarts are necessary because NY contracts typically roll over around midnight, and Chicago contracts roll over around 1:00 AM ET (midnight CT).
 
 The LDM container does **not** need daily restarts — it receives data continuously.
 

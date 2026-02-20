@@ -91,14 +91,19 @@ fi
 # ── Data directory ────────────────────────────────────────────────────────────
 mkdir -p "$DATA_DIR"
 
-# ── Daily restart cron (re-resolves event series for new dates) ──────────────
+# ── Daily restarts (re-resolves event series for new NY/CHI dates) ──────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CRON_CMD="0 2 * * * ${SCRIPT_DIR}/run_collector.sh start >> ${DATA_DIR}/daily-restart.log 2>&1"
-if crontab -l 2>/dev/null | grep -qF "run_collector.sh start"; then
-  echo "[setup] Daily restart cron already installed — skipping."
+CRON_CMD_NY="1 0 * * * ${SCRIPT_DIR}/run_collector.sh start >> ${DATA_DIR}/daily-restart.log 2>&1"
+CRON_CMD_CHI="1 1 * * * ${SCRIPT_DIR}/run_collector.sh start >> ${DATA_DIR}/daily-restart.log 2>&1"
+
+# Remove the old 2 AM cron job if it exists
+( crontab -l 2>/dev/null | grep -vF "0 2 * * * ${SCRIPT_DIR}/run_collector.sh start" ) | crontab -
+
+if crontab -l 2>/dev/null | grep -qF "1 0 * * * ${SCRIPT_DIR}/run_collector.sh start"; then
+  echo "[setup] Daily restart crons already installed — skipping."
 else
-  ( crontab -l 2>/dev/null; echo "$CRON_CMD" ) | crontab -
-  echo "[setup] Installed daily restart cron (2:00 AM America/New_York)."
+  ( crontab -l 2>/dev/null; echo "$CRON_CMD_NY"; echo "$CRON_CMD_CHI" ) | crontab -
+  echo "[setup] Installed daily restart crons (12:01 AM and 1:01 AM America/New_York)."
   echo "        Log: $DATA_DIR/daily-restart.log"
 fi
 
