@@ -106,14 +106,19 @@ class DailyClimateFetcher(WeatherFetcherBase):
         for r in matching:
             row = {
                 "station": station.icao,
+                "station_iata": station.iata,
+                "city": station.city,
+                "timezone": station.tz,
                 "valid_date": r["valid"],
-                "city_name": r.get("name", ""),
+                "cli_city_name": r.get("name", ""),
                 "wfo": r.get("wfo", ""),
                 # --- Official temps (the settlement values) ---
                 "high_f": _safe_int(r.get("high")),
                 "low_f": _safe_int(r.get("low")),
-                "high_time": r.get("high_time", ""),
-                "low_time": r.get("low_time", ""),
+                "high_time": _format_time(r.get("high_time")),
+                "low_time": _format_time(r.get("low_time")),
+                "high_time_local": _parse_local_time(r["valid"], r.get("high_time")),
+                "low_time_local": _parse_local_time(r["valid"], r.get("low_time")),
                 # --- Climatological context ---
                 "high_normal": _safe_int(r.get("high_normal")),
                 "high_depart": _safe_int(r.get("high_depart")),
@@ -181,11 +186,16 @@ class DailyClimateFetcher(WeatherFetcherBase):
         for r in results:
             row = {
                 "station": station.icao,
+                "station_iata": station.iata,
+                "city": station.city,
+                "timezone": station.tz,
                 "valid_date": r["valid"],
                 "high_f": _safe_int(r.get("high")),
                 "low_f": _safe_int(r.get("low")),
-                "high_time": r.get("high_time", ""),
-                "low_time": r.get("low_time", ""),
+                "high_time": _format_time(r.get("high_time")),
+                "low_time": _format_time(r.get("low_time")),
+                "high_time_local": _parse_local_time(r["valid"], r.get("high_time")),
+                "low_time_local": _parse_local_time(r["valid"], r.get("low_time")),
                 "high_normal": _safe_int(r.get("high_normal")),
                 "high_depart": _safe_int(r.get("high_depart")),
                 "high_record": _safe_int(r.get("high_record")),
@@ -242,4 +252,28 @@ def _safe_float(val) -> float | None:
     try:
         return float(val)
     except (ValueError, TypeError):
+        return None
+
+
+def _format_time(val) -> str:
+    """Format '1213 PM' as '12:13 PM'."""
+    if not val or val == "M":
+        return ""
+    val = str(val).strip()
+    if " " in val:
+        time_part, ampm = val.rsplit(" ", 1)
+        if time_part.isdigit() and len(time_part) in (3, 4):
+            time_part = time_part.zfill(4)
+            return f"{time_part[:2]}:{time_part[2:]} {ampm}"
+    return val
+
+
+def _parse_local_time(valid_date_str: str, time_str) -> pd.Timestamp | None:
+    """Parse '2026-02-19' and '1213 PM' into a naive local datetime."""
+    formatted = _format_time(time_str)
+    if not formatted:
+        return None
+    try:
+        return pd.to_datetime(f"{valid_date_str} {formatted}", format="%Y-%m-%d %I:%M %p")
+    except Exception:
         return None

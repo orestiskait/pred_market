@@ -176,7 +176,11 @@ class METARFetcher(WeatherFetcherBase):
 
             row = {
                 "station": station.icao,
+                "station_iata": station.iata,
+                "city": station.city,
+                "timezone": station.tz,
                 "valid_utc": report_time,
+                "valid_local": report_time.tz_convert(station.tz).tz_localize(None),
                 "metar_type": obs.get("metarType", ""),  # METAR or SPECI
                 "temp_c": temp_c,
                 "dewp_c": obs.get("dewp"),
@@ -240,7 +244,11 @@ class METARFetcher(WeatherFetcherBase):
 
         row = {
             "station": station.icao,
+            "station_iata": station.iata,
+            "city": station.city,
+            "timezone": station.tz,
             "valid_utc": report_time,
+            "valid_local": report_time.tz_convert(station.tz).tz_localize(None),
             "metar_type": obs.get("metarType", ""),
             "temp_c": temp_c,
             "temp_f": _c_to_f(temp_c),

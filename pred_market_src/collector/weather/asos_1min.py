@@ -111,6 +111,9 @@ class ASOS1MinFetcher(WeatherFetcherBase):
         df["valid_utc"] = pd.to_datetime(df["valid_utc"], utc=True)
         df = df.rename(columns={"station": "station_iata"})
         df["station"] = station.icao
+        df["city"] = station.city
+        df["timezone"] = station.tz
+        df["valid_local"] = df["valid_utc"].dt.tz_convert(station.tz).dt.tz_localize(None)
 
         # Coerce temperature columns to numeric (M = missing → NaN)
         for v in vars:
@@ -199,6 +202,9 @@ class ASOS1MinFetcher(WeatherFetcherBase):
         df = df.rename(columns={"valid(UTC)": "valid_utc", "station": "station_iata"})
         df["valid_utc"] = pd.to_datetime(df["valid_utc"], utc=True)
         df["station"] = station.icao
+        df["city"] = station.city
+        df["timezone"] = station.tz
+        df["valid_local"] = df["valid_utc"].dt.tz_convert(station.tz).dt.tz_localize(None)
 
         for v in vars:
             if v in df.columns:
