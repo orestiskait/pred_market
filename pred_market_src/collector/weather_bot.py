@@ -94,6 +94,10 @@ class WeatherBot:
         # Map of market_ticker -> dict of current orderbook { 'yes': {price: qty}, 'no': {price: qty} }
         self.orderbooks = {}
         
+        # Active WebSocket connections
+        self.active_kalshi_ws = None
+        self.active_synoptic_ws = None
+        
         # Map of event_ticker -> list of active market_tickers
         self.active_event_ticker = None
         self.market_tickers = []
@@ -148,30 +152,23 @@ class WeatherBot:
             self.orderbooks[tk] = {"yes": {}, "no": {}}
             
             # Identify the specific market we want to short.
-            # Chicago High Temps format: "34° or below", "35° to 36°", etc.
-            subtitle = m.get("subtitle", "").lower()
-            
-            # We skip "or above" because rising temperatures do not invalidate them.
-            if "or above" in subtitle:
+            # We skip "or above" contracts because rising temperatures do not invalidate them.
+            cap_strike = m.get("cap_strike")
+            if cap_strike is None:
                 continue
                 
-            nums = [int(n) for n in re.findall(r'\d+', subtitle)]
-            if not nums:
-                continue
-                
-            highest_num = max(nums)
-            trigger_temp = float(highest_num + 1)
+            trigger_temp = float(cap_strike)
             
             self.ladder[tk] = {
                 "trigger_temp": trigger_temp,
                 "subtitle": m.get("subtitle"),
                 "executed": False
             }
-            logger.info(f" Ladder active for {tk} ('{m.get('subtitle')}'). Triggers at > {trigger_temp}°F")
+            logger.info(f" Ladder active for {tk} ('{m.get('subtitle')}'). Triggers at >= {trigger_temp}°F")
 
         target_tickers = list(self.ladder.keys())
         if not target_tickers:
-            logger.warning(f"Could not parse any valid ladder contracts in: {[m.get('subtitle') for m in markets]}")
+            logger.warning(f"Could not parse any valid ladder contracts with cap_strikes.")
         else:
             logger.info(f"Tracking {len(self.market_tickers)} total contracts. Ladder targets: {len(target_tickers)}")
 
@@ -186,6 +183,7 @@ class WeatherBot:
             try:
                 headers = self.kalshi_auth.ws_headers()
                 async with websockets.connect(self.kalshi_ws_url, additional_headers=headers) as ws:
+                    self.active_kalshi_ws = ws
                     logger.info("Kalshi WebSocket connected")
 
                     # Subscribe to orderbook changes
@@ -208,10 +206,11 @@ class WeatherBot:
 
                         if mtype == "orderbook_snapshot":
                             tk = data.get("market_ticker", "")
-                            if tk in self.orderbooks:
-                                for side in ("yes", "no"):
-                                    for price, qty in data.get(side, []):
-                                        self.orderbooks[tk][side][int(price)] = qty
+                            # Flush state fully on new snapshot (handles reconnection integrity)
+                            self.orderbooks[tk] = {"yes": {}, "no": {}}
+                            for side in ("yes", "no"):
+                                for price, qty in data.get(side, []):
+                                    self.orderbooks[tk][side][int(price)] = qty
 
                         elif mtype == "orderbook_delta":
                             tk = data.get("market_ticker", "")
@@ -240,6 +239,7 @@ class WeatherBot:
         while self.running:
             try:
                 async with websockets.connect(self.synoptic_ws_url, ping_interval=None) as ws:
+                    self.active_synoptic_ws = ws
                     logger.info("Synoptic WebSocket connected")
 
                     async for raw in ws:
@@ -278,10 +278,11 @@ class WeatherBot:
                 continue
                 
             threshold = info["trigger_temp"]
-            all_above_threshold = all(t > threshold for t in recent_obs)
+            # Trigger requires >= because cap_strike means anything exactly matching or above resolves the bin to NO
+            all_above_threshold = all(t >= threshold for t in recent_obs)
             
             if all_above_threshold:
-                logger.warning(f"🚨 LADDER TRIGGERED! Last {CONSECUTIVE_OBS_REQUIRED} obs: {recent_obs} > {threshold}°F!")
+                logger.warning(f"🚨 LADDER TRIGGERED! Last {CONSECUTIVE_OBS_REQUIRED} obs: {recent_obs} >= {threshold}°F!")
                 logger.warning(f"   Targeting contract: {tk} ('{info['subtitle']}')")
                 self.ladder[tk]["executed"] = True
                 await self.execute_paper_trade(tk, side="no")
@@ -294,6 +295,10 @@ class WeatherBot:
     async def execute_paper_trade(self, market_ticker: str, side: str):
         """
         Simulate a market sweep order against the live orderbook up to MAX_PRICE_CENTS.
+        Note: For LIVE execution, calculating depth dynamically in Python introduces latency.
+        Instead, you would immediately send a 'Fill or Kill' (FOK) or 'Immediate or Cancel' (IOC)
+        Market Order payload to `<base_url>/portfolio/orders` specifying MAX_PRICE_CENTS.
+        Kalshi's internal matching engine guarantees atomicity and latency optimization.
         """
         logger.info(f"Executing PAPER SWEEP for {market_ticker} {side.upper()} up to {MAX_PRICE_CENTS}¢")
         
@@ -302,28 +307,19 @@ class WeatherBot:
             logger.error("Cannot execute: Orderbook state is missing!")
             return
 
-        # We are *buying* the `side`. That means we look at the `side`'s ASK orderbook.
-        # Wait, Kalshi's API returns `yes` and `no` sides. 
-        # A "yes" orderbook entry is someone resting a limit order. If it's the `no` side, 
-        # those are people offering to sell `no` contracts. We sweep those asks. 
-        # Note: In our kalshi-collector we just store `price` and `qty` indiscriminately.
-        # Actually, Kalshi WebSocket orderbook snapshot provides resting bids. 
-        # If we want to BUY NO, we match against resting YES bids 
-        # (buying NO at price `p` = matching a YES bid at `100 - p`).
-        # Or Kalshi provides `no` asks directly. For safety and accuracy in this paper trader, 
-        # we'll assume the `side` orderbook in `self.orderbooks[tk][side]` represents 
-        # resting orders *to sell* that side (asks) if we are sweeping upwards.
-        # Let's simplify and just look at the available prices provided in the WS dump. 
+        # Kalshi V2 WebSockets provide `side="yes"` for YES bids, and `side="no"` for NO bids.
+        # To strictly buy NO, we must cross the spread and hit resting YES bids (i.e. implied NO asks).
+        # We calculate the implied NO Ask Price = 100 - YES Bid Price.
         
-        # In Kalshi's V2 WS, the `no` side of orderbook_snapshot are resting NO bids and YES bids. 
-        # Let's assume `ob['no']` contains resting offers we can buy from. 
-        # We sort by lowest price first.
+        target_bids = "yes"  # Since we are buying "NO", we match against resting "YES" bids
+        
         available_levels = []
-        for price, qty in ob[side].items():
+        for price, qty in ob[target_bids].items():
             if qty > 0:
-                available_levels.append((price, qty))
+                implied_no_price = 100 - price
+                available_levels.append((implied_no_price, qty))
                 
-        available_levels.sort(key=lambda x: x[0])  # Sort ascending (cheapest first)
+        available_levels.sort(key=lambda x: x[0])  # Sort ascending (cheapest theoretical NO Ask first)
         
         total_contracts_bought = 0
         total_cost = 0
@@ -400,6 +396,12 @@ class WeatherBot:
     def shutdown(self):
         logger.info("Shutdown signal received")
         self.running = False
+        
+        # Forcefully terminate active websockets to break generators
+        if self.active_kalshi_ws:
+            asyncio.create_task(self.active_kalshi_ws.close())
+        if self.active_synoptic_ws:
+            asyncio.create_task(self.active_synoptic_ws.close())
 
 
 if __name__ == "__main__":
