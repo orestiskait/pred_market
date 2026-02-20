@@ -22,7 +22,7 @@ services:
     container_name: kalshi-collector
     restart: unless-stopped
     env_file:
-      - ${KALSHI_ENV_FILE:-.env}
+      - ${SHARED_ENV_FILE:-.env}
     volumes:
       - ${DATA_DIR:-./data}:/app/data
     networks:
@@ -35,7 +35,7 @@ services:
     restart: unless-stopped
     command: python /app/synoptic_listener.py
     env_file:
-      - ${KALSHI_ENV_FILE:-.env}
+      - ${SHARED_ENV_FILE:-.env}
     volumes:
       - ${DATA_DIR:-./data}:/app/data
     networks:

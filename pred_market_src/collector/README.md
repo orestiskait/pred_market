@@ -8,7 +8,8 @@ This module fetches and stores Kalshi prediction market time-series data for ana
 
 | Component | Data source | What it collects | Output |
 |-----------|-------------|------------------|--------|
-| **Live collector** | WebSocket | Orderbook depth, yes/no bids, volume, open interest | `market_snapshots`, `orderbook_snapshots` (parquet) |
+| **Kalshi Live collector** | WebSocket | Orderbook depth, yes/no bids, volume, open interest | `market_snapshots`, `orderbook_snapshots` (parquet) |
+| **Synoptic Live collector** | WebSocket | Temperature floats, observation timestamps, stations | `synoptic_ws` (parquet) |
 | **Backfill** | REST API | Candlesticks (OHLC), individual trades | `historical/candlesticks`, `historical/trades` (parquet) |
 
 Key constraint: **Kalshi does not offer historical orderbook data**. The REST API only returns the current orderbook. To build orderbook time-series, you must run the live collector and let it snapshot the orderbook over time.
@@ -172,19 +173,20 @@ Both tables use the same `snapshot_ts` for each snapshot cycle.
 
 ### Live (WebSocket)
 
+**Kalshi Markets:**
 ```bash
 pred_env/bin/python pred_market_src/collector/collector.py
 ```
 
-Or with a custom config:
-
+**Synoptic Weather:**
 ```bash
-pred_env/bin/python pred_market_src/collector/collector.py --config /path/to/config.yaml --log-level DEBUG
+pred_env/bin/python pred_market_src/collector/synoptic_listener.py
 ```
 
-- Runs until SIGINT (Ctrl+C) or SIGTERM.
-- Flushes buffers on shutdown.
-- Reconnects to WebSocket automatically on disconnect.
+Or run both in Docker:
+```bash
+docker compose up -d
+```
 
 ### Historical backfill
 
