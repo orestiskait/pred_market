@@ -77,6 +77,34 @@ ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" \
   'docker logs --tail 15 kalshi-collector' 2>/dev/null || echo "[probe] Could not fetch logs"
 
 echo ""
+echo "── Data recency ──"
+# Collector flushes every 5 min (flush_interval_seconds: 300). Flag stale if > 15 min.
+ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" 'bash -s' << 'RECENCY'
+STALE_MIN=15
+DATA_DIR=~/collector-data
+NEWEST=$(find "$DATA_DIR/market_snapshots" "$DATA_DIR/orderbook_snapshots" -name "*.parquet" 2>/dev/null \
+  | xargs -r stat -c "%Y %n" 2>/dev/null | sort -nr | head -1)
+if [[ -z "$NEWEST" ]]; then
+  echo "No parquet files yet"
+else
+  MTIME=${NEWEST%% *}
+  FILE=${NEWEST#* }
+  NOW=$(date +%s)
+  AGE_SEC=$((NOW - MTIME))
+  AGE_MIN=$((AGE_SEC / 60))
+  SHORT=${FILE#${DATA_DIR}/}
+  if [[ $AGE_MIN -gt $STALE_MIN ]]; then
+    echo "Last write: ${AGE_MIN} min ago ($SHORT)"
+    echo "Status: STALE (>${STALE_MIN} min — check collector)"
+  else
+    echo "Last write: ${AGE_MIN} min ago ($SHORT)"
+    echo "Status: OK"
+  fi
+fi
+RECENCY
+2>/dev/null || echo "[probe] Could not get data recency"
+
+echo ""
 echo "── Data freshness ──"
 ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" \
   'ls -la ~/collector-data/market_snapshots/ ~/collector-data/orderbook_snapshots/ 2>/dev/null || echo "No data dirs yet"' 2>/dev/null
