@@ -21,6 +21,7 @@ import csv
 import json
 import logging
 import os
+import re
 import signal
 import time
 from collections import deque
@@ -46,9 +47,9 @@ logger = logging.getLogger("WeatherBot")
 STATION = "KMDW1M"
 EVENT_SERIES = "KXHIGHCHI"
 
-# Our trigger threshold (float). 
-# Example: If > 35.0, buy NO on the contract that says "High < 35"
-TARGET_TEMP = 35.0
+# Our trigger threshold logic is dynamic now (ladder approach).
+# For example, if contract says "34° or below", trigger is > 35.0.
+# If contract says "35° to 36°", trigger is > 37.0.
 
 # Number of consecutive 1-minute observations required above TARGET_TEMP
 CONSECUTIVE_OBS_REQUIRED = 2
@@ -97,11 +98,9 @@ class WeatherBot:
         self.active_event_ticker = None
         self.market_tickers = []
         
-        # Target contract to buy (e.g. the specific bin representing < 35)
-        self.target_market_ticker = None
-        
-        # Did we already execute the trade for today's event?
-        self.trade_executed = False
+        # Ladder of contracts we want to short
+        # Map of market_ticker -> {"trigger_temp": float, "subtitle": str, "executed": bool}
+        self.ladder = {}
 
         # 3. Paper Trading State
         self.paper_balance = STARTING_BALANCE_CENTS
@@ -152,20 +151,29 @@ class WeatherBot:
             # Chicago High Temps format: "34° or below", "35° to 36°", etc.
             subtitle = m.get("subtitle", "").lower()
             
-            # If the strategy target is 35.0, then "34° or below" is the contract
-            # that we're certain is a loser (i.e., NO is guaranteed) if temp hits > 35.0
-            if "or below" in subtitle:
-                # We can also dynamically extract the number if we want to confirm it matches TARGET_TEMP
-                # e.g., "34° or below" -> 34 < 35.0
-                num_str = ''.join(filter(str.isdigit, subtitle))
-                if num_str and float(num_str) < TARGET_TEMP:
-                    self.target_market_ticker = tk
-                    logger.info(f"Identified TARGET contract: {tk} ('{m.get('subtitle')}')")
+            # We skip "or above" because rising temperatures do not invalidate them.
+            if "or above" in subtitle:
+                continue
+                
+            nums = [int(n) for n in re.findall(r'\d+', subtitle)]
+            if not nums:
+                continue
+                
+            highest_num = max(nums)
+            trigger_temp = float(highest_num + 1)
+            
+            self.ladder[tk] = {
+                "trigger_temp": trigger_temp,
+                "subtitle": m.get("subtitle"),
+                "executed": False
+            }
+            logger.info(f" Ladder active for {tk} ('{m.get('subtitle')}'). Triggers at > {trigger_temp}°F")
 
-        if not self.target_market_ticker:
-            logger.warning(f"Could not find a valid 'or below' < {TARGET_TEMP} contract in: {[m.get('subtitle') for m in markets]}")
+        target_tickers = list(self.ladder.keys())
+        if not target_tickers:
+            logger.warning(f"Could not parse any valid ladder contracts in: {[m.get('subtitle') for m in markets]}")
         else:
-            logger.info(f"Tracking {len(self.market_tickers)} total contracts for the orderbook phase")
+            logger.info(f"Tracking {len(self.market_tickers)} total contracts. Ladder targets: {len(target_tickers)}")
 
     # -------------------------------------------------------------------------
     # WebSocket 1: Kalshi Orderbook Listener 
@@ -186,7 +194,7 @@ class WeatherBot:
                         "cmd": "subscribe",
                         "params": {
                             "channels": ["orderbook_delta"],
-                            "market_tickers": [self.target_market_ticker] if self.target_market_ticker else self.market_tickers,
+                            "market_tickers": list(self.ladder.keys()) if self.ladder else self.market_tickers,
                         },
                     }
                     await ws.send(json.dumps(sub))
@@ -257,28 +265,26 @@ class WeatherBot:
 
     async def evaluate_strategy(self, latest_temp: float):
         """
-        Check if the last `CONSECUTIVE_OBS_REQUIRED` temperatures are > TARGET_TEMP.
-        If yes, explicitly trigger the execution engine to sweep the NO orderbook.
+        Check if the last `CONSECUTIVE_OBS_REQUIRED` temperatures are > any of our ladder triggers.
+        If yes, and not yet executed, trigger the sweep for that contract.
         """
-        if self.trade_executed:
-            return  # We already bought our position for today
-
-        if not self.target_market_ticker:
-            logger.warning(f"Strategy triggered (Temp {latest_temp}), but no target market is identified!")
-            return
-
         if len(self.weather_history) < CONSECUTIVE_OBS_REQUIRED:
             return
 
-        # Check the last N elements
         recent_obs = list(self.weather_history)[-CONSECUTIVE_OBS_REQUIRED:]
         
-        all_above_threshold = all(t > TARGET_TEMP for t in recent_obs)
-        
-        if all_above_threshold:
-            logger.warning(f"🚨 STRATEGY TRIGGERED! Last {CONSECUTIVE_OBS_REQUIRED} obs: {recent_obs} > {TARGET_TEMP}!")
-            self.trade_executed = True
-            await self.execute_paper_trade(self.target_market_ticker, side="no")
+        for tk, info in self.ladder.items():
+            if info["executed"]:
+                continue
+                
+            threshold = info["trigger_temp"]
+            all_above_threshold = all(t > threshold for t in recent_obs)
+            
+            if all_above_threshold:
+                logger.warning(f"🚨 LADDER TRIGGERED! Last {CONSECUTIVE_OBS_REQUIRED} obs: {recent_obs} > {threshold}°F!")
+                logger.warning(f"   Targeting contract: {tk} ('{info['subtitle']}')")
+                self.ladder[tk]["executed"] = True
+                await self.execute_paper_trade(tk, side="no")
 
 
     # -------------------------------------------------------------------------
@@ -375,8 +381,8 @@ class WeatherBot:
         
         # 1. Discover the exact markets first
         self.discover_markets()
-        if not self.target_market_ticker:
-            logger.warning("No target market identified! The bot will listen but not trade.")
+        if not self.ladder:
+            logger.warning("No ladder markets identified! The bot will listen but not trade.")
             
         loop = asyncio.get_event_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
