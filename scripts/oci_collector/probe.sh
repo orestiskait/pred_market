@@ -58,6 +58,11 @@ if [[ -z "$PUBLIC_IP" || "$PUBLIC_IP" == "null" ]]; then
 fi
 
 # ── SSH probe ────────────────────────────────────────────────────────────────
+echo "── Code version ──"
+ssh -o ConnectTimeout=10 -o BatchMode=yes ubuntu@"$PUBLIC_IP" \
+  'cd ~/pred_market && echo "Branch: $(git rev-parse --abbrev-ref HEAD)" && echo "Commit: $(git rev-parse --short HEAD)"' 2>/dev/null || echo "[probe] Could not get git info"
+
+echo ""
 echo "── Container status ──"
 if ! ssh -o ConnectTimeout=10 -o BatchMode=yes ubuntu@"$PUBLIC_IP" \
   '~/pred_market/scripts/oci_collector/run_collector.sh status' 2>/dev/null; then
