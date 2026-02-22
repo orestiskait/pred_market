@@ -11,9 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy collector source
-COPY collector.py kalshi_client.py storage.py backfill.py synoptic_listener.py weather_bot.py __init__.py tz.py ./
-COPY config.yaml .
+# Copy the entire collector package (structured layout)
+COPY . /app/pred_market_src/collector/
+
+# Create top-level pred_market_src __init__.py so imports work
+RUN touch /app/pred_market_src/__init__.py
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh

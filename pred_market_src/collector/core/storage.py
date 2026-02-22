@@ -1,22 +1,29 @@
-"""Parquet storage for Kalshi market data - live snapshots and historical backfill."""
+"""Parquet storage for live Kalshi market data and Synoptic observations.
+
+Provides append-friendly parquet I/O organised by date:
+  data/market_snapshots/YYYY-MM-DD.parquet
+  data/orderbook_snapshots/YYYY-MM-DD.parquet
+  data/synoptic_ws/YYYY-MM-DD.parquet
+"""
+
+from __future__ import annotations
 
 import logging
 from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional
 
-try:
-    from pred_market_src.collector.tz import utc_today
-except ModuleNotFoundError:
-    from tz import utc_today
-
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from ..tz import utc_today
+
 logger = logging.getLogger(__name__)
 
+# ======================================================================
 # Schemas
+# ======================================================================
 
 MARKET_SNAPSHOT_SCHEMA = pa.schema([
     ("snapshot_ts",   pa.timestamp("us", tz="UTC")),
@@ -37,28 +44,7 @@ ORDERBOOK_SNAPSHOT_SCHEMA = pa.schema([
     ("side",           pa.string()),
     ("price_cents",    pa.int32()),
     ("quantity",       pa.float64()),
-    ("snapshot_type",  pa.string()),  # "baseline" (full book) or "delta" (changes only)
-])
-
-CANDLESTICK_SCHEMA = pa.schema([
-    ("timestamp",     pa.timestamp("us", tz="UTC")),
-    ("event_ticker",  pa.string()),
-    ("market_ticker", pa.string()),
-    ("open_price",    pa.float64()),
-    ("close_price",   pa.float64()),
-    ("high_price",    pa.float64()),
-    ("low_price",     pa.float64()),
-    ("volume",        pa.int64()),
-])
-
-TRADE_SCHEMA = pa.schema([
-    ("timestamp",     pa.timestamp("us", tz="UTC")),
-    ("event_ticker",  pa.string()),
-    ("market_ticker", pa.string()),
-    ("trade_id",      pa.string()),
-    ("price",         pa.int32()),
-    ("count",         pa.int64()),
-    ("taker_side",    pa.string()),
+    ("snapshot_type",  pa.string()),  # "baseline" | "delta"
 ])
 
 SYNOPTIC_WS_SCHEMA = pa.schema([
@@ -70,30 +56,42 @@ SYNOPTIC_WS_SCHEMA = pa.schema([
 ])
 
 
+# ======================================================================
+# Storage class
+# ======================================================================
+
 class ParquetStorage:
-    """Append-friendly parquet I/O organized by date (live) or event (historical)."""
+    """Append-friendly parquet I/O organised by date."""
 
     def __init__(self, data_dir: str):
         self.data_dir = Path(data_dir)
         self.dirs = {
-            "market":       self.data_dir / "market_snapshots",
-            "orderbook":    self.data_dir / "orderbook_snapshots",
-            "synoptic_ws":  self.data_dir / "synoptic_ws",
-            "candlesticks": self.data_dir / "historical" / "candlesticks",
-            "trades":       self.data_dir / "historical" / "trades",
+            "market":      self.data_dir / "market_snapshots",
+            "orderbook":   self.data_dir / "orderbook_snapshots",
+            "synoptic_ws": self.data_dir / "synoptic_ws",
         }
         for d in self.dirs.values():
             d.mkdir(parents=True, exist_ok=True)
 
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
     @staticmethod
-    def _append(path: Path, table: pa.Table):
-        """Write table to path, appending to an existing file if present."""
+    def _append(path: Path, table: pa.Table) -> None:
+        """Write table to *path*, appending to an existing file if present."""
         if path.exists():
             existing = pq.read_table(path)
             table = pa.concat_tables([existing, table])
         pq.write_table(table, path)
 
-    def _write(self, kind: str, filename: str, rows: List[Dict], schema: pa.Schema):
+    def _write(
+        self,
+        kind: str,
+        filename: str,
+        rows: List[Dict],
+        schema: pa.Schema,
+    ) -> None:
         if not rows:
             return
         df = pd.DataFrame(rows)
@@ -102,29 +100,31 @@ class ParquetStorage:
         self._append(path, table)
         logger.info("Wrote %d rows to %s", len(rows), path)
 
-    # -- live snapshots ---------------------------------------------------
+    # ------------------------------------------------------------------
+    # Writers
+    # ------------------------------------------------------------------
 
-    def write_market_snapshots(self, rows: List[Dict], dt: Optional[date] = None):
+    def write_market_snapshots(
+        self, rows: List[Dict], dt: Optional[date] = None,
+    ) -> None:
         dt = dt or utc_today()
         self._write("market", f"{dt.isoformat()}.parquet", rows, MARKET_SNAPSHOT_SCHEMA)
 
-    def write_orderbook_snapshots(self, rows: List[Dict], dt: Optional[date] = None):
+    def write_orderbook_snapshots(
+        self, rows: List[Dict], dt: Optional[date] = None,
+    ) -> None:
         dt = dt or utc_today()
         self._write("orderbook", f"{dt.isoformat()}.parquet", rows, ORDERBOOK_SNAPSHOT_SCHEMA)
 
-    # -- historical backfill ----------------------------------------------
-
-    def write_candlesticks(self, rows: List[Dict], event_ticker: str):
-        self._write("candlesticks", f"{event_ticker}.parquet", rows, CANDLESTICK_SCHEMA)
-
-    def write_trades(self, rows: List[Dict], event_ticker: str):
-        self._write("trades", f"{event_ticker}.parquet", rows, TRADE_SCHEMA)
-
-    def write_synoptic_ws(self, rows: List[Dict], dt: Optional[date] = None):
+    def write_synoptic_ws(
+        self, rows: List[Dict], dt: Optional[date] = None,
+    ) -> None:
         dt = dt or utc_today()
         self._write("synoptic_ws", f"{dt.isoformat()}.parquet", rows, SYNOPTIC_WS_SCHEMA)
 
-    # -- reading ----------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Readers
+    # ------------------------------------------------------------------
 
     def read_parquets(
         self,
@@ -132,9 +132,9 @@ class ParquetStorage:
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
     ) -> pd.DataFrame:
-        """Read and concatenate parquet files.
+        """Read and concatenate parquet files for *kind*.
 
-        kind: "market" | "orderbook" | "candlesticks" | "trades"
+        kind: ``"market"`` | ``"orderbook"`` | ``"synoptic_ws"``
         """
         base = self.dirs[kind]
         files = sorted(base.glob("*.parquet"))
@@ -157,8 +157,8 @@ class ParquetStorage:
         """Reconstruct full orderbook state at every snapshot timestamp.
 
         Reads the raw baseline+delta parquet data, replays deltas on top of
-        baselines, and returns a DataFrame with the same schema as if every
-        snapshot had been a full baseline.
+        baselines, and returns a DataFrame as if every snapshot were a full
+        baseline.
         """
         raw = self.read_parquets("orderbook", start_date, end_date)
         if raw.empty:

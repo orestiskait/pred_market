@@ -1,53 +1,48 @@
 """Live WebSocket-based Kalshi market data collector.
 
+Streams real-time Kalshi market data (orderbooks + tickers) and
+periodically snapshots state to Parquet.
+
 Usage:
-    pred_env/bin/python pred_market_src/collector/collector.py
-    pred_env/bin/python pred_market_src/collector/collector.py --config path/to/config.yaml
+    python -m pred_market_src.collector.kalshi.collector
+    python -m pred_market_src.collector.kalshi.collector --config path/to/config.yaml
 """
 
+from __future__ import annotations
+
 import asyncio
-import json
 import logging
-import os
-import signal
 import time
-from pathlib import Path
-
-from dotenv import load_dotenv
-
-# Load .env from collector directory so KALSHI_API_KEY_ID etc. are available
-load_dotenv(Path(__file__).resolve().parent / ".env")
-
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, List
 
-import websockets
-import yaml
-
-# Support both package and script-level imports.
-try:
-    from .kalshi_client import KalshiAuth, KalshiRestClient
-    from .storage import ParquetStorage
-except ImportError:
-    from kalshi_client import KalshiAuth, KalshiRestClient
-    from storage import ParquetStorage
+from ..core import (
+    AsyncService,
+    ParquetStorage,
+    load_config,
+    make_kalshi_clients,
+    standard_argparser,
+    configure_logging,
+)
+from ..markets import resolve_event_tickers, discover_markets
+from .ws import KalshiWSMixin
 
 logger = logging.getLogger(__name__)
 
 
-class LiveCollector:
+class LiveCollector(AsyncService, KalshiWSMixin):
     """Streams Kalshi WebSocket data and periodically snapshots state to parquet."""
 
     def __init__(self, config: dict, config_dir: Path):
         self.config = config
 
-        # Auth
-        kcfg = config["kalshi"]
-        api_key_id = os.environ.get("KALSHI_API_KEY_ID") or kcfg.get("api_key_id", "")
-        pk_path = os.environ.get("KALSHI_PRIVATE_KEY_PATH") or kcfg.get("private_key_path", "")
-        self.auth = KalshiAuth(api_key_id, pk_path)
-        self.rest = KalshiRestClient(kcfg["base_url"], self.auth)
-        self.ws_url = kcfg["ws_url"]
+        # Kalshi API (shared factory)
+        self.kalshi_auth, self.rest = make_kalshi_clients(config)
+        self.kalshi_ws_url = config["kalshi"]["ws_url"]
+
+        # Tell the mixin to subscribe to both channels
+        self._kalshi_channels = ["orderbook_delta", "ticker"]
 
         # Storage
         data_dir = config_dir / config["storage"]["data_dir"]
@@ -86,56 +81,14 @@ class LiveCollector:
     # Market discovery                                                     #
     # ------------------------------------------------------------------ #
 
-    def _resolve_event_tickers(self) -> list[str]:
-        """Return the list of event tickers to track.
-
-        Supports two config keys (can be combined):
-        - ``event_series``: list of series prefixes (e.g. ``KXHIGHCHI``).
-          The collector queries the API for currently-open events and picks
-          the one with the latest ``close_time`` for each series.
-        - ``events``: list of exact event tickers (legacy / override).
-        """
-        tickers: list[str] = []
-
-        for series in self.config.get("event_series", []):
-            logger.info("Resolving series %s → open events", series)
-            events = self.rest.get_events_for_series(series, status="open")
-            if not events:
-                logger.warning("  No open events found for series %s", series)
-                continue
-            # Pick the event whose close_time is soonest in the future (i.e.
-            # the one actively trading today).  Fall back to ticker sort.
-            events.sort(key=lambda e: e.get("close_time") or e.get("ticker", ""))
-            chosen = events[0]["event_ticker"]
-            logger.info("  → %s (%d open event(s) found)", chosen, len(events))
-            tickers.append(chosen)
-
-        tickers.extend(self.config.get("events", []))
-        return tickers
-
-    def discover_markets(self):
-        """Fetch all contract tickers for the configured events via REST."""
-        for event_ticker in self._resolve_event_tickers():
-            logger.info("Discovering markets for %s", event_ticker)
-            markets = self.rest.get_markets_for_event(event_ticker)
-            for m in markets:
-                tk = m["ticker"]
-                self.market_tickers.append(tk)
-                self.market_info[tk] = {
-                    "event_ticker": event_ticker,
-                    "subtitle": m.get("subtitle", ""),
-                    "yes_bid": m.get("yes_bid", 0),
-                    "yes_ask": m.get("yes_ask", 0),
-                    "last_price": m.get("last_price", 0),
-                    "volume": m.get("volume", 0),
-                    "open_interest": m.get("open_interest", 0),
-                }
-                self.orderbooks[tk] = {"yes": {}, "no": {}}
-            logger.info("  %d contracts found", len(markets))
-        logger.info("Tracking %d total contracts", len(self.market_tickers))
+    def _discover(self):
+        """Resolve events from config and fetch contract metadata."""
+        event_tickers = resolve_event_tickers(self.rest, self.config)
+        self.market_tickers, self.market_info = discover_markets(self.rest, event_tickers)
 
         # Seed previous prices for spike detection (from REST initial state)
         for tk, info in self.market_info.items():
+            self.orderbooks[tk] = {"yes": {}, "no": {}}
             self._prev_prices[tk] = {
                 "yes_bid": info.get("yes_bid", 0),
                 "yes_ask": info.get("yes_ask", 0),
@@ -143,33 +96,22 @@ class LiveCollector:
             }
 
     # ------------------------------------------------------------------ #
-    # WebSocket message handling                                           #
+    # Kalshi message hook (extends base mixin)                             #
     # ------------------------------------------------------------------ #
 
-    def _handle_message(self, raw: str):
-        msg = json.loads(raw)
-        mtype = msg.get("type")
-        data = msg.get("msg", {})
-
+    def on_kalshi_message(self, mtype: str, data: dict):
+        """Handle ticker updates and spike detection on top of base OB tracking."""
         if mtype == "orderbook_snapshot":
+            # Mark all levels dirty for delta compression
             tk = data.get("market_ticker", "")
-            ob = {"yes": {}, "no": {}}
-            for side in ("yes", "no"):
-                for price, qty in data.get(side, []):
-                    ob[side][price] = qty
-            self.orderbooks[tk] = ob
             self._mark_all_dirty(tk)
 
         elif mtype == "orderbook_delta":
+            # Track dirty levels for delta compression
             tk = data.get("market_ticker", "")
-            if tk in self.orderbooks:
-                for side in ("yes", "no"):
-                    for price, qty in data.get(side, []):
-                        if qty <= 0:
-                            self.orderbooks[tk][side].pop(price, None)
-                        else:
-                            self.orderbooks[tk][side][price] = qty
-                        self._dirty_levels.setdefault(tk, {}).setdefault(side, set()).add(int(price))
+            for side in ("yes", "no"):
+                for price, _qty in data.get(side, []):
+                    self._dirty_levels.setdefault(tk, {}).setdefault(side, set()).add(int(price))
 
         elif mtype in ("ticker", "ticker_v2"):
             tk = data.get("market_ticker", "")
@@ -179,7 +121,6 @@ class LiveCollector:
                     if f in data:
                         self.market_info[tk][f] = data[f]
 
-                # Event-driven snapshot on sharp price move (spike detection)
                 if self.spike_threshold > 0:
                     self._maybe_snapshot_on_spike(tk, data)
 
@@ -187,15 +128,13 @@ class LiveCollector:
             logger.error("WS error: %s", data)
         elif mtype == "subscribed":
             logger.info("Subscribed: sid=%s", data.get("sid"))
-        else:
-            logger.debug("Unhandled WS message type: %s", mtype)
+
+    # ------------------------------------------------------------------ #
+    # Spike detection                                                      #
+    # ------------------------------------------------------------------ #
 
     def _maybe_snapshot_on_spike(self, tk: str, data: dict):
-        """Snapshot immediately when price moves ≥ spike_threshold since last snapshot.
-
-        _prev_prices is only updated when a snapshot is taken (periodic or here),
-        so cumulative moves during cooldown are never silently absorbed.
-        """
+        """Snapshot immediately when price moves ≥ spike_threshold since last snapshot."""
         prev = self._prev_prices.get(tk)
         if prev is None:
             return
@@ -357,42 +296,6 @@ class LiveCollector:
     # Async loops                                                          #
     # ------------------------------------------------------------------ #
 
-    async def _ws_loop(self):
-        """WebSocket connection loop with automatic reconnection."""
-        while self._running:
-            try:
-                headers = self.auth.ws_headers()
-                async with websockets.connect(
-                    self.ws_url, additional_headers=headers
-                ) as ws:
-                    logger.info("WebSocket connected")
-
-                    # Subscribe: orderbook_delta (private) + ticker (public)
-                    for msg_id, channel in enumerate(["orderbook_delta", "ticker"], 1):
-                        sub = {
-                            "id": msg_id,
-                            "cmd": "subscribe",
-                            "params": {
-                                "channels": [channel],
-                                "market_tickers": self.market_tickers,
-                            },
-                        }
-                        await ws.send(json.dumps(sub))
-
-                    logger.info("Subscribed to %d markets", len(self.market_tickers))
-
-                    async for raw in ws:
-                        if not self._running:
-                            break
-                        self._handle_message(raw)
-
-            except websockets.ConnectionClosed as e:
-                logger.warning("WS disconnected: %s  — reconnecting in 5s", e)
-                await asyncio.sleep(5)
-            except Exception as e:
-                logger.error("WS error: %s  — reconnecting in 10s", e)
-                await asyncio.sleep(10)
-
     async def _snapshot_loop(self):
         """Periodic baseline snapshots + buffer flush."""
         last_flush = time.monotonic()
@@ -405,28 +308,24 @@ class LiveCollector:
                 self._flush()
                 last_flush = time.monotonic()
 
+    # ------------------------------------------------------------------ #
+    # AsyncService overrides                                               #
+    # ------------------------------------------------------------------ #
+
+    def _get_tasks(self) -> list:
+        return [self.kalshi_ws_loop(), self._snapshot_loop()]
+
+    def _on_shutdown(self):
+        self._flush()
+        logger.info("Buffers flushed.")
+
     async def run(self):
-        """Main entry point — runs until SIGINT / SIGTERM."""
         self._running = True
-        self.discover_markets()
+        self._discover()
         if not self.market_tickers:
-            logger.error("No markets found. Check config 'events' list.")
+            logger.error("No markets found. Check config 'events' / 'event_series'.")
             return
-
-        loop = asyncio.get_event_loop()
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, self._shutdown)
-
-        logger.info("Starting live collector...")
-        try:
-            await asyncio.gather(self._ws_loop(), self._snapshot_loop())
-        finally:
-            self._flush()
-            logger.info("Collector stopped. Buffers flushed.")
-
-    def _shutdown(self):
-        logger.info("Shutdown signal received")
-        self._running = False
+        await super().run()
 
 
 # ------------------------------------------------------------------ #
@@ -434,26 +333,12 @@ class LiveCollector:
 # ------------------------------------------------------------------ #
 
 def main():
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Kalshi live market data collector")
-    parser.add_argument(
-        "--config",
-        default=str(Path(__file__).parent / "config.yaml"),
-        help="Path to config.yaml",
-    )
-    parser.add_argument("--log-level", default="INFO")
+    parser = standard_argparser("Kalshi live market data collector")
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=getattr(logging, args.log_level.upper()),
-        format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
-    )
+    configure_logging(args.log_level)
 
-    config_path = Path(args.config)
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
-
+    config, config_path = load_config(args.config)
     collector = LiveCollector(config, config_dir=config_path.parent)
     asyncio.run(collector.run())
 

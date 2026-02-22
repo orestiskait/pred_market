@@ -32,7 +32,7 @@ services:
     image: kalshi-collector:latest
     container_name: synoptic-listener
     restart: unless-stopped
-    command: python /app/synoptic_listener.py
+    command: python -m pred_market_src.collector.synoptic.listener
     env_file:
       - ${SHARED_ENV_FILE:-.env}
     volumes:
@@ -45,7 +45,7 @@ services:
     image: kalshi-collector:latest
     container_name: weather-bot
     restart: unless-stopped
-    command: python /app/weather_bot.py
+    command: python -m pred_market_src.collector.bot.weather_bot
     env_file:
       - ${SHARED_ENV_FILE:-.env}
     volumes:

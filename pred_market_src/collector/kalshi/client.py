@@ -95,31 +95,3 @@ class KalshiRestClient:
 
     def get_orderbook(self, ticker: str, depth: int = 0) -> dict:
         return self._get(f"/markets/{ticker}/orderbook", params={"depth": depth})
-
-    # -- Historical -------------------------------------------------------
-
-    def get_candlesticks(self, series_ticker: str, market_ticker: str,
-                         start_ts: int, end_ts: int,
-                         period_interval: int = 60) -> list:
-        """Fetch OHLC candlesticks.  *period_interval*: 1 | 60 | 1440 (minutes)."""
-        path = f"/series/{series_ticker}/markets/{market_ticker}/candlesticks"
-        return self._get(path, params={
-            "start_ts": start_ts,
-            "end_ts": end_ts,
-            "period_interval": period_interval,
-        }).get("candlesticks", [])
-
-    def get_trades(self, ticker: str | None = None, min_ts: int | None = None,
-                   max_ts: int | None = None, limit: int = 1000,
-                   cursor: str | None = None) -> dict:
-        """Paginated trade history.  Returns ``{"trades": [...], "cursor": "..."}``."""
-        params: dict = {"limit": limit}
-        if ticker:
-            params["ticker"] = ticker
-        if min_ts is not None:
-            params["min_ts"] = min_ts
-        if max_ts is not None:
-            params["max_ts"] = max_ts
-        if cursor:
-            params["cursor"] = cursor
-        return self._get("/markets/trades", params=params)
