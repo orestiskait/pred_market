@@ -16,7 +16,6 @@ from __future__ import annotations
 import argparse
 import logging
 from datetime import date
-from pathlib import Path
 
 from services.core.config import load_config, configure_logging
 from services.backtest.asos_cli_plateau_analyzer import AsosCliPlateauAnalyzer
@@ -42,8 +41,8 @@ def main():
         help="Station latitude (auto from registry). Use for LST hemisphere: lat<0 → Jul 15, else Jan 15.",
     )
     parser.add_argument(
-        "--asos-source", choices=["synoptic", "iem"], default="synoptic",
-        help="ASOS 1-min source: synoptic or iem (default: synoptic)",
+        "--asos-source", choices=["synoptic", "iem", "both"], default="synoptic",
+        help="ASOS 1-min source: synoptic, iem, or both (same-day comparison vs CLI)",
     )
     parser.add_argument("--start", default=None, help="Start date YYYY-MM-DD")
     parser.add_argument("--end", default=None, help="End date YYYY-MM-DD")
@@ -77,26 +76,149 @@ def main():
             args.station, tz_name,
         )
 
-    analyzer = AsosCliPlateauAnalyzer(
-        data_dir=str(data_dir),
-        station=args.station,
-        tz_name=tz_name,
-        min_consecutive=args.min_consecutive,
-        lat=lat,
-        asos_source=args.asos_source,
-    )
-
     start_date = date.fromisoformat(args.start) if args.start else None
     end_date = date.fromisoformat(args.end) if args.end else None
 
-    report = analyzer.run(start_date=start_date, end_date=end_date)
-    report.log_summary()
-    report.print_table()
+    if args.asos_source == "both":
+        # Same-day comparison: run both IEM and Synoptic on overlap dates
+        overlap, n_iem, n_synoptic = AsosCliPlateauAnalyzer.overlap_dates(
+            data_dir, args.station
+        )
+        if start_date:
+            overlap = [d for d in overlap if d >= start_date]
+        if end_date:
+            overlap = [d for d in overlap if d <= end_date]
+        if not overlap:
+            print("No overlap: no days with both IEM and Synoptic ASOS data (and CLI).")
+            return
 
-    if args.export:
-        df = report.to_dataframe()
-        df.to_csv(args.export, index=False)
-        print(f"\nExported to {args.export}")
+        analyzer_iem = AsosCliPlateauAnalyzer(
+            data_dir=str(data_dir),
+            station=args.station,
+            tz_name=tz_name,
+            min_consecutive=args.min_consecutive,
+            lat=lat,
+            asos_source="iem",
+        )
+        analyzer_synoptic = AsosCliPlateauAnalyzer(
+            data_dir=str(data_dir),
+            station=args.station,
+            tz_name=tz_name,
+            min_consecutive=args.min_consecutive,
+            lat=lat,
+            asos_source="synoptic",
+        )
+        report_iem = analyzer_iem.run_with_dates(overlap)
+        report_synoptic = analyzer_synoptic.run_with_dates(overlap)
+
+        n = len(overlap)
+        print(f"\n{'=' * 120}")
+        print(f"IEM vs CLI / Synoptic vs CLI — same {n} days (overlap)")
+        print(f"{'=' * 120}")
+        print(f"IEM days (vs CLI):     {n_iem}")
+        print(f"Synoptic days (vs CLI): {n_synoptic}")
+        print(f"Overlap (both + CLI):  {n}")
+        print()
+        print("IEM vs CLI:")
+        print(f"  Raw max == CLI:     {report_iem.raw_match_rate * 100:.0f}% ({sum(1 for d in report_iem.days if d.raw_matches_cli)}/{n})")
+        print(f"  2-min avg max == CLI: {report_iem.avg2_match_rate * 100:.0f}% ({sum(1 for d in report_iem.days if d.avg2_matches_cli)}/{n})")
+        print(f"  5-min avg max == CLI: {report_iem.avg5_match_rate * 100:.0f}% ({sum(1 for d in report_iem.days if d.avg5_matches_cli)}/{n})")
+        print(f"  Stable max == CLI:  {report_iem.stable_match_rate * 100:.0f}% ({sum(1 for d in report_iem.days if d.stable_matches_cli)}/{n})")
+        print()
+        print("Synoptic vs CLI:")
+        print(f"  Raw max == CLI:     {report_synoptic.raw_match_rate * 100:.0f}% ({sum(1 for d in report_synoptic.days if d.raw_matches_cli)}/{n})")
+        print(f"  2-min avg max == CLI: {report_synoptic.avg2_match_rate * 100:.0f}% ({sum(1 for d in report_synoptic.days if d.avg2_matches_cli)}/{n})")
+        print(f"  5-min avg max == CLI: {report_synoptic.avg5_match_rate * 100:.0f}% ({sum(1 for d in report_synoptic.days if d.avg5_matches_cli)}/{n})")
+        print(f"  Stable max == CLI:  {report_synoptic.stable_match_rate * 100:.0f}% ({sum(1 for d in report_synoptic.days if d.stable_matches_cli)}/{n})")
+        print()
+        n_metar = sum(1 for d in report_iem.days if d.metar_matches_cli is not None)
+        print("METAR/SPECI vs CLI:")
+        print(f"  METAR max == CLI:   {report_iem.metar_match_rate * 100:.0f}% ({sum(1 for d in report_iem.days if d.metar_matches_cli)}/{n_metar})")
+        print(f"{'=' * 120}")
+
+        # Detailed per-day table: IEM vs Synoptic vs CLI
+        print(f"\n{'=' * 120}")
+        print("DETAILED PER-DAY TABLE — IEM vs Synoptic vs CLI (match ✓ / mismatch ✗)")
+        print(f"{'=' * 120}")
+        hdr = (
+            f"{'Date':<12} | {'CLI':>4} | "
+            f"{'IEM raw':>8} {'IEM✓/✗':>6} | {'IEM avg2':>8} {'IEM✓/✗':>6} | {'IEM avg5':>8} {'IEM✓/✗':>6} | {'IEM stable':>10} {'IEM✓/✗':>6} | "
+            f"{'Syn raw':>8} {'Syn✓/✗':>6} | {'Syn avg2':>8} {'Syn✓/✗':>6} | {'Syn avg5':>8} {'Syn✓/✗':>6} | {'Syn stable':>10} {'Syn✓/✗':>6} | "
+            f"{'METAR':>6} {'METAR✓/✗':>8} | {'IEM=Syn raw':>12} {'IEM=Syn stable':>14}"
+        )
+        print(hdr)
+        print("-" * 120)
+        for i, d in enumerate(overlap):
+            di = report_iem.days[i]
+            ds = report_synoptic.days[i]
+            cli = di.cli_high_f or ds.cli_high_f
+            cli_s = f"{cli}" if cli is not None else "N/A"
+            # IEM
+            iem_raw = round(di.asos_raw_max) if di.n_obs > 0 else None
+            iem_raw_s = f"{iem_raw}" if iem_raw is not None else "—"
+            iem_raw_ok = "✓" if di.raw_matches_cli else ("✗" if di.raw_matches_cli is False else "?")
+            iem_avg2 = round(di.avg2_max) if di.avg2_max is not None else None
+            iem_avg2_s = f"{iem_avg2}" if iem_avg2 is not None else "—"
+            iem_avg2_ok = "✓" if di.avg2_matches_cli else ("✗" if di.avg2_matches_cli is False else "?")
+            iem_avg5 = round(di.avg5_max) if di.avg5_max is not None else None
+            iem_avg5_s = f"{iem_avg5}" if iem_avg5 is not None else "—"
+            iem_avg5_ok = "✓" if di.avg5_matches_cli else ("✗" if di.avg5_matches_cli is False else "?")
+            iem_stable = di.stable_max_rounded
+            iem_stable_s = f"{iem_stable}" if iem_stable is not None else "—"
+            iem_stable_ok = "✓" if di.stable_matches_cli else ("✗" if di.stable_matches_cli is False else "?")
+            # Synoptic
+            syn_raw = round(ds.asos_raw_max) if ds.n_obs > 0 else None
+            syn_raw_s = f"{syn_raw}" if syn_raw is not None else "—"
+            syn_raw_ok = "✓" if ds.raw_matches_cli else ("✗" if ds.raw_matches_cli is False else "?")
+            syn_avg2 = round(ds.avg2_max) if ds.avg2_max is not None else None
+            syn_avg2_s = f"{syn_avg2}" if syn_avg2 is not None else "—"
+            syn_avg2_ok = "✓" if ds.avg2_matches_cli else ("✗" if ds.avg2_matches_cli is False else "?")
+            syn_avg5 = round(ds.avg5_max) if ds.avg5_max is not None else None
+            syn_avg5_s = f"{syn_avg5}" if syn_avg5 is not None else "—"
+            syn_avg5_ok = "✓" if ds.avg5_matches_cli else ("✗" if ds.avg5_matches_cli is False else "?")
+            syn_stable = ds.stable_max_rounded
+            syn_stable_s = f"{syn_stable}" if syn_stable is not None else "—"
+            syn_stable_ok = "✓" if ds.stable_matches_cli else ("✗" if ds.stable_matches_cli is False else "?")
+            # METAR (same for both IEM and Synoptic days)
+            metar_val = round(di.metar_raw_max) if di.metar_raw_max is not None else None
+            metar_s = f"{metar_val}" if metar_val is not None else "—"
+            metar_ok = "✓" if di.metar_matches_cli else ("✗" if di.metar_matches_cli is False else "?")
+            # IEM vs Synoptic agreement
+            iem_eq_syn_raw = "✓ match" if (iem_raw is not None and syn_raw is not None and iem_raw == syn_raw) else ("✗ diff" if (iem_raw is not None and syn_raw is not None) else "—")
+            iem_eq_syn_stable = "✓ match" if (iem_stable is not None and syn_stable is not None and iem_stable == syn_stable) else ("✗ diff" if (iem_stable is not None and syn_stable is not None) else "—")
+            print(
+                f"{d!s:<12} | {cli_s:>4} | "
+                f"{iem_raw_s:>8} {iem_raw_ok:>6} | {iem_avg2_s:>8} {iem_avg2_ok:>6} | {iem_avg5_s:>8} {iem_avg5_ok:>6} | {iem_stable_s:>10} {iem_stable_ok:>6} | "
+                f"{syn_raw_s:>8} {syn_raw_ok:>6} | {syn_avg2_s:>8} {syn_avg2_ok:>6} | {syn_avg5_s:>8} {syn_avg5_ok:>6} | {syn_stable_s:>10} {syn_stable_ok:>6} | "
+                f"{metar_s:>6} {metar_ok:>8} | {iem_eq_syn_raw:>12} {iem_eq_syn_stable:>14}"
+            )
+        print(f"{'=' * 120}")
+
+        if args.export:
+            df_iem = report_iem.to_dataframe()
+            df_iem["asos_source"] = "iem"
+            df_syn = report_synoptic.to_dataframe()
+            df_syn["asos_source"] = "synoptic"
+            import pandas as pd
+            pd.concat([df_iem, df_syn], ignore_index=True).to_csv(args.export, index=False)
+            print(f"\nExported to {args.export}")
+    else:
+        analyzer = AsosCliPlateauAnalyzer(
+            data_dir=str(data_dir),
+            station=args.station,
+            tz_name=tz_name,
+            min_consecutive=args.min_consecutive,
+            lat=lat,
+            asos_source=args.asos_source,
+        )
+        report = analyzer.run(start_date=start_date, end_date=end_date)
+        report.log_summary()
+        report.print_table()
+
+        if args.export:
+            df = report.to_dataframe()
+            df.to_csv(args.export, index=False)
+            print(f"\nExported to {args.export}")
 
 
 if __name__ == "__main__":

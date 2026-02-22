@@ -17,6 +17,7 @@ Download scripts: research/download_data/
   synoptic_backfill.py - Synoptic REST backfill into synoptic_weather_observations
   run_synoptic_asos_collection.py - Synoptic 1-min backfill (e.g. last 1 year for Chicago)
   awc_metar.py - AWC METAR
+  run_metar_collection.py - METAR/SPECI for overlap days (IEM + Synoptic + CLI)
   iem_daily_climate.py - IEM Daily Climate
   run_weather_collection.py - Run all weather downloads
   nwp_base.py - Base class for NWP model point extraction

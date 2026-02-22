@@ -88,6 +88,10 @@ class DayAnalysis:
     avg5_max: float | None = None  # Max of 5-min rolling average
     avg2_matches_cli: bool | None = None  # round(avg2_max) == cli_high_f
     avg5_matches_cli: bool | None = None  # round(avg5_max) == cli_high_f
+    # METAR/SPECI (hourly + special obs from AWC)
+    metar_raw_max: float | None = None  # Max temp from METAR in NWS window
+    metar_matches_cli: bool | None = None  # round(metar_raw_max) == cli_high_f
+    metar_n_obs: int = 0  # Count of METAR obs in NWS window
 
 
 # ======================================================================
@@ -157,6 +161,27 @@ def find_plateaus(
     return plateaus
 
 
+def _metar_stats(
+    metar_df: pd.DataFrame | None,
+    cli_high_f: int | None,
+    nws_start: datetime,
+    nws_end: datetime,
+) -> tuple[float | None, bool | None, int]:
+    """Compute METAR max temp in NWS window and whether it matches CLI high."""
+    if metar_df is None or metar_df.empty or "valid_utc" not in metar_df.columns or "temp_f" not in metar_df.columns:
+        return (None, None, 0)
+    mask = (metar_df["valid_utc"] >= nws_start) & (metar_df["valid_utc"] < nws_end)
+    nws_metar = metar_df.loc[mask]
+    if nws_metar.empty:
+        return (None, None, 0)
+    valid = nws_metar["temp_f"].dropna()
+    if valid.empty:
+        return (None, None, len(nws_metar))
+    metar_max = float(valid.max())
+    metar_matches = (round(metar_max) == cli_high_f) if cli_high_f is not None else None
+    return (metar_max, metar_matches, len(nws_metar))
+
+
 def nws_window_utc(
     climate_date: date,
     tz_name: str,
@@ -203,6 +228,7 @@ def analyze_day(
     tz_name: str,
     min_consecutive: int = 2,
     lat: float | None = None,
+    metar_df: pd.DataFrame | None = None,
 ) -> DayAnalysis:
     """Analyze one day of ASOS data against the CLI high.
 
@@ -229,6 +255,7 @@ def analyze_day(
     ].sort_values("valid_utc").reset_index(drop=True)
 
     if nws_obs.empty:
+        metar_max, metar_matches, metar_n = _metar_stats(None, cli_high_f, nws_start, nws_end)
         return DayAnalysis(
             station=station, climate_date=climate_date,
             cli_high_f=cli_high_f, asos_raw_max=float("nan"),
@@ -236,6 +263,7 @@ def analyze_day(
             raw_matches_cli=None, stable_matches_cli=None,
             spike_magnitude=0, n_obs=0, highest_plateau=None,
             avg2_max=None, avg5_max=None, avg2_matches_cli=None, avg5_matches_cli=None,
+            metar_raw_max=metar_max, metar_matches_cli=metar_matches, metar_n_obs=metar_n,
         )
 
     temps = nws_obs["tmpf"].tolist()
@@ -269,6 +297,8 @@ def analyze_day(
     stable_matches = (stable_rounded == cli_high_f) if (cli_high_f is not None and stable_rounded is not None) else None
     spike = (raw_rounded - stable_rounded) if stable_rounded is not None else 0
 
+    metar_max, metar_matches, metar_n = _metar_stats(metar_df, cli_high_f, nws_start, nws_end)
+
     return DayAnalysis(
         station=station,
         climate_date=climate_date,
@@ -286,6 +316,9 @@ def analyze_day(
         avg5_max=avg5_max,
         avg2_matches_cli=avg2_matches,
         avg5_matches_cli=avg5_matches,
+        metar_raw_max=metar_max,
+        metar_matches_cli=metar_matches,
+        metar_n_obs=metar_n,
     )
 
 
@@ -373,6 +406,48 @@ class AsosCliPlateauAnalyzer:
         )
         return overlap
 
+    @staticmethod
+    def overlap_dates(
+        data_dir: Path, station: str
+    ) -> tuple[list[date], int, int]:
+        """Dates where BOTH IEM and Synoptic ASOS data exist (and CLI).
+
+        Returns (overlap_dates, n_iem_vs_cli, n_synoptic_vs_cli).
+        """
+        synoptic_dates = set()
+        stid = synoptic_station_for_icao(station)
+        synoptic_dir = data_dir / "synoptic_weather_observations"
+        if synoptic_dir.exists() and stid:
+            for f in synoptic_dir.glob("*.parquet"):
+                try:
+                    file_date = date.fromisoformat(f.stem)
+                except ValueError:
+                    continue
+                df = pq.read_table(str(f)).to_pandas()
+                if "stid" in df.columns and (df["stid"] == stid).any():
+                    synoptic_dates.add(file_date)
+
+        iem_dates = set()
+        iem_dir = data_dir / "iem_asos_1min"
+        if iem_dir.exists():
+            for f in iem_dir.glob(f"{station}_*.parquet"):
+                m = re.search(r"_(\d{4}-\d{2}-\d{2})\.parquet$", f.name)
+                if m:
+                    iem_dates.add(date.fromisoformat(m.group(1)))
+
+        cli_dates = set()
+        cli_dir = data_dir / "iem_daily_climate"
+        if cli_dir.exists():
+            for f in cli_dir.glob(f"{station}_*.parquet"):
+                m = re.search(r"_(\d{4}-\d{2}-\d{2})\.parquet$", f.name)
+                if m:
+                    cli_dates.add(date.fromisoformat(m.group(1)))
+
+        overlap = sorted(synoptic_dates & iem_dates & cli_dates)
+        n_iem = len(iem_dates & cli_dates)
+        n_synoptic = len(synoptic_dates & cli_dates)
+        return (overlap, n_iem, n_synoptic)
+
     def _load_asos(self, d: date) -> pd.DataFrame:
         """Load ASOS data for climate day d.
 
@@ -438,6 +513,30 @@ class AsosCliPlateauAnalyzer:
             return None
         return int(df["high_f"].iloc[0])
 
+    def _load_metar(self, d: date) -> pd.DataFrame:
+        """Load METAR/SPECI for climate day d. NWS window may span 2 UTC dates."""
+        nws_start, nws_end = nws_window_utc(d, self.tz_name, lat=self.lat)
+        start_date = nws_start.date()
+        end_date = (nws_end - timedelta(microseconds=1)).date()
+        dates_to_load = [
+            start_date + timedelta(days=i)
+            for i in range((end_date - start_date).days + 1)
+        ]
+        metar_dir = self.data_dir / "awc_metar"
+        frames = []
+        for load_date in dates_to_load:
+            path = metar_dir / f"{self.station}_{load_date.isoformat()}.parquet"
+            if not path.exists():
+                continue
+            df = pq.read_table(str(path)).to_pandas()
+            df = df[df["station"] == self.station]
+            if df.empty or "temp_f" not in df.columns:
+                continue
+            frames.append(df[["valid_utc", "temp_f", "station"]])
+        if not frames:
+            return pd.DataFrame()
+        return pd.concat(frames, ignore_index=True).drop_duplicates(subset=["valid_utc"], keep="first")
+
     def run(
         self,
         start_date: date | None = None,
@@ -468,9 +567,11 @@ class AsosCliPlateauAnalyzer:
         for d in dates:
             asos_df = self._load_asos(d)
             cli_high = self._load_cli_high(d)
+            metar_df = self._load_metar(d)
             analysis = analyze_day(
                 asos_df, cli_high, self.station, d, self.tz_name, self.min_consecutive,
                 lat=self.lat,
+                metar_df=metar_df if not metar_df.empty else None,
             )
             days.append(analysis)
 
@@ -480,6 +581,30 @@ class AsosCliPlateauAnalyzer:
             min_consecutive=self.min_consecutive,
         )
         return report
+
+    def run_with_dates(
+        self,
+        dates: list[date],
+    ) -> StabilityReport:
+        """Run analysis on a specific list of dates (e.g. overlap of IEM and Synoptic)."""
+        if not dates:
+            return StabilityReport(station=self.station, days=[], min_consecutive=self.min_consecutive)
+        days_list: list[DayAnalysis] = []
+        for d in dates:
+            asos_df = self._load_asos(d)
+            cli_high = self._load_cli_high(d)
+            metar_df = self._load_metar(d)
+            analysis = analyze_day(
+                asos_df, cli_high, self.station, d, self.tz_name, self.min_consecutive,
+                lat=self.lat,
+                metar_df=metar_df if not metar_df.empty else None,
+            )
+            days_list.append(analysis)
+        return StabilityReport(
+            station=self.station,
+            days=days_list,
+            min_consecutive=self.min_consecutive,
+        )
 
 
 # ======================================================================
@@ -526,6 +651,13 @@ class StabilityReport:
         return len(matches) / len(total) if total else 0.0
 
     @property
+    def metar_match_rate(self) -> float:
+        """Fraction of days where round(METAR max) == cli_high."""
+        matches = [d for d in self.days if d.metar_matches_cli is True]
+        total = [d for d in self.days if d.metar_matches_cli is not None]
+        return len(matches) / len(total) if total else 0.0
+
+    @property
     def spike_days(self) -> list[DayAnalysis]:
         """Days where raw_max > stable_max (single-obs spikes exceed plateau)."""
         return [d for d in self.days if d.spike_magnitude > 0]
@@ -537,6 +669,7 @@ class StabilityReport:
             raw_r = round(d.asos_raw_max) if d.n_obs > 0 else None
             avg2_r = round(d.avg2_max) if d.avg2_max is not None else None
             avg5_r = round(d.avg5_max) if d.avg5_max is not None else None
+            metar_r = round(d.metar_raw_max) if d.metar_raw_max is not None else None
             rows.append({
                 "date": d.climate_date,
                 "cli_high_f": d.cli_high_f,
@@ -544,13 +677,16 @@ class StabilityReport:
                 "avg2_rounded": avg2_r,
                 "avg5_rounded": avg5_r,
                 "stable_rounded": d.stable_max_rounded,
+                "metar_rounded": metar_r,
                 "raw_matches_cli": d.raw_matches_cli,
                 "avg2_matches_cli": d.avg2_matches_cli,
                 "avg5_matches_cli": d.avg5_matches_cli,
                 "stable_matches_cli": d.stable_matches_cli,
+                "metar_matches_cli": d.metar_matches_cli,
                 "spike_deg": d.spike_magnitude,
                 "plateau_duration_min": d.highest_plateau.duration_minutes if d.highest_plateau else None,
                 "n_obs": d.n_obs,
+                "metar_n_obs": d.metar_n_obs,
             })
         return pd.DataFrame(rows)
 
@@ -577,6 +713,10 @@ class StabilityReport:
                      self.stable_match_rate * 100,
                      sum(1 for d in self.days if d.stable_matches_cli is True),
                      sum(1 for d in self.days if d.stable_matches_cli is not None))
+        logger.info("  METAR max == CLI    : %.0f%% (%d/%d)",
+                     self.metar_match_rate * 100,
+                     sum(1 for d in self.days if d.metar_matches_cli is True),
+                     sum(1 for d in self.days if d.metar_matches_cli is not None))
         logger.info("  Days with spikes    : %d (raw > stable)", len(self.spike_days))
         logger.info("-" * 70)
 
@@ -592,9 +732,10 @@ class StabilityReport:
             avg2_flag = "✅" if d.avg2_matches_cli else "❌" if d.avg2_matches_cli is False else "?"
             avg5_flag = "✅" if d.avg5_matches_cli else "❌" if d.avg5_matches_cli is False else "?"
             stable_flag = "✅" if d.stable_matches_cli else "❌" if d.stable_matches_cli is False else "?"
+            metar_flag = "✅" if d.metar_matches_cli else "❌" if d.metar_matches_cli is False else "?"
 
             logger.info(
-                "  %s | CLI=%s | raw=%s %s | avg2=%s %s | avg5=%s %s | stable=%s %s | %s",
+                "  %s | CLI=%s | raw=%s %s | avg2=%s %s | avg5=%s %s | stable=%s %s | metar=%s %s | %s",
                 d.climate_date,
                 f"{d.cli_high_f:3d}" if d.cli_high_f is not None else "N/A",
                 f"{round(d.asos_raw_max):3.0f}" if d.n_obs > 0 else "N/A",
@@ -605,6 +746,8 @@ class StabilityReport:
                 avg5_flag,
                 f"{d.stable_max_rounded:3d}" if d.stable_max_rounded is not None else "N/A",
                 stable_flag,
+                f"{round(d.metar_raw_max):3.0f}" if d.metar_raw_max is not None else "N/A",
+                metar_flag,
                 plateau_str,
             )
         logger.info("=" * 70)
@@ -625,5 +768,6 @@ class StabilityReport:
         print(f"2-min avg max == CLI: {self.avg2_match_rate * 100:.0f}%")
         print(f"5-min avg max == CLI: {self.avg5_match_rate * 100:.0f}%")
         print(f"Stable max == CLI:  {self.stable_match_rate * 100:.0f}%")
+        print(f"METAR max == CLI:   {self.metar_match_rate * 100:.0f}%")
         print(f"Spike days:         {len(self.spike_days)}/{self.n_days}")
         print(f"{'=' * 75}")
