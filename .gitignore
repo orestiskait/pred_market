@@ -8,7 +8,8 @@ __pycache__/
 data/iem_asos_1min/
 data/awc_metar/
 data/iem_daily_climate/
-data/market_snapshots/
-data/orderbook_snapshots/
-data/synoptic_ws/
-data/weather_bot/
+data/kalshi_market_snapshots/
+data/kalshi_orderbook_snapshots/
+data/synoptic_weather_observations/
+data/weather_bot_paper_trades/
+data/kalshi_historical/

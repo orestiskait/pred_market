@@ -99,9 +99,10 @@ class IEMAWCDataCollector:
                 except KeyError:
                     logger.warning("Unknown station ICAO: %s", icao)
 
-        # Option 2: Derive from event_series
+        # Option 2: Derive from event_series.research
         if not stations:
-            series_list = cfg.get("event_series", [])
+            from services.core.config import get_event_series
+            series_list = get_event_series(cfg, "research")
             for series in series_list:
                 if series in STATION_REGISTRY:
                     info = STATION_REGISTRY[series]

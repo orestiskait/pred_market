@@ -61,11 +61,11 @@ mkdir -p "$LOCAL_DATA_DIR"
 
 # Subdirs to sync (mirrors ~/collector-data/ layout)
 REMOTE_DIRS=(
-  "market_snapshots"
-  "orderbook_snapshots"
-  "synoptic_ws"
-  "historical"
-  "weather_bot"
+  "kalshi_market_snapshots"
+  "kalshi_orderbook_snapshots"
+  "synoptic_weather_observations"
+  "kalshi_historical"
+  "weather_bot_paper_trades"
 )
 
 TOTAL_FILES=0
@@ -85,8 +85,8 @@ for subdir in "${REMOTE_DIRS[@]}"; do
   mkdir -p "$LOCAL_PATH"
   echo "[fetch] Syncing $subdir/ ..."
 
-  # weather_bot has CSV files; others have parquet
-  if [[ "$subdir" == "weather_bot" ]]; then
+  # weather_bot_paper_trades has CSV files; others have parquet
+  if [[ "$subdir" == "weather_bot_paper_trades" ]]; then
     INCLUDE="*.csv"
     COUNT_PATTERN='\.csv$'
   else

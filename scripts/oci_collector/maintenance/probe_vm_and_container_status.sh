@@ -83,7 +83,7 @@ echo "── Data recency ──"
 ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" 'bash -s' << 'RECENCY'
 STALE_MIN=15
 DATA_DIR=~/collector-data
-NEWEST=$(find "$DATA_DIR/market_snapshots" "$DATA_DIR/orderbook_snapshots" "$DATA_DIR/synoptic_ws" -name "*.parquet" 2>/dev/null \
+NEWEST=$(find "$DATA_DIR/kalshi_market_snapshots" "$DATA_DIR/kalshi_orderbook_snapshots" "$DATA_DIR/synoptic_weather_observations" -name "*.parquet" 2>/dev/null \
   | xargs -r stat -c "%Y %n" 2>/dev/null | sort -nr | head -1)
 if [[ -z "$NEWEST" ]]; then
   echo "No parquet files yet"
@@ -108,7 +108,7 @@ RECENCY
 echo ""
 echo "── Data freshness ──"
 ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" \
-  'ls -la ~/collector-data/market_snapshots/ ~/collector-data/orderbook_snapshots/ ~/collector-data/synoptic_ws/ 2>/dev/null || echo "No data dirs yet"' 2>/dev/null
+  'ls -la ~/collector-data/kalshi_market_snapshots/ ~/collector-data/kalshi_orderbook_snapshots/ ~/collector-data/synoptic_weather_observations/ 2>/dev/null || echo "No data dirs yet"' 2>/dev/null
 
 echo ""
 echo "────────────────────────────────────────"

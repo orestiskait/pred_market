@@ -6,6 +6,9 @@ The CLI product is the **official** NWS daily climate report that Kalshi
 uses to resolve temperature-high contracts. Contains official daily high/low,
 times, records, normals, precipitation, etc. Published once daily (~06:00 UTC).
 The `high_f` field is the ground truth for contract resolution.
+
+Kalshi follows NWS strictly: climate day is Local Standard Time (midnight-to-midnight LST).
+Chicago markets use CLIMDW (Midway), not CLIORD (O'Hare). See docs/events/kalshi_settlement_rules.md.
 """
 
 from __future__ import annotations

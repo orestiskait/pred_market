@@ -17,16 +17,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List
 
-from ..core.config import (
+from services.core.config import (
     load_config,
     make_kalshi_clients,
     standard_argparser,
     configure_logging,
 )
-from ..core.service import AsyncService
-from ..core.storage import ParquetStorage
-from ..markets.ticker import resolve_event_tickers, discover_markets
-from .ws import KalshiWSMixin
+from services.core.service import AsyncService
+from services.core.storage import ParquetStorage
+from services.markets.ticker import resolve_event_tickers, discover_markets
+from services.kalshi.ws import KalshiWSMixin
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ class LiveListener(AsyncService, KalshiWSMixin):
 
     def _discover(self):
         """Resolve events from config and fetch contract metadata."""
-        event_tickers = resolve_event_tickers(self.rest, self.config)
+        event_tickers = resolve_event_tickers(self.rest, self.config, consumer="kalshi_listener")
         self.market_tickers, self.market_info = discover_markets(self.rest, event_tickers)
 
         # Seed previous prices for spike detection (from REST initial state)
@@ -323,7 +323,7 @@ class LiveListener(AsyncService, KalshiWSMixin):
             if not self._running:
                 break
             try:
-                event_tickers = resolve_event_tickers(self.rest, self.config)
+                event_tickers = resolve_event_tickers(self.rest, self.config, consumer="kalshi_listener")
                 if not event_tickers:
                     continue
                 new_tickers, new_info = discover_markets(self.rest, event_tickers)

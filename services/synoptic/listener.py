@@ -15,17 +15,18 @@ import logging
 import time
 from pathlib import Path
 
-from ..core.config import (
+from services.core.config import (
     load_config,
+    get_event_series,
     get_synoptic_token,
     build_synoptic_ws_url,
     standard_argparser,
     configure_logging,
 )
-from ..core.service import AsyncService
-from ..core.storage import ParquetStorage
-from .station_registry import synoptic_stations_for_series
-from .ws import SynopticWSMixin
+from services.core.service import AsyncService
+from services.core.storage import ParquetStorage
+from services.synoptic.station_registry import synoptic_stations_for_series
+from services.synoptic.ws import SynopticWSMixin
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +45,8 @@ class SynopticLiveCollector(AsyncService, SynopticWSMixin):
         scfg = config.get("synoptic", {})
         stations = scfg.get("stations", None)
         if stations is None:
-            # Auto-derive from event_series via the market registry
-            stations = synoptic_stations_for_series(config.get("event_series", []))
+            # Auto-derive from event_series.synoptic_listener via the market registry
+            stations = synoptic_stations_for_series(get_event_series(config, "synoptic_listener"))
         variables = scfg.get("vars", ["air_temp"])
 
         self.synoptic_ws_url = build_synoptic_ws_url(

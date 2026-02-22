@@ -11,7 +11,7 @@ Official resolution is based on the **NWS Daily Climatological Report** from the
 | :--- | :--- | :--- |
 | **New York City** | **KNYC** | Central Park |
 | **Miami** | **KMIA** | Miami International Airport |
-| **Chicago** | **KMDW** | Chicago-Midway International Airport |
+| **Chicago** | **KMDW** | Chicago-Midway International Airport (CLIMDW; Kalshi default; O'Hare=CLIORD if specified) |
 | **Denver** | **KDEN** | Denver International Airport |
 | **Austin** | **KAUS** | Austin-Bergstrom International Airport |
 | **Houston** | **KHOU** | Houston Hobby International Airport |

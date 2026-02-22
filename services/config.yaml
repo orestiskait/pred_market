@@ -11,20 +11,19 @@
 #   ------------------|-----------------|-------------------|-------------|------------------
 #   credentials       | ✓               | ✓                 | ✓           |
 #   kalshi             | ✓               |                   | ✓           |
-#   event_series       | ✓               | ✓                 | ✓           | iem_awc_data_collector, run_weather_collection
+#   event_series       | kalshi_listener | synoptic_listener | weather_bot | research
 #   event_rollover     | ✓               |                   | ✓           |
 #   storage            | ✓               | ✓                 | ✓           | iem_awc_data_collector, run_weather_collection, weather_discrepancy_analysis
 #   collection         | ✓               |                   |             |
 #   synoptic           |                 | ✓                 |             |
 #   bot                |                 |                   | ✓           |
 #
-# Optional keys (not shown below): weather_stations (research/weather/observations.py),
-#   events (services/markets/ticker.py — explicit event ticker overrides).
+# event_series is keyed by consumer (kalshi_listener, synoptic_listener, weather_bot, research).
+# Optional keys: weather_stations (research), events (ticker.py — explicit ticker overrides).
 #
 # Adding a new city/market:
-#   1. Add the series prefix to `event_series` below.
-#   2. Add a MarketConfig entry in services/markets/registry.py.
-#   3. All services pick it up automatically.
+#   1. Add MarketConfig in services/markets/registry.py.
+#   2. Add the series prefix to event_series.<consumer> for each consumer that needs it.
 #
 # ============================================================
 
@@ -56,18 +55,30 @@ kalshi:
   ws_url:   "wss://api.elections.kalshi.com/trade-api/ws/v2"  # kalshi/listener, weather_bot (WebSocket)
 
 # =============================================================================
-# MARKET SELECTION (event_series)
+# EVENT SERIES — BY CONSUMER
 # =============================================================================
-# Series prefixes (uppercase). Each service queries Kalshi for open events
-# in these series and picks the active one. Registry maps each prefix to
-# station IDs, timezone, city. Optional top-level `events` key can override
-# with explicit event tickers (ticker.py).
+# Each consumer explicitly lists which markets it tracks. Use YAML anchors
+# (&default_series / *default_series) to share a list across consumers.
+#
+# Add new city: 1) Add MarketConfig in services/markets/registry.py
+#               2) Add series prefix to the consumer(s) below
+#
+# Consumer keys:
+#   kalshi_listener  — orderbook/ticker snapshots (kalshi/listener.py)
+#   synoptic_listener — Synoptic push weather ingest (synoptic/listener.py)
+#   weather_bot      — paper trading (bot/weather_bot.py)
+#   research         — iem_awc_data_collector, run_weather_collection,
+#                      weather_discrepancy_analysis
 # =============================================================================
 event_series:
-  # Used by: kalshi/listener, synoptic/listener, weather_bot, ticker.py,
-  #          research/weather/iem_awc_data_collector.py, run_weather_collection
-  - "KXHIGHCHI"
-  - "KXHIGHNY"
+  default: &default_series
+    - "KXHIGHCHI"
+    - "KXHIGHNY"
+
+  kalshi_listener: *default_series
+  synoptic_listener: *default_series
+  weather_bot: *default_series
+  research: *default_series
 
 # =============================================================================
 # EVENT ROLLOVER
@@ -114,11 +125,11 @@ collection:
 # SYNOPTIC LISTENER — Weather data ingest
 # =============================================================================
 # Used by: synoptic/listener.py ONLY
-# Stations are auto-derived from event_series via market registry. Override
-# `stations` only if you need extra stations beyond the registry.
+# Stations are auto-derived from event_series.synoptic_listener via market
+# registry. Override `stations` only if you need extra stations beyond the registry.
 # =============================================================================
 synoptic:
-  # stations:  # optional override; omit → uses event_series → registry
+  # stations:  # optional override; omit → uses event_series.synoptic_listener → registry
   #   - KMDW1M
   #   - KNYC
   vars:        # Synoptic variables to subscribe to (e.g. air_temp)

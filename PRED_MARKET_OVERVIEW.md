@@ -108,9 +108,9 @@ pred_env/bin/python -m research.download_data.run_weather_collection
 
 ### Data Layout (project root data/)
 
-- `data/market_snapshots/` — Kalshi market snapshots
-- `data/orderbook_snapshots/` — Orderbook depth
-- `data/synoptic_ws/` — Synoptic real-time weather
+- `data/kalshi_market_snapshots/` — Kalshi market snapshots
+- `data/kalshi_orderbook_snapshots/` — Orderbook depth
+- `data/synoptic_weather_observations/` — Synoptic real-time weather
 - `data/iem_asos_1min/` — IEM ASOS 1-min temperature
 - `data/awc_metar/` — AWC METAR observations
 - `data/iem_daily_climate/` — IEM NWS Daily Climate (CLI)

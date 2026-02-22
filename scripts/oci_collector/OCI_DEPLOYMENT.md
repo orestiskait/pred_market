@@ -42,13 +42,14 @@ The VM runs Docker containers for data collection:
 │          ▼                           ▼                            │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │  ~/collector-data/  (shared volume)                       │   │
-│  │  ├── market_snapshots/     ← Kalshi prices                │   │
-│  │  ├── orderbook_snapshots/  ← Kalshi orderbooks            │   │
-│  │  ├── synoptic_ws/          ← Synoptic Websocket API       │   │
+│  │  ├── kalshi_market_snapshots/     ← Kalshi prices         │   │
+│  │  ├── kalshi_orderbook_snapshots/  ← Kalshi orderbooks     │   │
+│  │  ├── synoptic_weather_observations/ ← Synoptic WebSocket │   │
 │  │  ├── iem_asos_1min/       ← IEM ASOS 1-min (~24h lag)     │   │
 │  │  ├── awc_metar/           ← AWC METAR                     │   │
 │  │  ├── iem_daily_climate/   ← IEM NWS Daily Climate (CLI)   │   │
-│  │  └── weather_bot/         ← Paper trade logs              │   │
+│  │  ├── kalshi_historical/  ← Kalshi backfill (candlesticks, trades) │
+│  │  └── weather_bot_paper_trades/ ← Paper trade logs         │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -163,7 +164,7 @@ Or run individually:
 ```bash
 ./start_stop_all_services.sh status    # containers running?
 ./start_stop_all_services.sh logs      # tail live logs
-ls -la ~/collector-data/market_snapshots/
+ls -la ~/collector-data/kalshi_market_snapshots/
 ```
 
 ## SSH Reference
@@ -310,13 +311,14 @@ To change the frequency, adjust the cron schedule (e.g. `*/30 * * * *` for every
 
 ```
 ~/collector-data/
-├── market_snapshots/       # Kalshi price/volume snapshots (one parquet per day)
-├── orderbook_snapshots/    # Kalshi orderbook depth data
-├── historical/             # Kalshi backfill data
-└── weather_obs/
-    ├── asos_1min/          # ASOS 1-min archive (IEM, ~24h delay)
-    ├── metar/              # METAR via AWC API
-    └── daily_climate/      # Official NWS daily climate reports
+├── kalshi_market_snapshots/       # Kalshi price/volume snapshots (one parquet per day)
+├── kalshi_orderbook_snapshots/   # Kalshi orderbook depth data
+├── synoptic_weather_observations/ # Synoptic real-time weather
+├── kalshi_historical/             # Kalshi backfill (candlesticks, trades)
+├── weather_bot_paper_trades/     # Paper trade logs
+├── iem_asos_1min/                # ASOS 1-min archive (IEM, ~24h delay)
+├── awc_metar/                    # METAR via AWC API
+└── iem_daily_climate/            # Official NWS daily climate reports
 ```
 
 ## Security

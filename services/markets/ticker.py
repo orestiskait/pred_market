@@ -19,7 +19,7 @@ import logging
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from .registry import MarketConfig, MARKET_REGISTRY, market_for_series
+from services.markets.registry import MarketConfig, MARKET_REGISTRY, market_for_series
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,7 @@ def resolve_event_tickers(
     rest_client,
     config: dict,
     event_selection: str | None = None,
+    consumer: str | None = None,
 ) -> list[str]:
     """Return event tickers from ``event_series`` and/or ``events`` config keys.
 
@@ -86,18 +87,24 @@ def resolve_event_tickers(
     - ``active``: earliest close_time (today's market)
     - ``next``: strike_date >= today in market's local tz (enables pre-trading)
 
+    consumer: kalshi_listener, weather_bot, etc. Used to select the right
+    event_series list when config uses per-consumer keys.
+
     Timezone awareness
     ------------------
     Different markets settle on different *local* days (NWS standard). The
     ``MarketConfig.tz`` field ensures correct local-day logic per market.
     """
+    from services.core.config import get_event_series
+
     strategy = (
         event_selection
         or config.get("event_rollover", {}).get("event_selection", "active")
     )
     tickers: list[str] = []
 
-    for series in config.get("event_series", []):
+    series_list = get_event_series(config, consumer or "default")
+    for series in series_list:
         logger.info("Resolving series %s → open events (strategy=%s)", series, strategy)
         events = rest_client.get_events_for_series(series, status="open")
         if not events:

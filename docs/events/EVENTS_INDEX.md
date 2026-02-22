@@ -4,6 +4,7 @@ Documentation for Kalshi weather event resolution, data sources, and technical d
 
 | Document | Description |
 |----------|-------------|
+| [kalshi_settlement_rules.md](kalshi_settlement_rules.md) | **Kalshi-specific:** Standard Time rule, Chicago Midway vs O'Hare (CLIMDW/CLIORD), settlement timing |
 | [weather_prediction_rules.md](weather_prediction_rules.md) | NWS station types, designated stations, rounding rules, and official high calculation |
 | [asos_temperature_resolution.md](asos_temperature_resolution.md) | ASOS technical specs: sampling frequency, accuracy, rounding, °F vs °C, lags, and implications for Kalshi |
 

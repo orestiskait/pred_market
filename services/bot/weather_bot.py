@@ -29,20 +29,21 @@ from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..core.config import (
+from services.core.config import (
     load_config,
+    get_event_series,
     make_kalshi_clients,
     get_synoptic_token,
     build_synoptic_ws_url,
     configure_logging,
     standard_argparser,
 )
-from ..core.service import AsyncService
-from ..kalshi.ws import KalshiWSMixin
-from ..synoptic.ws import SynopticWSMixin
-from ..markets.registry import MarketConfig, MARKET_REGISTRY
-from ..synoptic.station_registry import synoptic_stations_for_series
-from ..markets.ticker import discover_markets, resolve_event_tickers
+from services.core.service import AsyncService
+from services.kalshi.ws import KalshiWSMixin
+from services.synoptic.ws import SynopticWSMixin
+from services.markets.registry import MarketConfig, MARKET_REGISTRY
+from services.synoptic.station_registry import synoptic_stations_for_series
+from services.markets.ticker import discover_markets, resolve_event_tickers
 
 logger = logging.getLogger("WeatherBot")
 
@@ -72,7 +73,7 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
         self._config_path = config_path
 
         # Determine which series to target
-        all_series = config.get("event_series", [])
+        all_series = get_event_series(config, "weather_bot")
         if series_filter:
             self._target_series = [s for s in series_filter if s in all_series or s in MARKET_REGISTRY]
         else:
@@ -139,7 +140,7 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
             data_dir = Path("/app/data")  # Docker: volume mount
         else:
             data_dir = (config_path.parent / config.get("storage", {}).get("data_dir", "../data")).resolve()
-        self.csv_log = data_dir / "weather_bot" / "paper_trades.csv"
+        self.csv_log = data_dir / "weather_bot_paper_trades" / "paper_trades.csv"
         self.csv_log.parent.mkdir(parents=True, exist_ok=True)
         self._init_csv()
 
@@ -182,7 +183,7 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
     def _discover(self):
         """Resolve events and build the contract ladder for all targeted series.
         Uses event_rollover.event_selection from config (active vs next)."""
-        event_tickers = resolve_event_tickers(self.kalshi_rest, self.config)
+        event_tickers = resolve_event_tickers(self.kalshi_rest, self.config, consumer="weather_bot")
         if not event_tickers:
             return
         tickers, info = discover_markets(self.kalshi_rest, event_tickers)
@@ -349,7 +350,7 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
             if not self._running:
                 break
             try:
-                event_tickers = resolve_event_tickers(self.kalshi_rest, self.config)
+                event_tickers = resolve_event_tickers(self.kalshi_rest, self.config, consumer="weather_bot")
                 if not event_tickers:
                     continue
                 tickers, info = discover_markets(self.kalshi_rest, event_tickers)

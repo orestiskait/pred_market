@@ -39,7 +39,7 @@ Instead of restarting the process, a background task **re-queries the Kalshi API
 
 ## Timezone Handling
 
-Each market has an IANA timezone (e.g. `America/Chicago`, `America/New_York`) in the registry. The NWS records daily highs in local standard time. The `next` strategy computes "today" in that timezone to select the correct event.
+Each market has an IANA timezone (e.g. `America/Chicago`, `America/New_York`) in the registry. The NWS records daily highs in **Local Standard Time** year-round (see `docs/events/kalshi_settlement_rules.md`). During DST, the "Tuesday" climate day covers 1:00 AM–12:59 AM local clock. The `next` strategy computes "today" in that timezone to select the correct event.
 
 ---
 

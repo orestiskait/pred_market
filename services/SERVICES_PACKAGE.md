@@ -117,13 +117,13 @@ All data is stored under `data/` at project root (configurable in `config.yaml`)
 
 ```
 data/
-├── market_snapshots/         # Kalshi market state (per-date parquet)
-├── orderbook_snapshots/      # Kalshi orderbook depth (baseline + delta)
-├── synoptic_ws/              # Synoptic 1-min ASOS observations
+├── kalshi_market_snapshots/         # Kalshi market state (per-date parquet)
+├── kalshi_orderbook_snapshots/      # Kalshi orderbook depth (baseline + delta)
+├── synoptic_weather_observations/   # Synoptic 1-min ASOS observations
 ├── iem_asos_1min/            # IEM ASOS 1-min temperature
 ├── awc_metar/                # AWC METAR observations
 ├── iem_daily_climate/        # IEM NWS Daily Climate (CLI)
-├── weather_bot/              # Paper trade logs
+├── weather_bot_paper_trades/ # Paper trade logs
 │   └── paper_trades.csv
 └── DATA_SOURCES.txt          # Source and content of each folder
 ```

@@ -57,6 +57,26 @@ def load_config(config_path: Optional[str] = None) -> tuple[dict, Path]:
         return yaml.safe_load(f), path
 
 
+def get_event_series(config: dict, consumer: str) -> list:
+    """Return event series list for a given consumer.
+
+    Consumers: kalshi_listener, synoptic_listener, weather_bot, research.
+
+    Supports:
+    - Legacy: event_series as list → returned for any consumer.
+    - New: event_series as dict keyed by consumer → returns config["event_series"][consumer]
+      or config["event_series"]["default"] if consumer key missing.
+    """
+    es = config.get("event_series")
+    if es is None:
+        return []
+    if isinstance(es, list):
+        return es
+    # Dict format: per-consumer keys
+    result = es.get(consumer) or es.get("default", [])
+    return result if isinstance(result, list) else []
+
+
 # ======================================================================
 # Client factories
 # ======================================================================
@@ -66,7 +86,7 @@ def make_kalshi_clients(config: dict):
 
     Credentials are read from files under config credentials.dir.
     """
-    from ..kalshi.client import KalshiAuth, KalshiRestClient
+    from services.kalshi.client import KalshiAuth, KalshiRestClient
 
     creds_dir = _credentials_dir(config)
     creds_cfg = config.get("credentials", {})

@@ -11,7 +11,7 @@ research.weather.iem_awc_station_registry.
 
 from __future__ import annotations
 
-from ..markets.registry import all_synoptic_stations
+from services.markets.registry import all_synoptic_stations
 
 # Re-export with a name that makes the Synoptic context explicit
 synoptic_stations_for_series = all_synoptic_stations

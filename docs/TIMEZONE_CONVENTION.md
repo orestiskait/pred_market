@@ -53,3 +53,7 @@ The NWS Daily Climate Report has no natural UTC timestamp — it covers a full l
 calendar day.  For compatibility with the base class dedup logic, we store a
 synthetic `valid_utc` set to midnight UTC on the report date.  **Do not treat this
 as an actual observation time.**  The meaningful column is `valid_date`.
+
+**NWS uses Local Standard Time** for the climate day boundary (midnight-to-midnight LST).
+During DST, the "Tuesday" report covers 1:00 AM Tuesday–12:59 AM Wednesday in local clock.
+See `docs/events/kalshi_settlement_rules.md`.
