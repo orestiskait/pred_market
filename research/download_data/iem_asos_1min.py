@@ -88,37 +88,6 @@ class IEMASOS1MinFetcher(WeatherFetcherBase):
         logger.info("Got %d 1-minute observations for %s", len(df), station.icao)
         return df
 
-    def fetch_and_save(
-        self,
-        station: StationInfo,
-        target_date: date,
-        **kwargs,
-    ) -> Path:
-        df = self.fetch(station, target_date, **kwargs)
-        return self.save_parquet(df, station, target_date)
-
-    def fetch_range(
-        self,
-        station: StationInfo,
-        start_date: date,
-        end_date: date,
-        **kwargs,
-    ) -> pd.DataFrame:
-        frames = []
-        current = start_date
-        while current <= end_date:
-            try:
-                df = self.fetch(station, current, **kwargs)
-                if not df.empty:
-                    frames.append(df)
-            except Exception:
-                logger.exception("Failed ASOS 1-min fetch for %s on %s",
-                                 station.icao, current)
-            current += timedelta(days=1)
-        if not frames:
-            return pd.DataFrame()
-        return pd.concat(frames, ignore_index=True)
-
     def fetch_range_bulk(
         self,
         station: StationInfo,
@@ -171,3 +140,40 @@ class IEMASOS1MinFetcher(WeatherFetcherBase):
         logger.info("Got %d 1-minute observations for %s (%s → %s)",
                      len(df), station.icao, fetch_start, fetch_end)
         return df
+
+    def fetch_range_bulk_and_save(
+        self,
+        station: StationInfo,
+        start_date: date,
+        end_date: date,
+        *,
+        skip_existing: bool = True,
+        min_completeness: float = 0.95,
+    ) -> int:
+        """Bulk fetch a date range and save per-day parquets.
+
+        Uses a single API request for the full range (more reliable than per-day).
+        Saves each day with >= min_completeness of expected rows (default 95%).
+        Returns number of days saved.
+        """
+        df = self.fetch_range_bulk(station, start_date, end_date, pad_days=0)
+        if df.empty:
+            return 0
+
+        df["_date"] = df["valid_utc"].dt.date
+        min_rows = int(self.EXPECTED_DAILY_ROWS * min_completeness)
+        saved = 0
+        for d, grp in df.groupby("_date"):
+            if start_date <= d <= end_date:
+                if skip_existing:
+                    path = self.data_dir / f"{station.icao}_{d.isoformat()}.parquet"
+                    if path.exists():
+                        continue
+                day_df = grp.drop(columns=["_date"])
+                if len(day_df) >= min_rows:
+                    self.save_parquet(day_df, station, d)
+                    saved += 1
+                else:
+                    logger.debug("Skipping %s: %d rows < %d",
+                                 d, len(day_df), min_rows)
+        return saved

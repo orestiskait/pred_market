@@ -186,12 +186,3 @@ class AWCMETARFetcher(WeatherFetcherBase):
             "raw_ob": raw_ob,
         }
         return pd.DataFrame([row])
-
-    def fetch_and_save(
-        self,
-        station: StationInfo,
-        target_date: date,
-        **kwargs,
-    ) -> Path:
-        df = self.fetch(station, target_date, **kwargs)
-        return self.save_parquet(df, station, target_date)

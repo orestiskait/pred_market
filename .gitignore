@@ -11,6 +11,5 @@ data/iem_daily_climate/
 data/kalshi_market_snapshots/
 data/kalshi_orderbook_snapshots/
 data/synoptic_weather_observations/
-data/synoptic_asos_1min/
 data/weather_bot_paper_trades/
 data/kalshi_historical/

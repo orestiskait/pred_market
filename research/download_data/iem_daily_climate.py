@@ -165,15 +165,6 @@ class IEMDailyClimateFetcher(WeatherFetcherBase):
         logger.info("Got %d CLI reports for %s in %d", len(df), station.icao, year)
         return df
 
-    def fetch_and_save(
-        self,
-        station: StationInfo,
-        target_date: date,
-        **kwargs,
-    ) -> Path:
-        df = self.fetch(station, target_date, **kwargs)
-        return self.save_parquet(df, station, target_date)
-
 
 def _safe_int(val) -> int | None:
     if val is None or val == "M":

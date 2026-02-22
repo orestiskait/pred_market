@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 import pyarrow as pa
@@ -55,6 +55,7 @@ SYNOPTIC_WS_SCHEMA = pa.schema([
     ("stid",          pa.string()),
     ("sensor",        pa.string()),
     ("value",         pa.float64()),
+    ("source",        pa.string()),  # "live" | "backfill" — live has priority when deduping
 ])
 
 PAPER_TRADE_SCHEMA = pa.schema([
@@ -95,30 +96,10 @@ class ParquetStorage:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _append(
-        path: Path,
-        table: pa.Table,
-        schema_defaults: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Write table to *path*, appending to an existing file if present.
-
-        schema_defaults: when appending, add missing columns to existing table
-        with these default values (e.g. {"source": "live"} for backward compat).
-        """
+    def _append(path: Path, table: pa.Table) -> None:
+        """Write table to *path*, appending to an existing file if present."""
         if path.exists():
             existing = pq.read_table(path)
-            if schema_defaults:
-                for col, default in schema_defaults.items():
-                    if col not in existing.schema.names:
-                        n = len(existing)
-                        if isinstance(default, str):
-                            existing = existing.append_column(
-                                col, pa.array([default] * n, type=pa.string())
-                            )
-                        else:
-                            existing = existing.append_column(
-                                col, pa.array([default] * n)
-                            )
             table = pa.concat_tables([existing, table], promote_options="default")
         pq.write_table(table, path)
 
@@ -128,14 +109,13 @@ class ParquetStorage:
         filename: str,
         rows: List[Dict],
         schema: pa.Schema,
-        schema_defaults: Optional[Dict[str, Any]] = None,
     ) -> None:
         if not rows:
             return
         df = pd.DataFrame(rows)
         table = pa.Table.from_pandas(df, schema=schema, preserve_index=False)
         path = self.dirs[kind] / filename
-        self._append(path, table, schema_defaults=schema_defaults)
+        self._append(path, table)
         logger.info("Wrote %d rows to %s", len(rows), path)
 
     # ------------------------------------------------------------------
@@ -155,16 +135,41 @@ class ParquetStorage:
         self._write("orderbook", f"{dt.isoformat()}.parquet", rows, ORDERBOOK_SNAPSHOT_SCHEMA)
 
     def write_synoptic_ws(
-        self, rows: List[Dict], dt: Optional[date] = None,
+        self, rows: List[Dict], dt: Optional[date] = None, source: str = "live",
     ) -> None:
+        """Write Synoptic observations. source: 'live' (WebSocket) or 'backfill' (REST)."""
         dt = dt or utc_today()
-        self._write(
-            "synoptic_ws",
-            f"{dt.isoformat()}.parquet",
-            rows,
-            SYNOPTIC_WS_SCHEMA,
-            schema_defaults={"source": "live"},  # backward compat for pre-source parquets
-        )
+        rows = [{**r, "source": r.get("source", source)} for r in rows]
+        self._write("synoptic_ws", f"{dt.isoformat()}.parquet", rows, SYNOPTIC_WS_SCHEMA)
+
+    def merge_synoptic_backfill(
+        self, rows: List[Dict], dt: date,
+    ) -> int:
+        """Merge backfill rows into existing Synoptic data. Deduplicates by (ob_timestamp, stid);
+        live data takes priority over backfill. Returns total rows written."""
+        path = self.dirs["synoptic_ws"] / f"{dt.isoformat()}.parquet"
+        existing = pd.DataFrame()
+        if path.exists():
+            existing = pq.read_table(path).to_pandas()
+
+        backfill_df = pd.DataFrame([{**r, "source": r.get("source", "backfill")} for r in rows])
+        if backfill_df.empty:
+            return len(existing)
+
+        combined = pd.concat([existing, backfill_df], ignore_index=True)
+        # Deduplicate: (ob_timestamp, stid), prefer source=live
+        combined["_sort"] = combined["source"].map({"live": 0, "backfill": 1})
+        combined = combined.sort_values("_sort").drop_duplicates(
+            subset=["ob_timestamp", "stid"], keep="first"
+        ).drop(columns=["_sort"])
+        combined = combined.sort_values("ob_timestamp").reset_index(drop=True)
+        # Ensure schema column order
+        cols = [c for c in SYNOPTIC_WS_SCHEMA.names if c in combined.columns]
+        combined = combined[cols]
+        table = pa.Table.from_pandas(combined, schema=SYNOPTIC_WS_SCHEMA, preserve_index=False)
+        pq.write_table(table, path)
+        logger.info("Merged %d backfill rows → %s (total %d)", len(rows), path, len(combined))
+        return len(combined)
 
     def write_paper_trades(
         self, rows: List[Dict], dt: Optional[date] = None,
@@ -213,10 +218,6 @@ class ParquetStorage:
         """
         raw = self.read_parquets("orderbook", start_date, end_date)
         if raw.empty:
-            return raw
-
-        # Legacy data without snapshot_type: already full snapshots
-        if "snapshot_type" not in raw.columns:
             return raw
 
         raw = raw.sort_values("snapshot_ts")

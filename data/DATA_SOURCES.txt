@@ -4,7 +4,7 @@ awc_metar | Aviation Weather Center (AWC) | METAR observations (hourly + SPECI)
 iem_daily_climate | Iowa Environmental Mesonet (IEM) | NWS Daily Climate Report (CLI) - official high/low for Kalshi settlement. Chicago=CLIMDW (Midway). See docs/events/kalshi_settlement_rules.md
 kalshi_market_snapshots | Kalshi WebSocket | Market snapshots (yes_bid, yes_ask, no_bid, no_ask, last_price)
 kalshi_orderbook_snapshots | Kalshi WebSocket | Orderbook depth
-synoptic_weather_observations | Synoptic WebSocket | Real-time weather observations
+synoptic_weather_observations | Synoptic WebSocket + REST | ASOS 1-min (live + backfill). source: live|backfill; live wins on dedup.
 weather_bot_paper_trades | Paper execution | Bot trade log (CSV + parquet YYYY-MM-DD.parquet)
 kalshi_historical | Kalshi REST API | Historical candlesticks and trades (backfill)
 hrrr | NOAA HRRR via AWS S3 (noaa-hrrr-bdp-pcs) | HRRR 15-min sub-hourly 3km point forecasts (2m temp) at station coordinates
@@ -14,7 +14,7 @@ nbm | NOAA NBM via AWS S3 (noaa-nbm-grib2-pds) | NBM 2.5km bias-corrected hourly
 
 Download scripts: research/download_data/
   iem_asos_1min.py - IEM ASOS 1-min
-  synoptic_asos_1min.py - Synoptic HF-ASOS 1-min (historical)
+  synoptic_backfill.py - Synoptic REST backfill into synoptic_weather_observations
   run_synoptic_asos_collection.py - Synoptic 1-min backfill (e.g. last 1 year for Chicago)
   awc_metar.py - AWC METAR
   iem_daily_climate.py - IEM Daily Climate
