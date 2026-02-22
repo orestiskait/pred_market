@@ -22,6 +22,6 @@ Download scripts: research/download_data/
   rtma_ru.py - RTMA Rapid Update analysis fetcher
   rrfs.py - RRFS hourly forecast fetcher
   nbm.py - NBM bias-corrected forecast fetcher
-  run_nwp_collection.py - Unified NWP CLI for all models (latest + backfill)
-  run_hrrr_collection.py - HRRR-specific convenience CLI
+  run_nwp_collection.py - Unified NWP script for all models (latest + backfill)
+  run_hrrr_collection.py - HRRR-specific convenience script
   All NWP fetchers require: pip install herbie-data xarray cfgrib eccodes

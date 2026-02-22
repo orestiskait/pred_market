@@ -1,36 +1,12 @@
 """Fetch NWP model data (HRRR / RTMA-RU / RRFS / NBM) for research stations.
 
-Unified CLI for all NWP point-extraction fetchers.
-
 Usage:
-    # HRRR 15-minute sub-hourly — latest cycle
-    python -m research.download_data.run_nwp_collection hrrr latest
-
-    # HRRR backfill
-    python -m research.download_data.run_nwp_collection hrrr backfill \\
-        --start 2026-02-01 --end 2026-02-20
-
-    # RTMA-RU latest analysis
-    python -m research.download_data.run_nwp_collection rtma_ru latest
-
-    # RRFS backfill (hourly, prototype data up to Nov 2024)
-    python -m research.download_data.run_nwp_collection rrfs backfill \\
-        --start 2024-08-01 --end 2024-08-15
-
-    # NBM latest forecast
-    python -m research.download_data.run_nwp_collection nbm latest
-
-    # NBM backfill
-    python -m research.download_data.run_nwp_collection nbm backfill \\
-        --start 2026-02-01 --end 2026-02-20 --cycles 1,7,13,19
-
-    # Override stations or forecast depth
-    python -m research.download_data.run_nwp_collection hrrr latest --station KMDW KNYC --max-fxx 6
+  1. Set MODEL, MODE, START_DATE, END_DATE, etc. below.
+  2. Run: python -m research.download_data.run_nwp_collection
 """
 
 from __future__ import annotations
 
-import argparse
 import logging
 import sys
 from datetime import date, timedelta
@@ -69,9 +45,23 @@ def _load_models() -> None:
     MODEL_REGISTRY["nbm"] = NBMFetcher
 
 
-def _resolve_stations(args, config_path: Path) -> list[HRRRStation]:
-    if args.station:
-        return [hrrr_station_for_icao(icao) for icao in args.station]
+# ------------------------------------------------------------------------------
+# Config — edit these when running as script
+# ------------------------------------------------------------------------------
+MODEL = "hrrr"  # hrrr | rtma_ru | rrfs | nbm
+MODE = "latest"  # "latest" or "backfill"
+START_DATE = date(2026, 2, 1)  # for backfill
+END_DATE = None  # for backfill; None means yesterday
+STATIONS = []  # e.g. ["KMDW", "KNYC"] — empty = use config.yaml
+CYCLES = None  # e.g. "0,12,19" for NBM — None = model default
+MAX_FXX = None  # max forecast hour; None = model default
+CONFIG_PATH = _project_root / "services" / "config.yaml"
+# ------------------------------------------------------------------------------
+
+
+def _resolve_stations(station_overrides: list[str], config_path: Path) -> list[HRRRStation]:
+    if station_overrides:
+        return [hrrr_station_for_icao(icao) for icao in station_overrides]
 
     import yaml
     with open(config_path) as f:
@@ -85,8 +75,12 @@ def _resolve_stations(args, config_path: Path) -> list[HRRRStation]:
     return stations
 
 
-def cmd_latest(args, fetcher: NWPPointFetcher, stations: list[HRRRStation]) -> None:
-    fxx_range = range(0, args.max_fxx + 1) if args.max_fxx is not None else None
+def run_latest(
+    fetcher: NWPPointFetcher,
+    stations: list[HRRRStation],
+    max_fxx: int | None = None,
+) -> None:
+    fxx_range = range(0, max_fxx + 1) if max_fxx is not None else None
     df = fetcher.fetch_latest(stations, fxx_range=fxx_range, save=True)
 
     if df.empty:
@@ -102,23 +96,27 @@ def cmd_latest(args, fetcher: NWPPointFetcher, stations: list[HRRRStation]) -> N
     print(f"  Rows           : {len(df)}")
 
 
-def cmd_backfill(args, fetcher: NWPPointFetcher, stations: list[HRRRStation]) -> None:
-    start = date.fromisoformat(args.start)
-    end = date.fromisoformat(args.end) if args.end else utc_today() - timedelta(days=1)
-
-    cycles = [int(c) for c in args.cycles.split(",")] if args.cycles else None
-    fxx_range = range(0, args.max_fxx + 1) if args.max_fxx is not None else None
+def run_backfill(
+    fetcher: NWPPointFetcher,
+    stations: list[HRRRStation],
+    start: date,
+    end: date,
+    cycles: list[int] | None = None,
+    max_fxx: int | None = None,
+) -> None:
+    cycles_list = cycles
+    fxx_range = range(0, max_fxx + 1) if max_fxx is not None else None
 
     stn_names = ", ".join(s.city for s in stations)
-    default_cycles = cycles or fetcher.DEFAULT_CYCLES
+    default_cycles = cycles_list or fetcher.DEFAULT_CYCLES
     print(f"\n{fetcher.SOURCE_NAME.upper()} backfill: {start} → {end}")
     print(f"  Stations: {stn_names} ({len(stations)} total)")
     print(f"  Cycles  : {default_cycles}")
-    print(f"  Max fxx : {args.max_fxx or fetcher.max_forecast_hour}\n")
+    print(f"  Max fxx : {max_fxx or fetcher.max_forecast_hour}\n")
 
     df = fetcher.fetch_date_range(
         start, end, stations,
-        cycles=cycles, fxx_range=fxx_range, save=True,
+        cycles=cycles_list, fxx_range=fxx_range, save=True,
     )
 
     if df.empty:
@@ -132,63 +130,34 @@ def cmd_backfill(args, fetcher: NWPPointFetcher, stations: list[HRRRStation]) ->
         print(f"    {icao}: {n} rows")
 
 
-def main():
+def main() -> None:
     _load_models()
 
-    parser = argparse.ArgumentParser(
-        description="Fetch NWP model data (HRRR / RTMA-RU / RRFS / NBM) for research stations",
-    )
-    parser.add_argument("--log-level", default="INFO")
-    parser.add_argument(
-        "--config",
-        default=str(_project_root / "services" / "config.yaml"),
-        help="Path to config.yaml",
-    )
-    parser.add_argument(
-        "--station", nargs="*", metavar="ICAO",
-        help="Override stations by ICAO code (e.g. KMDW KNYC)",
-    )
-    parser.add_argument(
-        "--max-fxx", type=int, default=None,
-        help="Max forecast hour to fetch (default: model-specific)",
-    )
-
-    # First positional: model name
-    parser.add_argument(
-        "model", choices=list(MODEL_REGISTRY.keys()),
-        help="NWP model to fetch",
-    )
-
-    sub = parser.add_subparsers(dest="mode", required=True)
-    sub.add_parser("latest", help="Fetch the most recent available cycle")
-
-    bp = sub.add_parser("backfill", help="Fetch data for a date range")
-    bp.add_argument("--start", required=True, help="Start date (YYYY-MM-DD)")
-    bp.add_argument("--end", default=None, help="End date (YYYY-MM-DD, default: yesterday)")
-    bp.add_argument(
-        "--cycles", default=None,
-        help="Comma-separated cycle hours (default: model-specific)",
-    )
-
-    args = parser.parse_args()
+    if MODEL not in MODEL_REGISTRY:
+        logger.error("MODEL must be one of: %s", list(MODEL_REGISTRY.keys()))
+        sys.exit(1)
 
     logging.basicConfig(
-        level=getattr(logging, args.log_level.upper()),
+        level=logging.INFO,
         format="%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
         datefmt="%H:%M:%S",
     )
 
-    config_path = Path(args.config)
-    fetcher_cls = MODEL_REGISTRY[args.model]
-    fetcher = fetcher_cls.from_config(config_path)
-    stations = _resolve_stations(args, config_path)
+    fetcher_cls = MODEL_REGISTRY[MODEL]
+    fetcher = fetcher_cls.from_config(CONFIG_PATH)
+    stations = _resolve_stations(STATIONS, CONFIG_PATH)
 
     logger.info("%s stations: %s", fetcher.SOURCE_NAME.upper(), [s.icao for s in stations])
 
-    if args.mode == "latest":
-        cmd_latest(args, fetcher, stations)
-    elif args.mode == "backfill":
-        cmd_backfill(args, fetcher, stations)
+    if MODE == "latest":
+        run_latest(fetcher, stations, MAX_FXX)
+    elif MODE == "backfill":
+        end = END_DATE if END_DATE else utc_today() - timedelta(days=1)
+        cycles = [int(c) for c in CYCLES.split(",")] if CYCLES else None
+        run_backfill(fetcher, stations, START_DATE, end, cycles, MAX_FXX)
+    else:
+        logger.error("MODE must be 'latest' or 'backfill'")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
