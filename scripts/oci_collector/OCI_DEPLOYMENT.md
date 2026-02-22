@@ -22,7 +22,7 @@ scripts/oci_collector/
 │   ├── update_code_and_restart_services.sh    # Pull latest code, rebuild image, restart all services
 │   ├── probe_vm_and_container_status.sh      # Check VM state, container status, logs, data freshness
 │   └── sync_collected_data_to_local.sh       # Rsync parquet files from VM to local machine
-├── README.md
+├── OCI_DEPLOYMENT.md                          # This file
 └── OCI_SETUP_GUIDE.md          # When to use each script, one-off vs regular, credentials
 ```
 
