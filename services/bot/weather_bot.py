@@ -43,7 +43,7 @@ from services.kalshi.ws import KalshiWSMixin
 from services.synoptic.ws import SynopticWSMixin
 from services.markets.registry import MarketConfig, MARKET_REGISTRY
 from services.synoptic.station_registry import synoptic_stations_for_series
-from services.markets.ticker import discover_markets, resolve_event_tickers
+from services.markets.ticker import discover_markets, resolve_event_tickers, nws_observation_period
 
 logger = logging.getLogger("WeatherBot")
 
@@ -204,12 +204,15 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
                 continue
             mc = self._market_configs[series]
             trigger_temp = float(cap_strike)
+            nws_start_utc, nws_end_utc = nws_observation_period(event_ticker, mc.tz)
             self.ladder[tk] = {
                 "trigger_temp": trigger_temp,
                 "subtitle": info[tk].get("subtitle"),
                 "executed": False,
                 "series": series,
                 "station": mc.synoptic_station,
+                "nws_start": nws_start_utc,
+                "nws_end": nws_end_utc,
             }
             logger.info(
                 "  Ladder: %s '%s' triggers at >= %.1f°F",
@@ -237,27 +240,31 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
         """Each 1-minute ASOS observation triggers strategy evaluation."""
         station = row["stid"]
         temp = row["value"]
-        ob_time = row["ob_timestamp"]
+        ob_time_str = row["ob_timestamp"]
 
         if station not in self.weather_history:
             # Observation from a station we're not tracking
             return
 
-        logger.info("🌡️ [%s] %.1f°F at %s", station, temp, ob_time)
-        self.weather_history[station].append(temp)
-        asyncio.ensure_future(self.evaluate_strategy(station, temp))
+        try:
+            ob_time = datetime.fromisoformat(ob_time_str.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            logger.warning("Could not parse timestamp: %s", ob_time_str)
+            return
+
+        logger.info("🌡️ [%s] %.1f°F at %s", station, temp, ob_time_str)
+        self.weather_history[station].append((ob_time, temp))
+        asyncio.ensure_future(self.evaluate_strategy(station))
 
     # -------------------------------------------------------------------------
     # Strategy Engine
     # -------------------------------------------------------------------------
 
-    async def evaluate_strategy(self, station: str, latest_temp: float):
+    async def evaluate_strategy(self, station: str):
         """Check if recent observations for *station* trigger any ladder contracts."""
         history = self.weather_history.get(station)
-        if not history or len(history) < self.consecutive_obs_required:
+        if not history:
             return
-
-        recent_obs = list(history)[-self.consecutive_obs_required:]
 
         for tk, info in self.ladder.items():
             if info["executed"]:
@@ -266,10 +273,20 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
                 continue
 
             threshold = info["trigger_temp"]
-            if all(t >= threshold for t in recent_obs):
+            nws_start = info["nws_start"]
+            nws_end = info["nws_end"]
+
+            # Filter observations that fall within the exact NWS evaluation window for this event
+            valid_obs = [t for (dt, t) in history if nws_start <= dt <= nws_end]
+            if len(valid_obs) < self.consecutive_obs_required:
+                continue
+
+            recent_valid = valid_obs[-self.consecutive_obs_required:]
+
+            if all(t >= threshold for t in recent_valid):
                 logger.warning(
-                    "🚨 LADDER TRIGGERED! [%s] Last %d obs: %s >= %.1f°F!",
-                    station, self.consecutive_obs_required, recent_obs, threshold,
+                    "🚨 LADDER TRIGGERED! [%s] Last %d valid obs: %s >= %.1f°F!",
+                    station, self.consecutive_obs_required, recent_valid, threshold,
                 )
                 logger.warning("   Targeting contract: %s ('%s')", tk, info["subtitle"])
                 self.ladder[tk]["executed"] = True
