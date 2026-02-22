@@ -1,11 +1,11 @@
-"""Live WebSocket-based Kalshi market data collector.
+"""Kalshi listener: live WebSocket-based Kalshi market data ingest.
 
 Streams real-time Kalshi market data (orderbooks + tickers) and
 periodically snapshots state to Parquet.
 
 Usage:
-    python -m pred_market_src.collector.kalshi.collector
-    python -m pred_market_src.collector.kalshi.collector --config path/to/config.yaml
+    python -m pred_market_src.collector.kalshi.listener
+    python -m pred_market_src.collector.kalshi.listener --config path/to/config.yaml
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from .ws import KalshiWSMixin
 logger = logging.getLogger(__name__)
 
 
-class LiveCollector(AsyncService, KalshiWSMixin):
+class LiveListener(AsyncService, KalshiWSMixin):
     """Streams Kalshi WebSocket data and periodically snapshots state to parquet."""
 
     def __init__(self, config: dict, config_dir: Path):
@@ -75,7 +75,7 @@ class LiveCollector(AsyncService, KalshiWSMixin):
         # Delta compression: track which OB levels changed since last snapshot
         self._snapshot_count = 0
         self._last_ob: Dict[str, Dict[str, Dict[int, float]]] = {}
-        self._dirty_levels: Dict[str, Dict[str, set]] = {}  # tk -> side -> {prices}
+        self._dirty_levels: Dict[str, Dict[str, set]] = {}
 
     # ------------------------------------------------------------------ #
     # Market discovery                                                     #
@@ -333,14 +333,14 @@ class LiveCollector(AsyncService, KalshiWSMixin):
 # ------------------------------------------------------------------ #
 
 def main():
-    parser = standard_argparser("Kalshi live market data collector")
+    parser = standard_argparser("Kalshi live market data listener")
     args = parser.parse_args()
 
     configure_logging(args.log_level)
 
     config, config_path = load_config(args.config)
-    collector = LiveCollector(config, config_dir=config_path.parent)
-    asyncio.run(collector.run())
+    listener = LiveListener(config, config_dir=config_path.parent)
+    asyncio.run(listener.run())
 
 
 if __name__ == "__main__":

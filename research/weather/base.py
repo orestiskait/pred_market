@@ -16,10 +16,8 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
 
-from pred_market_src.collector.weather.stations import StationInfo
+from research.weather.stations import StationInfo
 
 logger = logging.getLogger(__name__)
 

@@ -20,11 +20,11 @@ from pathlib import Path
 import pandas as pd
 
 # Ensure project root is on sys.path
-_project_root = Path(__file__).resolve().parent.parent.parent
+_project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from pred_market_src.collector.weather.observations import WeatherObservations
+from research.weather.observations import WeatherObservations
 
 # ── Configuration ──────────────────────────────────────────────────────────
 END_DATE   = date(2026, 2, 18)
@@ -185,7 +185,7 @@ def main():
     print(f"Period: {START_DATE} -> {END_DATE}")
     print("=" * 70)
     
-    config_path = Path(__file__).resolve().parent.parent / "collector" / "config.yaml"
+    config_path = _project_root / "pred_market_src" / "collector" / "config.yaml"
     obs = WeatherObservations.from_config(config_path)
 
     # 1. FETCH & SAVE (Production Pipeline)

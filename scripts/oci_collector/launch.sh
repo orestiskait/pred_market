@@ -1,5 +1,5 @@
 #!/bin/bash
-# Launch a Kalshi collector VM on OCI using the A2→A1 shape swap trick.
+# Launch an OCI VM for Kalshi listener, Synoptic listener, and weather bot (A2→A1 shape swap trick).
 #
 # A1.Flex capacity is almost always exhausted. The workaround:
 #   1. Create an A2.Flex instance (usually available).
@@ -12,7 +12,7 @@
 # The instance is launched WITHOUT an ephemeral IP; a reserved IP is assigned
 # in step 5 so the address survives VM recreations.
 #
-# After launch, SSH in and run setup.sh to install the collector.
+# After launch, SSH in and run setup.sh to install Kalshi listener, Synoptic listener, and weather bot.
 #
 # Env vars (auto-detected if not set):
 #   COMPARTMENT_ID, AD, SUBNET_ID, IMAGE_ID
@@ -202,5 +202,5 @@ echo "  Public IP: $PUBLIC_IP (reserved — permanent)"
 echo ""
 echo "  Wait ~2 min for cloud-init, then:"
 echo "    ssh ubuntu@$PUBLIC_IP"
-echo "    cd pred_market/scripts/oci_collector && ./setup.sh && ./run_collector.sh"
+echo "    cd pred_market/scripts/oci_collector && ./setup.sh && ./run_all.sh"
 echo ""

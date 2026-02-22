@@ -1,10 +1,10 @@
 # =============================================================================
-# Docker Compose — Kalshi Collector
+# Docker Compose — Kalshi listener, Synoptic listener, weather bot
 # =============================================================================
-# Runs collector services on the OCI VM:
+# Runs three services:
 #
-#   kalshi-collector   — WebSocket-based Kalshi market data collector
-#   synoptic-listener  — Synoptic Data WebSocket collector
+#   kalshi-listener    — Kalshi WebSocket listener (market data, orderbooks)
+#   synoptic-listener  — Synoptic WebSocket listener (real-time weather obs)
 #   weather-bot        — Weather paper execution bot
 #
 # Data is persisted to the host directory (~/collector-data).
@@ -15,10 +15,10 @@
 # =============================================================================
 
 services:
-  # ── Kalshi market data collector ──────────────────────────────────────────
-  kalshi-collector:
+  # ── Kalshi market data listener ────────────────────────────────────────────
+  kalshi-listener:
     image: kalshi-collector:latest
-    container_name: kalshi-collector
+    container_name: kalshi-listener
     restart: unless-stopped
     env_file:
       - ${SHARED_ENV_FILE:-.env}
@@ -27,7 +27,7 @@ services:
     networks:
       - collector-net
 
-  # ── Synoptic Data WebSocket collector ─────────────────────────────────────
+  # ── Synoptic listener (WebSocket weather ingest) ─────────────────────────
   synoptic-listener:
     image: kalshi-collector:latest
     container_name: synoptic-listener

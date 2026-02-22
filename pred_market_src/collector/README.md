@@ -1,7 +1,9 @@
-# Kalshi Market Data Collector
+# Kalshi listener, Synoptic listener, weather bot
 
-This module streams and stores Kalshi prediction market data and real-time
-weather observations for analysis and automated trading.
+This module runs three services:
+- **Kalshi listener** — streams Kalshi market data (orderbooks, tickers) to Parquet
+- **Synoptic listener** — streams real-time weather observations to Parquet
+- **Weather bot** — paper-trading weather arbitrage bot
 
 ## Package Layout
 
@@ -22,27 +24,18 @@ collector/
 ├── kalshi/                  # Kalshi exchange integration
 │   ├── client.py            # REST client + RSA-PSS authentication
 │   ├── ws.py                # WebSocket mixin (orderbook maintenance)
-│   └── collector.py         # Live market data collector service
+│   └── listener.py          # Live market data listener service
 │
 ├── synoptic/                # Synoptic Data integration
 │   ├── ws.py                # WebSocket mixin (observation parsing)
-│   └── listener.py          # Live weather observation collector service
+│   └── listener.py          # Synoptic listener (live weather WebSocket ingest)
 │
 ├── bot/                     # Trading bots
 │   └── weather_bot.py       # Paper-trading weather arbitrage bot
 │
-├── weather/                 # Historical weather data fetchers
-│   ├── stations.py          # Re-exports from markets/registry.py
-│   ├── base.py              # Abstract fetcher base class
-│   ├── asos_1min.py         # IEM ASOS 1-minute data
-│   ├── metar.py             # AWC METAR observations
-│   ├── daily_climate.py     # NWS Daily Climate Report (CLI)
-│   └── observations.py      # Orchestrator for all weather fetchers
-│
 ├── Dockerfile               # Container build
 ├── docker-compose.yml       # Multi-service orchestration
 ├── docker-entrypoint.sh     # Container entry point
-├── run_weather.py           # Script for historical weather collection
 └── requirements.txt
 ```
 
@@ -67,8 +60,8 @@ Only **two steps** are needed:
      - "KXHIGHSFO"   # ← new
    ```
 
-That's it. All services (collector, synoptic listener, weather bot, weather
-fetchers) automatically pick up the new market.
+That's it. All services (Kalshi listener, synoptic listener, weather bot)
+automatically pick up the new market.
 
 ## Timezone Handling
 
@@ -82,11 +75,11 @@ used at boundaries (computing event ticker dates, displaying to humans).
 
 ## Running
 
-### Live Kalshi collector
+### Live Kalshi listener
 
 ```bash
-pred_env/bin/python -m pred_market_src.collector.kalshi.collector
-pred_env/bin/python -m pred_market_src.collector.kalshi.collector --config path/to/config.yaml
+pred_env/bin/python -m pred_market_src.collector.kalshi.listener
+pred_env/bin/python -m pred_market_src.collector.kalshi.listener --config path/to/config.yaml
 ```
 
 ### Live Synoptic listener
@@ -108,7 +101,7 @@ pred_env/bin/python -m pred_market_src.collector.bot.weather_bot --series KXHIGH
 ### Historical weather data
 
 ```bash
-pred_env/bin/python pred_market_src/collector/run_weather.py
+pred_env/bin/python research/run_weather.py
 ```
 
 ### Docker

@@ -2,15 +2,22 @@
 
 Usage:
   1. Configure the DATE SETTINGS below.
-  2. Run: python pred_market_src/collector/run_weather.py
+  2. Run: python research/run_weather.py
 """
 
 import logging
 import sys
 from datetime import date, timedelta
 
-from pred_market_src.collector.tz import utc_today
 from pathlib import Path
+
+# Ensure project root is on sys.path
+_project_root = Path(__file__).resolve().parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
+from pred_market_src.collector.tz import utc_today
+from research.weather.observations import WeatherObservations
 
 # MEANINGFUL VARIABLES
 # ------------------------------------------------------------------------------
@@ -21,13 +28,6 @@ from pathlib import Path
 START_DATE = date(2026, 2, 1)  # e.g., date(2026, 2, 1)
 END_DATE   = None  # e.g., date(2026, 2, 18) -- None means "Yesterday"
 # ------------------------------------------------------------------------------
-
-# Ensure project root is on sys.path
-_project_root = Path(__file__).resolve().parent.parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
-
-from pred_market_src.collector.weather.observations import WeatherObservations
 
 
 def main():
@@ -41,7 +41,7 @@ def main():
     target_end = END_DATE if END_DATE else utc_today() - timedelta(days=1)
     target_start = START_DATE if START_DATE else target_end
 
-    config_path = Path(__file__).resolve().parent / "config.yaml"
+    config_path = _project_root / "pred_market_src" / "collector" / "config.yaml"
     
     # Initialize the coordinator
     obs = WeatherObservations.from_config(config_path)

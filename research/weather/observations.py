@@ -5,7 +5,7 @@ Loads station configuration from config.yaml and provides a single
 data for all configured stations.
 
 Usage:
-    from pred_market_src.collector.weather import WeatherObservations
+    from research.weather import WeatherObservations
 
     obs = WeatherObservations.from_config("pred_market_src/collector/config.yaml")
     results = obs.collect_all(date(2026, 2, 18))
@@ -28,10 +28,10 @@ from typing import Any
 import pandas as pd
 import yaml
 
-from pred_market_src.collector.weather.asos_1min import ASOS1MinFetcher
-from pred_market_src.collector.weather.daily_climate import DailyClimateFetcher
-from pred_market_src.collector.weather.metar import METARFetcher
-from pred_market_src.collector.weather.stations import (
+from research.weather.asos_1min import ASOS1MinFetcher
+from research.weather.daily_climate import DailyClimateFetcher
+from research.weather.metar import METARFetcher
+from research.weather.stations import (
     STATION_REGISTRY,
     StationInfo,
     station_for_icao,

@@ -1,6 +1,6 @@
 #!/bin/bash
-# Pull latest code from GitHub, rebuild the Docker image, and restart the collector.
-# Safe to re-run at any time — the collector is only down for the rebuild+restart window.
+# Pull latest code from GitHub, rebuild the Docker image, and restart Kalshi listener, Synoptic listener, and weather bot.
+# Safe to re-run at any time — services are only down for the rebuild+restart window.
 #
 # Usage (on the VM):
 #   cd ~/pred_market/scripts/oci_collector && ./update.sh
@@ -14,8 +14,7 @@ set -euo pipefail
 
 REPO_DIR="/home/ubuntu/pred_market"
 SCRIPT_DIR="$REPO_DIR/scripts/oci_collector"
-IMAGE="kalshi-collector:latest"
-CONTAINER="kalshi-collector"
+IMAGE="kalshi-collector:latest"  # Shared image for Kalshi listener, Synoptic listener, bot
 
 DOCKER="docker"
 $DOCKER info &>/dev/null 2>&1 || DOCKER="sudo docker"
@@ -48,9 +47,9 @@ echo ""
 echo "[update] Rebuilding Docker image..."
 $DOCKER build -t "$IMAGE" "$REPO_DIR/pred_market_src/collector/"
 
-# ── Restart collector ────────────────────────────────────────────────────────
-echo "[update] Restarting collector..."
-"$SCRIPT_DIR/run_collector.sh" start
+# ── Restart Kalshi listener, Synoptic listener, weather bot ──────────────────
+echo "[update] Restarting Kalshi listener, Synoptic listener, and weather bot..."
+"$SCRIPT_DIR/run_all.sh" start
 
 echo ""
 echo "[update] Done. Now running $(git -C "$REPO_DIR" rev-parse --short HEAD)."

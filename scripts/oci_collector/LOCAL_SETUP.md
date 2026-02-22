@@ -1,4 +1,4 @@
-# OCI Collector — IP Address & Local-Only Files
+# OCI Deployment — IP Address & Local-Only Files
 
 ## Public IP Address
 
@@ -11,7 +11,7 @@ SSH: `ssh ubuntu@129.158.203.11`
 
 ---
 
-## Files Required for the Collector (Not in GitHub)
+## Files Required for Kalshi listener, Synoptic listener, bot (Not in GitHub)
 
 These files are created locally, copied to the VM, or generated during setup. They are not committed to the repository.
 

@@ -1,6 +1,6 @@
-# OCI Deployment: Kalshi Collector
+# OCI Deployment: Kalshi listener, Synoptic listener, weather bot
 
-Run the Kalshi market data collector 24/7 on an OCI ARM instance (Always Free tier eligible).
+Run Kalshi listener, Synoptic listener, and weather bot 24/7 on an OCI ARM instance (Always Free tier eligible).
 
 ## Overview
 
@@ -8,9 +8,12 @@ Run the Kalshi market data collector 24/7 on an OCI ARM instance (Always Free ti
 |--------|-------------|
 | `launch.sh` | Creates the OCI VM (A2→A1 shape swap trick), assigns reserved public IP |
 | `cloud-init.yaml` | Runs on first boot: installs Docker, git, fail2ban |
-| `setup.sh` | Run on the VM: clones repo, builds Docker image, configures Kalshi credentials |
-| `run_collector.sh` | Start / stop / logs / status for the Kalshi collector container |
-| `update.sh` | Pull latest code, rebuild image, restart collector (skip if already up to date) |
+| `setup.sh` | Run on the VM: clones repo, builds Docker image, configures credentials |
+| `run_all.sh` | Start / stop / logs / status for all three services |
+| `run_kalshi_listener.sh` | Kalshi listener only |
+| `run_synoptic_listener.sh` | Synoptic listener only |
+| `run_weather_bot.sh` | Weather bot only |
+| `update.sh` | Pull latest code, rebuild image, restart all three (skip if already up to date) |
 | `probe.sh` | Probe from local: VM state, container status, recent logs, data freshness |
 
 ## Architecture
@@ -22,7 +25,7 @@ The VM runs Docker containers for data collection:
 │  OCI VM (A1.Flex, 4 OCPU, 24 GB, ARM64)                        │
 │                                                                  │
 │  ┌──────────────────────┐    ┌──────────────────────────────┐   │
-│  │  kalshi-collector     │    │  synoptic-listener            │   │
+│  │  kalshi-listener      │    │  synoptic-listener            │   │
 │  │  (WebSocket → parquet)│    │  (WebSocket → parquet)        │   │
 │  └───────┬───────────────┘    └──────┬───────────────────────┘   │
 │          │                           │                            │
@@ -53,7 +56,7 @@ The VM runs Docker containers for data collection:
 
 ```bash
 cd scripts/oci_collector
-chmod +x launch.sh setup.sh run_collector.sh
+chmod +x launch.sh setup.sh run_all.sh run_kalshi_listener.sh run_synoptic_listener.sh run_weather_bot.sh
 ./launch.sh
 ```
 
@@ -131,17 +134,24 @@ KALSHI_API_KEY_ID=your-key-id \
   ./setup.sh
 ```
 
-### 5. Start the Kalshi collector
+### 5. Start Kalshi listener, Synoptic listener, and weather bot
 
 ```bash
-./run_collector.sh
+./run_all.sh
 ```
 
-### 6. Verify Kalshi collector
+Or run individually:
+```bash
+./run_kalshi_listener.sh start
+./run_synoptic_listener.sh start
+./run_weather_bot.sh start
+```
+
+### 6. Verify services
 
 ```bash
-./run_collector.sh status    # container running?
-./run_collector.sh logs      # tail live logs
+./run_all.sh status    # containers running?
+./run_all.sh logs      # tail live logs
 ls -la ~/collector-data/market_snapshots/
 ```
 
@@ -202,7 +212,7 @@ The script auto-detects the VM's public IP via OCI CLI. On success it prints a s
 
 ## Daily Restart (Event Series Roll)
 
-The Kalshi collector resolves event series prefixes (e.g. `KXHIGHCHI`) to dated tickers (e.g. `KXHIGHCHI-26FEB19`) once at startup. To pick up the next day's events, the collector restarts automatically at **12:01 AM** and **1:01 AM New York time** via cron jobs installed by `setup.sh`.
+The Kalshi listener resolves event series prefixes (e.g. `KXHIGHCHI`) to dated tickers (e.g. `KXHIGHCHI-26FEB19`) once at startup. To pick up the next day's events, the services restart automatically at **12:01 AM** and **1:01 AM New York time** via cron jobs installed by `setup.sh`.
 
 Two restarts are necessary because NY contracts typically roll over around midnight, and Chicago contracts roll over around 1:00 AM ET (midnight CT).
 
@@ -213,7 +223,7 @@ Restart log: `~/collector-data/daily-restart.log`
 To verify the cron is installed:
 
 ```bash
-crontab -l | grep run_collector
+crontab -l | grep run_all
 ```
 
 To change the schedule, edit the crontab on the VM:
@@ -222,16 +232,19 @@ To change the schedule, edit the crontab on the VM:
 crontab -e
 ```
 
-## Collector Commands
+## Service Commands
 
-### Kalshi Collector
+### Kalshi listener, Synoptic listener, weather bot
 
 | Command | Action |
 |---------|--------|
-| `./run_collector.sh` or `./run_collector.sh start` | Start / restart |
-| `./run_collector.sh stop` | Stop |
-| `./run_collector.sh logs` | Tail logs |
-| `./run_collector.sh status` | Container status |
+| `./run_all.sh` or `./run_all.sh start` | Start / restart all three |
+| `./run_all.sh stop` | Stop all |
+| `./run_all.sh logs` | Tail logs from all |
+| `./run_all.sh status` | Container status |
+| `./run_kalshi_listener.sh start` | Kalshi listener only |
+| `./run_synoptic_listener.sh start` | Synoptic listener only |
+| `./run_weather_bot.sh start` | Weather bot only |
 
 ## Probing from Local Machine
 
@@ -245,7 +258,7 @@ Reports: VM lifecycle state, public IP, container status, last 15 log lines, and
 
 ## Updating Code
 
-`update.sh` pulls the latest code from GitHub, rebuilds the Docker image, and restarts the collector. It skips everything if the VM is already on the latest commit.
+`update.sh` pulls the latest code from GitHub, rebuilds the Docker image, and restarts Kalshi listener, Synoptic listener, and weather bot. It skips everything if the VM is already on the latest commit.
 
 ### One-off update (from your local machine)
 

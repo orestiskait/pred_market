@@ -1,5 +1,5 @@
 #!/bin/bash
-# Probe the OCI collector VM: VM state, container status, recent logs, data freshness.
+# Probe the OCI VM running Kalshi listener, Synoptic listener, and weather bot.
 # Run from your local machine (requires OCI CLI + SSH access).
 #
 # Usage:
@@ -65,7 +65,7 @@ ssh -o ConnectTimeout=10 -o BatchMode=yes ubuntu@"$PUBLIC_IP" \
 echo ""
 echo "── Container status ──"
 if ! ssh -o ConnectTimeout=10 -o BatchMode=yes ubuntu@"$PUBLIC_IP" \
-  '~/pred_market/scripts/oci_collector/run_collector.sh status' 2>/dev/null; then
+  '~/pred_market/scripts/oci_collector/run_all.sh status' 2>/dev/null; then
   echo "[probe] SSH failed (timeout, key, or VM unreachable)"
   echo "        Try: ssh ubuntu@$PUBLIC_IP"
   exit 4
@@ -74,11 +74,11 @@ fi
 echo ""
 echo "── Recent logs (last 15 lines) ──"
 ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" \
-  'echo "Kalshi Collector:" && docker logs --tail 15 kalshi-collector && echo "---" && echo "Synoptic Listener:" && docker logs --tail 15 synoptic-listener && echo "---" && echo "Weather Bot:" && docker logs --tail 15 weather-bot' 2>/dev/null || echo "[probe] Could not fetch logs"
+  'echo "Kalshi Listener:" && docker logs --tail 15 kalshi-listener && echo "---" && echo "Synoptic Listener:" && docker logs --tail 15 synoptic-listener && echo "---" && echo "Weather Bot:" && docker logs --tail 15 weather-bot' 2>/dev/null || echo "[probe] Could not fetch logs"
 
 echo ""
 echo "── Data recency ──"
-# Collector flushes every 5 min (flush_interval_seconds: 300). Flag stale if > 15 min.
+# Listeners flush every 5 min (flush_interval_seconds: 300). Flag stale if > 15 min.
 ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" 'bash -s' << 'RECENCY'
 STALE_MIN=15
 DATA_DIR=~/collector-data
@@ -95,7 +95,7 @@ else
   SHORT=${FILE#${DATA_DIR}/}
   if [[ $AGE_MIN -gt $STALE_MIN ]]; then
     echo "Last write: ${AGE_MIN} min ago ($SHORT)"
-    echo "Status: STALE (>${STALE_MIN} min — check collector)"
+    echo "Status: STALE (>${STALE_MIN} min — check Kalshi/Synoptic listeners)"
   else
     echo "Last write: ${AGE_MIN} min ago ($SHORT)"
     echo "Status: OK"
@@ -111,5 +111,5 @@ ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" \
 
 echo ""
 echo "────────────────────────────────────────"
-echo "[probe] OK — VM running, collector reachable"
+echo "[probe] OK — VM running, Kalshi listener + Synoptic listener reachable"
 echo "────────────────────────────────────────"

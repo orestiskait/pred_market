@@ -22,8 +22,8 @@ import pandas as pd
 import requests
 import re
 
-from pred_market_src.collector.weather.base import WeatherFetcherBase
-from pred_market_src.collector.weather.stations import StationInfo
+from research.weather.base import WeatherFetcherBase
+from research.weather.stations import StationInfo
 
 logger = logging.getLogger(__name__)
 

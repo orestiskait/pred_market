@@ -26,7 +26,7 @@ Kalshi offers weather prediction markets—e.g., “Will the high temperature in
 | **Prices** | WebSocket ticker + REST candlesticks | Real-time and historical OHLC |
 | **Events & Markets** | REST API | Event series (e.g. `KXHIGHCHI`, `KXHIGHNY`), market tickers, resolution dates |
 
-The collector subscribes to event series (e.g. Chicago and New York daily high markets), auto-resolves to the currently open events, and records market snapshots and orderbook depth. Spike detection triggers extra snapshots when prices move sharply (e.g. ≥3¢).
+The Kalshi listener subscribes to event series (e.g. Chicago and New York daily high markets), auto-resolves to the currently open events, and records market snapshots and orderbook depth. Spike detection triggers extra snapshots when prices move sharply (e.g. ≥3¢).
 
 ### Weather Data
 
@@ -45,25 +45,21 @@ Station mapping (e.g. `KXHIGHCHI` → KMDW, `KXHIGHNY` → KNYC) is configured i
 ```
 pred_market/
 ├── pred_market_src/
-│   ├── collector/              # Data collection
-│   │   ├── collector.py        # Live Kalshi WebSocket collector
-│   │   ├── backfill.py         # Historical candlesticks & trades
-│   │   ├── kalshi_client.py    # Kalshi REST + WebSocket client
-│   │   ├── storage.py          # Parquet I/O for market & orderbook
-│   │   ├── run_weather.py      # Weather collection (ASOS, METAR, CLI)
-│   │   ├── config.yaml         # Event series, collection params, storage
-│   │   ├── docker-compose.yml  # Collector services
-│   │   └── weather/            # Weather fetchers
-│   │       ├── asos_1min.py    # ASOS 1-min archive (IEM)
-│   │       ├── metar.py        # METAR API (Aviation Weather)
-│   │       ├── daily_climate.py # Official daily high/low (CLI)
-│   │       ├── stations.py     # Kalshi event → station mapping
-│   │       └── observations.py # Orchestrator
-│   └── exploration/            # Analysis
-│       ├── market_analysis.ipynb           # Orderbook, probabilities, charts
-│       └── weather_discrepancy_analysis.py  # ASOS vs official high comparison
-├── project_rules/              # Domain rules (NWS resolution logic)
-├── scripts/oci_collector/      # OCI deployment (24/7 collector)
+│   └── collector/              # Kalshi listener, Synoptic listener, bot
+│       ├── kalshi/listener.py  # Live Kalshi WebSocket listener
+│       ├── synoptic/listener.py # Synoptic weather WebSocket listener
+│       ├── bot/weather_bot.py  # Paper-trading weather arbitrage bot
+│       ├── core/               # Config, service, storage
+│       ├── markets/             # Registry, ticker resolution
+│       ├── config.yaml
+│       └── docker-compose.yml
+├── research/
+│   ├── weather/                # Historical weather fetchers (ASOS, METAR, CLI)
+│   ├── run_weather.py          # Weather collection script
+│   └── weather_discrepancy_analysis.py  # ASOS vs official high comparison
+├── pred_market_src/exploration/
+│   └── market_analysis.ipynb   # Orderbook, probabilities, charts
+├── scripts/oci_collector/      # OCI deployment (Kalshi listener, Synoptic listener, bot)
 └── pred_env/                   # Python virtual environment
 ```
 
@@ -90,19 +86,20 @@ pred_env/bin/pip install -r pred_market_src/collector/requirements.txt
    - `KALSHI_PRIVATE_KEY_PATH`
 2. Edit `pred_market_src/collector/config.yaml` for event series, collection intervals, and storage paths.
 
-### Running Collectors
+### Running Services
 
 ```bash
-cd pred_market_src/collector
+# Live Kalshi listener (WebSocket)
+pred_env/bin/python -m pred_market_src.collector.kalshi.listener
 
-# Live Kalshi market + orderbook (WebSocket)
-pred_env/bin/python collector.py
+# Live Synoptic listener
+pred_env/bin/python -m pred_market_src.collector.synoptic.listener
 
-# Historical candlesticks & trades (REST)
-pred_env/bin/python backfill.py
+# Weather arbitrage bot
+pred_env/bin/python -m pred_market_src.collector.bot.weather_bot
 
-# Weather data (ASOS, METAR, daily climate)
-pred_env/bin/python run_weather.py
+# Historical weather data (ASOS, METAR, daily climate)
+pred_env/bin/python research/run_weather.py
 ```
 
 ### Data Layout
@@ -116,7 +113,7 @@ pred_env/bin/python run_weather.py
 
 ## Deployment
 
-The collector can run 24/7 on Oracle Cloud (OCI) using the scripts in `scripts/oci_collector/`. See `scripts/oci_collector/README.md` for launch, setup, and maintenance.
+Kalshi listener, Synoptic listener, and weather bot can run 24/7 on Oracle Cloud (OCI) using the scripts in `scripts/oci_collector/`. See `scripts/oci_collector/README.md` for launch, setup, and maintenance.
 
 ---
 

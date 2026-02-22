@@ -1,4 +1,4 @@
-"""Live WebSocket-based Synoptic Data collector.
+"""Synoptic listener: live WebSocket-based weather data ingest.
 
 Streams real-time weather observations from the Synoptic push API
 and periodically flushes to Parquet.
@@ -108,7 +108,7 @@ class SynopticLiveCollector(AsyncService, SynopticWSMixin):
 # ------------------------------------------------------------------ #
 
 def main():
-    parser = standard_argparser("Synoptic Data live WebSocket collector")
+    parser = standard_argparser("Synoptic listener (live WebSocket weather ingest)")
     args = parser.parse_args()
 
     configure_logging(args.log_level)

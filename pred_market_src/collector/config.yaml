@@ -1,11 +1,11 @@
 # ============================================================
-# Kalshi Market Data Collector — Configuration
+# Kalshi listener, Synoptic listener, weather bot — Configuration
 # ============================================================
 #
 # Adding a new city / market:
 #   1. Add the series prefix to `event_series` below.
 #   2. Add a MarketConfig entry in markets/registry.py.
-#   3. Done — collector, synoptic listener, and bot all pick it up.
+#   3. Done — Kalshi listener, synoptic listener, and bot all pick it up.
 # ============================================================
 
 kalshi:
@@ -29,7 +29,7 @@ event_series:
   - "KXHIGHNY"
 
 # ----------------------------------------------------------
-# Snapshot collection (Kalshi collector)
+# Snapshot collection (Kalshi listener)
 # ----------------------------------------------------------
 collection:
   # Baseline: snapshot every N seconds regardless of price activity.
