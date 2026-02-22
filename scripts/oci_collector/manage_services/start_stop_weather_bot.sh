@@ -2,10 +2,10 @@
 # Weather bot: start / stop / logs / status for the weather arbitrage bot container.
 #
 # Usage:
-#   ./run_weather_bot.sh start   # start weather bot
-#   ./run_weather_bot.sh stop    # stop weather bot
-#   ./run_weather_bot.sh logs    # tail weather bot logs
-#   ./run_weather_bot.sh status  # show container status
+#   ./start_stop_weather_bot.sh start   # start weather bot
+#   ./start_stop_weather_bot.sh stop    # stop weather bot
+#   ./start_stop_weather_bot.sh logs    # tail weather bot logs
+#   ./start_stop_weather_bot.sh status  # show container status
 set -euo pipefail
 
 ENV_FILE="/home/ubuntu/.kalshi/collector.env"
@@ -20,7 +20,7 @@ cmd="${1:-start}"
 
 case "$cmd" in
   stop)
-    echo "[run_weather_bot] Stopping weather bot..."
+    echo "[start_stop_weather_bot] Stopping weather bot..."
     $DOCKER stop "$CONTAINER" 2>/dev/null || echo "(weather-bot not running)"
     ;;
 
@@ -34,11 +34,11 @@ case "$cmd" in
 
   start)
     [[ ! -f "$ENV_FILE" ]] && \
-      echo "ERROR: $ENV_FILE not found. Run setup.sh first." && exit 1
+      echo "ERROR: $ENV_FILE not found. Run setup_collector/first_time_vm_setup.sh first." && exit 1
 
     $DOCKER rm -f "$CONTAINER" 2>/dev/null || true
 
-    echo "[run_weather_bot] Starting weather bot..."
+    echo "[start_stop_weather_bot] Starting weather bot..."
     $DOCKER run -d \
       --name "$CONTAINER" \
       --env-file "$ENV_FILE" \
@@ -46,7 +46,7 @@ case "$cmd" in
       --restart unless-stopped \
       "$IMAGE" python -m pred_market_src.collector.bot.weather_bot
 
-    echo "[run_weather_bot] Weather bot running."
+    echo "[start_stop_weather_bot] Weather bot running."
     sleep 2
     $DOCKER logs "$CONTAINER" --tail 10
     ;;

@@ -1,5 +1,5 @@
 #cloud-config
-# Minimal OS prep so the VM is ready for setup.sh after SSH-ing in.
+# Minimal OS prep so the VM is ready for setup_collector/first_time_vm_setup.sh after SSH-ing in.
 # cloud-config format handles apt locks and user setup natively.
 
 system_info:
@@ -24,4 +24,4 @@ runcmd:
   - curl -fsSL https://get.docker.com | sh
   - usermod -aG docker ubuntu
   - systemctl enable --now docker
-  - echo "[cloud-init] Done. SSH in and run setup.sh"
+  - echo "[cloud-init] Done. SSH in and run setup_collector/first_time_vm_setup.sh"

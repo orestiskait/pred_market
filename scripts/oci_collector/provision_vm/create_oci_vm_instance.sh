@@ -1,5 +1,5 @@
 #!/bin/bash
-# Launch an OCI VM for Kalshi listener, Synoptic listener, and weather bot (A2→A1 shape swap trick).
+# Create an OCI VM for Kalshi listener, Synoptic listener, and weather bot (A2→A1 shape swap trick).
 #
 # A1.Flex capacity is almost always exhausted. The workaround:
 #   1. Create an A2.Flex instance (usually available).
@@ -12,7 +12,7 @@
 # The instance is launched WITHOUT an ephemeral IP; a reserved IP is assigned
 # in step 5 so the address survives VM recreations.
 #
-# After launch, SSH in and run setup.sh to install Kalshi listener, Synoptic listener, and weather bot.
+# After launch, SSH in and run setup_collector/first_time_vm_setup.sh to install Kalshi listener, Synoptic listener, and weather bot.
 #
 # Env vars (auto-detected if not set):
 #   COMPARTMENT_ID, AD, SUBNET_ID, IMAGE_ID
@@ -23,8 +23,8 @@
 #   RESERVED_IP_NAME     — display name for the reserved IP (default: kalshi-collector-ip)
 #
 # Usage:
-#   ./launch.sh
-#   COMPARTMENT_ID=ocid1... AD=xxx:PHX-AD-1 SUBNET_ID=ocid1... ./launch.sh
+#   ./create_oci_vm_instance.sh
+#   COMPARTMENT_ID=ocid1... AD=xxx:PHX-AD-1 SUBNET_ID=ocid1... ./create_oci_vm_instance.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -92,7 +92,7 @@ if [[ -z "${IMAGE_ID:-}" ]]; then
 fi
 
 # ── Cloud-init user-data ─────────────────────────────────────────────────────
-CLOUD_INIT="$SCRIPT_DIR/cloud-init.yaml"
+CLOUD_INIT="$SCRIPT_DIR/cloud_init_first_boot.yaml"
 [[ ! -f "$CLOUD_INIT" ]] && echo "ERROR: $CLOUD_INIT not found." && exit 1
 USER_DATA=$(base64 -w0 "$CLOUD_INIT" 2>/dev/null || base64 "$CLOUD_INIT" | tr -d '\n')
 
@@ -193,6 +193,7 @@ fi
 echo "  → $PUBLIC_IP"
 
 # ── Done ─────────────────────────────────────────────────────────────────────
+OCI_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 echo ""
 echo "══ Launch complete ══"
 echo "  Instance:  $INSTANCE_ID"
@@ -202,5 +203,6 @@ echo "  Public IP: $PUBLIC_IP (reserved — permanent)"
 echo ""
 echo "  Wait ~2 min for cloud-init, then:"
 echo "    ssh ubuntu@$PUBLIC_IP"
-echo "    cd pred_market/scripts/oci_collector && ./setup.sh && ./run_all.sh"
+echo "    cd ~/pred_market/scripts/oci_collector/setup_collector && ./first_time_vm_setup.sh"
+echo "    cd ~/pred_market/scripts/oci_collector/manage_services && ./start_stop_all_services.sh"
 echo ""

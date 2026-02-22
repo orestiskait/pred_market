@@ -3,17 +3,18 @@
 # Safe to re-run at any time — services are only down for the rebuild+restart window.
 #
 # Usage (on the VM):
-#   cd ~/pred_market/scripts/oci_collector && ./update.sh
+#   cd ~/pred_market/scripts/oci_collector/maintenance && ./update_code_and_restart_services.sh
 #
 # Usage (from local machine):
-#   ssh ubuntu@<PUBLIC_IP> '~/pred_market/scripts/oci_collector/update.sh'
+#   ssh ubuntu@<PUBLIC_IP> '~/pred_market/scripts/oci_collector/maintenance/update_code_and_restart_services.sh'
 #
 # Cron (auto-update every 6 hours):
-#   0 */6 * * * /home/ubuntu/pred_market/scripts/oci_collector/update.sh >> /home/ubuntu/collector-data/update.log 2>&1
+#   0 */6 * * * /home/ubuntu/pred_market/scripts/oci_collector/maintenance/update_code_and_restart_services.sh >> /home/ubuntu/collector-data/update.log 2>&1
 set -euo pipefail
 
 REPO_DIR="/home/ubuntu/pred_market"
-SCRIPT_DIR="$REPO_DIR/scripts/oci_collector"
+OCI_ROOT="/home/ubuntu/pred_market/scripts/oci_collector"
+START_ALL_SCRIPT="$OCI_ROOT/manage_services/start_stop_all_services.sh"
 IMAGE="kalshi-collector:latest"  # Shared image for Kalshi listener, Synoptic listener, bot
 
 DOCKER="docker"
@@ -49,7 +50,7 @@ $DOCKER build -t "$IMAGE" "$REPO_DIR/pred_market_src/collector/"
 
 # ── Restart Kalshi listener, Synoptic listener, weather bot ──────────────────
 echo "[update] Restarting Kalshi listener, Synoptic listener, and weather bot..."
-"$SCRIPT_DIR/run_all.sh" start
+"$START_ALL_SCRIPT" start
 
 echo ""
 echo "[update] Done. Now running $(git -C "$REPO_DIR" rev-parse --short HEAD)."

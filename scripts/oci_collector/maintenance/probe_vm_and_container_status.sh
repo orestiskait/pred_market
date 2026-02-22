@@ -3,7 +3,7 @@
 # Run from your local machine (requires OCI CLI + SSH access).
 #
 # Usage:
-#   ./probe.sh
+#   ./probe_vm_and_container_status.sh
 #
 # Env vars (auto-detected if not set):
 #   COMPARTMENT_ID  — OCI compartment (default: tenancy root)
@@ -11,6 +11,7 @@
 set -euo pipefail
 
 DISPLAY_NAME="${DISPLAY_NAME:-kalshi-collector}"
+START_ALL_SCRIPT="/home/ubuntu/pred_market/scripts/oci_collector/manage_services/start_stop_all_services.sh"
 
 # ── Auto-detect compartment ────────────────────────────────────────────────────
 if [[ -z "${COMPARTMENT_ID:-}" ]]; then
@@ -65,7 +66,7 @@ ssh -o ConnectTimeout=10 -o BatchMode=yes ubuntu@"$PUBLIC_IP" \
 echo ""
 echo "── Container status ──"
 if ! ssh -o ConnectTimeout=10 -o BatchMode=yes ubuntu@"$PUBLIC_IP" \
-  '~/pred_market/scripts/oci_collector/run_all.sh status' 2>/dev/null; then
+  "$START_ALL_SCRIPT status" 2>/dev/null; then
   echo "[probe] SSH failed (timeout, key, or VM unreachable)"
   echo "        Try: ssh ubuntu@$PUBLIC_IP"
   exit 4

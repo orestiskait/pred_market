@@ -2,10 +2,10 @@
 # Synoptic listener: start / stop / logs / status for the Synoptic weather data container.
 #
 # Usage:
-#   ./run_synoptic_listener.sh start   # start Synoptic listener
-#   ./run_synoptic_listener.sh stop    # stop Synoptic listener
-#   ./run_synoptic_listener.sh logs    # tail Synoptic listener logs
-#   ./run_synoptic_listener.sh status  # show container status
+#   ./start_stop_synoptic_listener.sh start   # start Synoptic listener
+#   ./start_stop_synoptic_listener.sh stop    # stop Synoptic listener
+#   ./start_stop_synoptic_listener.sh logs    # tail Synoptic listener logs
+#   ./start_stop_synoptic_listener.sh status  # show container status
 set -euo pipefail
 
 ENV_FILE="/home/ubuntu/.kalshi/collector.env"
@@ -20,7 +20,7 @@ cmd="${1:-start}"
 
 case "$cmd" in
   stop)
-    echo "[run_synoptic_listener] Stopping Synoptic listener..."
+    echo "[start_stop_synoptic_listener] Stopping Synoptic listener..."
     $DOCKER stop "$CONTAINER" 2>/dev/null || echo "(synoptic-listener not running)"
     ;;
 
@@ -34,11 +34,11 @@ case "$cmd" in
 
   start)
     [[ ! -f "$ENV_FILE" ]] && \
-      echo "ERROR: $ENV_FILE not found. Run setup.sh first." && exit 1
+      echo "ERROR: $ENV_FILE not found. Run setup_collector/first_time_vm_setup.sh first." && exit 1
 
     $DOCKER rm -f "$CONTAINER" 2>/dev/null || true
 
-    echo "[run_synoptic_listener] Starting Synoptic listener..."
+    echo "[start_stop_synoptic_listener] Starting Synoptic listener..."
     $DOCKER run -d \
       --name "$CONTAINER" \
       --env-file "$ENV_FILE" \
@@ -46,7 +46,7 @@ case "$cmd" in
       --restart unless-stopped \
       "$IMAGE" python -m pred_market_src.collector.synoptic.listener
 
-    echo "[run_synoptic_listener] Synoptic listener running."
+    echo "[start_stop_synoptic_listener] Synoptic listener running."
     sleep 2
     $DOCKER logs "$CONTAINER" --tail 10
     ;;

@@ -2,19 +2,29 @@
 
 Run Kalshi listener, Synoptic listener, and weather bot 24/7 on an OCI ARM instance (Always Free tier eligible).
 
-## Overview
+**→ See [OCI_SETUP_GUIDE.md](OCI_SETUP_GUIDE.md) for when to use each script, one-off vs regular, and credentials.**
 
-| Script | What it does |
-|--------|-------------|
-| `launch.sh` | Creates the OCI VM (A2→A1 shape swap trick), assigns reserved public IP |
-| `cloud-init.yaml` | Runs on first boot: installs Docker, git, fail2ban |
-| `setup.sh` | Run on the VM: clones repo, builds Docker image, configures credentials |
-| `run_all.sh` | Start / stop / logs / status for all three services |
-| `run_kalshi_listener.sh` | Kalshi listener only |
-| `run_synoptic_listener.sh` | Synoptic listener only |
-| `run_weather_bot.sh` | Weather bot only |
-| `update.sh` | Pull latest code, rebuild image, restart all three (skip if already up to date) |
-| `probe.sh` | Probe from local: VM state, container status, recent logs, data freshness |
+## Directory Layout
+
+```
+scripts/oci_collector/
+├── provision_vm/                              # VM creation
+│   ├── create_oci_vm_instance.sh              # Creates OCI VM (A2→A1 shape swap), assigns reserved public IP
+│   └── cloud_init_first_boot.yaml             # First-boot config: Docker, git, fail2ban
+├── setup_collector/                           # One-time VM setup
+│   └── first_time_vm_setup.sh                # Clone repo, build Docker image, configure credentials
+├── manage_services/                           # Start/stop/status containers
+│   ├── start_stop_all_services.sh            # Start/stop/logs/status for all three services
+│   ├── start_stop_kalshi_listener.sh         # Kalshi market data listener only
+│   ├── start_stop_synoptic_listener.sh       # Synoptic weather listener only
+│   └── start_stop_weather_bot.sh             # Weather arbitrage bot only
+├── maintenance/                               # Updates, monitoring, data sync
+│   ├── update_code_and_restart_services.sh    # Pull latest code, rebuild image, restart all services
+│   ├── probe_vm_and_container_status.sh      # Check VM state, container status, logs, data freshness
+│   └── sync_collected_data_to_local.sh       # Rsync parquet files from VM to local machine
+├── README.md
+└── OCI_SETUP_GUIDE.md          # When to use each script, one-off vs regular, credentials
+```
 
 ## Architecture
 
@@ -55,9 +65,9 @@ The VM runs Docker containers for data collection:
 ### 1. Launch the VM
 
 ```bash
-cd scripts/oci_collector
-chmod +x launch.sh setup.sh run_all.sh run_kalshi_listener.sh run_synoptic_listener.sh run_weather_bot.sh
-./launch.sh
+cd scripts/oci_collector/provision_vm
+chmod +x create_oci_vm_instance.sh
+./create_oci_vm_instance.sh
 ```
 
 The launch script uses the **A2→A1 shape swap trick** to work around A1.Flex capacity limits:
@@ -75,13 +85,13 @@ The reserved IP (`129.158.203.11`) persists across VM recreations — if you ter
 The script auto-detects compartment, availability domain, subnet, and Ubuntu image. To override:
 
 ```bash
-COMPARTMENT_ID=ocid1... AD=lqls:US-ASHBURN-AD-1 SUBNET_ID=ocid1... ./launch.sh
+COMPARTMENT_ID=ocid1... AD=lqls:US-ASHBURN-AD-1 SUBNET_ID=ocid1... ./create_oci_vm_instance.sh
 
 # Custom SSH key:
-SSH_PUBLIC_KEY_FILE=~/.ssh/my_key.pub ./launch.sh
+SSH_PUBLIC_KEY_FILE=~/.ssh/my_key.pub ./create_oci_vm_instance.sh
 
 # Custom reserved IP name:
-RESERVED_IP_NAME=my-ip-name ./launch.sh
+RESERVED_IP_NAME=my-ip-name ./create_oci_vm_instance.sh
 ```
 
 At the end it prints the (permanent) public IP.
@@ -116,8 +126,8 @@ On the VM:
 
 ```bash
 git clone https://github.com/orestiskait/pred_market.git ~/pred_market
-cd ~/pred_market/scripts/oci_collector
-./setup.sh
+cd ~/pred_market/scripts/oci_collector/setup_collector
+./first_time_vm_setup.sh
 ```
 
 Setup will prompt for:
@@ -131,27 +141,28 @@ Or pass them non-interactively:
 KALSHI_API_KEY_ID=your-key-id \
   KALSHI_PRIVATE_KEY_FILE=/home/ubuntu/.kalshi/kalshi_api_key.txt \
   SYNOPTIC_API_TOKEN=your-synoptic-token \
-  ./setup.sh
+  ./first_time_vm_setup.sh
 ```
 
 ### 5. Start Kalshi listener, Synoptic listener, and weather bot
 
 ```bash
-./run_all.sh
+cd ~/pred_market/scripts/oci_collector/manage_services
+./start_stop_all_services.sh
 ```
 
 Or run individually:
 ```bash
-./run_kalshi_listener.sh start
-./run_synoptic_listener.sh start
-./run_weather_bot.sh start
+./start_stop_kalshi_listener.sh start
+./start_stop_synoptic_listener.sh start
+./start_stop_weather_bot.sh start
 ```
 
 ### 6. Verify services
 
 ```bash
-./run_all.sh status    # containers running?
-./run_all.sh logs      # tail live logs
+./start_stop_all_services.sh status    # containers running?
+./start_stop_all_services.sh logs      # tail live logs
 ls -la ~/collector-data/market_snapshots/
 ```
 
@@ -195,24 +206,26 @@ scp -r ubuntu@<PUBLIC_IP>:~/collector-data ./collector_data_backup/
 
 ## Fetching Data Locally
 
-`fetch_data.sh` syncs the collected parquet files from the VM to `pred_market_src/collector/data/` (the path the analysis notebook reads from). It uses `rsync` — only new/changed files are transferred.
+`maintenance/sync_collected_data_to_local.sh` syncs the collected parquet files from the VM to `pred_market_src/collector/data/` (the path the analysis notebook reads from). It uses `rsync` — only new/changed files are transferred.
 
 ```bash
-# Sync all data
-./fetch_data.sh
+cd scripts/oci_collector/maintenance
+./sync_collected_data_to_local.sh
+```
 
+```bash
 # Preview what would be transferred without downloading
-./fetch_data.sh --dry-run
+./sync_collected_data_to_local.sh --dry-run
 
 # Sync to a custom local path
-LOCAL_DATA_DIR=~/my-data ./fetch_data.sh
+LOCAL_DATA_DIR=~/my-data ./sync_collected_data_to_local.sh
 ```
 
 The script auto-detects the VM's public IP via OCI CLI. On success it prints a summary of all local parquet files and their sizes.
 
 ## Daily Restart (Event Series Roll)
 
-The Kalshi listener resolves event series prefixes (e.g. `KXHIGHCHI`) to dated tickers (e.g. `KXHIGHCHI-26FEB19`) once at startup. To pick up the next day's events, the services restart automatically at **12:01 AM** and **1:01 AM New York time** via cron jobs installed by `setup.sh`.
+The Kalshi listener resolves event series prefixes (e.g. `KXHIGHCHI`) to dated tickers (e.g. `KXHIGHCHI-26FEB19`) once at startup. To pick up the next day's events, the services restart automatically at **12:01 AM** and **1:01 AM New York time** via cron jobs installed by `first_time_vm_setup.sh`.
 
 Two restarts are necessary because NY contracts typically roll over around midnight, and Chicago contracts roll over around 1:00 AM ET (midnight CT).
 
@@ -223,7 +236,7 @@ Restart log: `~/collector-data/daily-restart.log`
 To verify the cron is installed:
 
 ```bash
-crontab -l | grep run_all
+crontab -l | grep start_stop_all_services
 ```
 
 To change the schedule, edit the crontab on the VM:
@@ -238,38 +251,39 @@ crontab -e
 
 | Command | Action |
 |---------|--------|
-| `./run_all.sh` or `./run_all.sh start` | Start / restart all three |
-| `./run_all.sh stop` | Stop all |
-| `./run_all.sh logs` | Tail logs from all |
-| `./run_all.sh status` | Container status |
-| `./run_kalshi_listener.sh start` | Kalshi listener only |
-| `./run_synoptic_listener.sh start` | Synoptic listener only |
-| `./run_weather_bot.sh start` | Weather bot only |
+| `./start_stop_all_services.sh` or `./start_stop_all_services.sh start` | Start / restart all three |
+| `./start_stop_all_services.sh stop` | Stop all |
+| `./start_stop_all_services.sh logs` | Tail logs from all |
+| `./start_stop_all_services.sh status` | Container status |
+| `./start_stop_kalshi_listener.sh start` | Kalshi listener only |
+| `./start_stop_synoptic_listener.sh start` | Synoptic listener only |
+| `./start_stop_weather_bot.sh start` | Weather bot only |
 
 ## Probing from Local Machine
 
 Check if the VM is running and actively collecting:
 
 ```bash
-./probe.sh
+cd scripts/oci_collector/maintenance
+./probe_vm_and_container_status.sh
 ```
 
 Reports: VM lifecycle state, public IP, container status, last 15 log lines, and data directory freshness. Requires OCI CLI and SSH access.
 
 ## Updating Code
 
-`update.sh` pulls the latest code from GitHub, rebuilds the Docker image, and restarts Kalshi listener, Synoptic listener, and weather bot. It skips everything if the VM is already on the latest commit.
+`maintenance/update_code_and_restart_services.sh` pulls the latest code from GitHub, rebuilds the Docker image, and restarts Kalshi listener, Synoptic listener, and weather bot. It skips everything if the VM is already on the latest commit.
 
 ### One-off update (from your local machine)
 
 ```bash
-ssh ubuntu@<PUBLIC_IP> '~/pred_market/scripts/oci_collector/update.sh'
+ssh ubuntu@<PUBLIC_IP> '~/pred_market/scripts/oci_collector/maintenance/update_code_and_restart_services.sh'
 ```
 
 Or on the VM directly:
 
 ```bash
-cd ~/pred_market/scripts/oci_collector && ./update.sh
+cd ~/pred_market/scripts/oci_collector/maintenance && ./update_code_and_restart_services.sh
 ```
 
 ### Automatic updates (cron)
@@ -284,7 +298,7 @@ crontab -e
 Add this line:
 
 ```
-0 */6 * * * /home/ubuntu/pred_market/scripts/oci_collector/update.sh >> /home/ubuntu/collector-data/update.log 2>&1
+0 */6 * * * /home/ubuntu/pred_market/scripts/oci_collector/maintenance/update_code_and_restart_services.sh >> /home/ubuntu/collector-data/update.log 2>&1
 ```
 
 The update log is written to `~/collector-data/update.log`. Check it anytime:

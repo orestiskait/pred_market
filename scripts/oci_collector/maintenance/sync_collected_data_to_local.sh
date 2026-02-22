@@ -3,11 +3,11 @@
 # Uses rsync — incremental, skips files already present, fast for daily runs.
 #
 # By default syncs to pred_market_src/collector/data/ (where the notebook reads from).
-# Override with: LOCAL_DATA_DIR=/your/path ./fetch_data.sh
+# Override with: LOCAL_DATA_DIR=/your/path ./sync_collected_data_to_local.sh
 #
 # Usage:
-#   ./fetch_data.sh               # sync all data
-#   ./fetch_data.sh --dry-run     # preview what would be transferred
+#   ./sync_collected_data_to_local.sh               # sync all data
+#   ./sync_collected_data_to_local.sh --dry-run    # preview what would be transferred
 #
 # Env vars (auto-detected if not set):
 #   COMPARTMENT_ID  — OCI compartment (default: tenancy root)
