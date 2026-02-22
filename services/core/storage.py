@@ -32,6 +32,8 @@ MARKET_SNAPSHOT_SCHEMA = pa.schema([
     ("subtitle",      pa.string()),
     ("yes_bid",       pa.int32()),
     ("yes_ask",       pa.int32()),
+    ("no_bid",        pa.int32()),
+    ("no_ask",        pa.int32()),
     ("last_price",    pa.int32()),
     ("volume",        pa.int64()),
     ("open_interest", pa.int64()),

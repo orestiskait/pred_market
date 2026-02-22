@@ -27,13 +27,14 @@ Instead of restarting the process, a background task **re-queries the Kalshi API
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `event_selection` | `"active"` | `"active"` = today's market (earliest close_time). `"next"` = strike_date ≥ today in market's local tz — enables pre-trading tomorrow's market. |
+| `event_selection` | `"active"` | `"active"` = earliest close_time. `"next"` = earliest strike_date ≥ today (local tz); excludes past-dated events. |
 | `rediscover_interval_seconds` | 300 | How often to re-query Kalshi. 0 = disable (use cron if desired). |
 
 ### Event Selection Strategies
 
-- **`active`**: Pick the event with earliest `close_time`. Best for same-day trading. Matches previous behavior.
-- **`next`**: Pick the event whose `strike_date` is today or the next local calendar day. When Kalshi lists Feb 22 as open on Feb 21, we trade it. Uses each market's NWS-aligned timezone from `KalshiMarketConfig.tz`.
+- **`active`**: Among all open events, pick the one with earliest `close_time` (then strike_date, then event_ticker). Typically selects today's market since it closes soonest.
+
+- **`next`**: Among open events with `strike_date >= today` (in the market's local timezone), pick the one with earliest strike_date. If none qualify, fall back to active. Excludes events whose strike_date is in the past. When both today and tomorrow are open, both qualify — we pick today (earliest). When only tomorrow is open (today's market has closed), we pick tomorrow. Uses each market's NWS-aligned timezone from `KalshiMarketConfig.tz`.
 
 ---
 

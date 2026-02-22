@@ -230,7 +230,7 @@ The Kalshi listener and weather bot **periodically re-discover** event tickers i
 
 Config (`config.yaml` → `event_rollover`):
 
-- `event_selection`: `"active"` (today's market) or `"next"` (trade tomorrow's market when it opens, e.g. Feb 22 on Feb 21)
+- `event_selection`: `"active"` (earliest close_time) or `"next"` (earliest strike_date ≥ today; picks tomorrow when today has closed)
 - `rediscover_interval_seconds`: 300 (5 min). Set to 0 to disable in-process rollover.
 
 Legacy cron (optional): `first_time_vm_setup.sh` skips cron by default. To restore the old 12:01/1:01 AM restarts, run `SKIP_CRON=0 ./first_time_vm_setup.sh`.

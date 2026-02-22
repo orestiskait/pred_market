@@ -89,8 +89,8 @@ event_series:
 # =============================================================================
 event_rollover:
   # Used by: ticker.py, kalshi/listener, weather_bot
-  # "active" = today's market (earliest close_time). "next" = strike_date >=
-  # today in market's local tz — enables pre-trading tomorrow's market.
+  # "active" = earliest close_time. "next" = earliest strike_date >= today
+  # (local tz); excludes past events; picks tomorrow when today has closed.
   event_selection: "active"
   # Used by: kalshi/listener, weather_bot — re-query Kalshi for new events (sec). 0 = disable.
   rediscover_interval_seconds: 300

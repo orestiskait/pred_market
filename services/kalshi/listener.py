@@ -121,9 +121,16 @@ class LiveListener(AsyncService, KalshiWSMixin):
             tk = data.get("market_ticker", "")
             self.ticker_data[tk] = data
             if tk in self.market_info:
-                for f in ("yes_bid", "yes_ask", "last_price", "volume", "open_interest"):
+                for f in ("yes_bid", "yes_ask", "no_bid", "no_ask", "last_price", "volume", "open_interest"):
                     if f in data:
                         self.market_info[tk][f] = data[f]
+                # Keep no_bid/no_ask in sync when ticker sends yes_bid/yes_ask but not no_*
+                ya = self.market_info[tk].get("yes_ask", 0) or 0
+                yb = self.market_info[tk].get("yes_bid", 0) or 0
+                if "no_bid" not in data:
+                    self.market_info[tk]["no_bid"] = int(round(100 - ya))
+                if "no_ask" not in data:
+                    self.market_info[tk]["no_ask"] = int(round(100 - yb))
 
                 if self.spike_threshold > 0:
                     self._maybe_snapshot_on_spike(tk, data)
@@ -208,6 +215,8 @@ class LiveListener(AsyncService, KalshiWSMixin):
                 "subtitle": info.get("subtitle", ""),
                 "yes_bid": info.get("yes_bid", 0),
                 "yes_ask": info.get("yes_ask", 0),
+                "no_bid": info.get("no_bid", int(round(100 - (info.get("yes_ask") or 0)))),
+                "no_ask": info.get("no_ask", int(round(100 - (info.get("yes_bid") or 0)))),
                 "last_price": info.get("last_price", 0),
                 "volume": info.get("volume", 0),
                 "open_interest": info.get("open_interest", 0),

@@ -6,11 +6,12 @@ stateless — call them to get fresh data whenever needed.
 
 Event selection strategies
 --------------------------
-- ``active``: Pick the event with earliest close_time (today's market in that
-  timezone). Best for same-day trading.
-- ``next``: Pick the event whose strike_date is the next local calendar day
-  (or today). Enables trading tomorrow's market when it opens (e.g., Feb 22
-  market tradeable on Feb 21). Uses each market's NWS-aligned timezone.
+- ``active``: Among all open events, pick the one with earliest close_time
+  (then strike_date, then event_ticker). Typically today's market.
+- ``next``: Among events with strike_date >= today (market's local tz), pick
+  the one with earliest strike_date. Excludes past-dated events. When both
+  today and tomorrow are open, picks today. When only tomorrow is open,
+  picks tomorrow (pre-trading). Falls back to active if no future events.
 """
 
 from __future__ import annotations
@@ -49,8 +50,8 @@ def _select_event_for_series(
     today_local = datetime.now(tz).date()
 
     if strategy == "next":
-        # Pick event whose strike_date is >= today (local). Enables pre-trading
-        # tomorrow's market when it opens (e.g., Feb 22 tradeable on Feb 21).
+        # Among events with strike_date >= today (local), pick earliest.
+        # Excludes past-dated events. When only tomorrow is open, picks it.
         candidates = []
         for e in events:
             sd = _parse_strike_date(e.get("strike_date"))
@@ -84,8 +85,10 @@ def resolve_event_tickers(
 
     For each series prefix, queries the Kalshi API for open events and picks
     one based on ``event_selection`` (or config event_rollover.event_selection):
-    - ``active``: earliest close_time (today's market)
-    - ``next``: strike_date >= today in market's local tz (enables pre-trading)
+    - ``active``: earliest close_time among all open events
+    - ``next``: earliest strike_date among events with strike_date >= today
+      (market's local tz); excludes past-dated events; picks tomorrow when
+      today's market has closed
 
     consumer: kalshi_listener, weather_bot, etc. Used to select the right
     event_series list when config uses per-consumer keys.
@@ -138,11 +141,21 @@ def discover_markets(
         for m in markets:
             tk = m["ticker"]
             market_tickers.append(tk)
+            yes_bid = m.get("yes_bid") or 0
+            yes_ask = m.get("yes_ask") or 0
+            no_bid = m.get("no_bid")
+            no_ask = m.get("no_ask")
+            if no_bid is None:
+                no_bid = int(round(100 - yes_ask))
+            if no_ask is None:
+                no_ask = int(round(100 - yes_bid))
             market_info[tk] = {
                 "event_ticker": event_ticker,
                 "subtitle": m.get("subtitle", ""),
-                "yes_bid": m.get("yes_bid", 0),
-                "yes_ask": m.get("yes_ask", 0),
+                "yes_bid": int(round(yes_bid)),
+                "yes_ask": int(round(yes_ask)),
+                "no_bid": int(round(no_bid)),
+                "no_ask": int(round(no_ask)),
                 "last_price": m.get("last_price", 0),
                 "volume": m.get("volume", 0),
                 "open_interest": m.get("open_interest", 0),

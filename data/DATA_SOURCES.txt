@@ -2,7 +2,7 @@ Folder | Source | What it is
 iem_asos_1min | Iowa Environmental Mesonet (IEM) | ASOS 1-minute temperature data (~24h delay)
 awc_metar | Aviation Weather Center (AWC) | METAR observations (hourly + SPECI)
 iem_daily_climate | Iowa Environmental Mesonet (IEM) | NWS Daily Climate Report (CLI) - official high/low for Kalshi settlement. Chicago=CLIMDW (Midway). See docs/events/kalshi_settlement_rules.md
-kalshi_market_snapshots | Kalshi WebSocket | Market snapshots (yes_bid, yes_ask, last_price)
+kalshi_market_snapshots | Kalshi WebSocket | Market snapshots (yes_bid, yes_ask, no_bid, no_ask, last_price)
 kalshi_orderbook_snapshots | Kalshi WebSocket | Orderbook depth
 synoptic_weather_observations | Synoptic WebSocket | Real-time weather observations
 weather_bot_paper_trades | Paper execution | Bot trade log
