@@ -142,7 +142,25 @@ synoptic:
 # Strategy: when N consecutive 1-min ASOS obs ≥ cap_strike, buy NO contracts.
 # =============================================================================
 bot:
-  consecutive_obs: 2             # weather_bot — consecutive obs above trigger before trade
-  max_price_cents: 95            # weather_bot — max price to pay for NO contract (Kalshi=100)
-  starting_balance_cents: 100000 # weather_bot — paper balance ($1,000)
+  execution_guardrails:
+    starting_balance_cents: 100000  # Initial paper balance ($1,000)
+    max_total_drawdown_cents: 10000 # Stop trading if total realized/paper loss exceeds $100
+    max_allocation_per_series_cents: 20000 # Max exposure per city/series ($200)
+  
+  strategies:
+    - id: "chicago_fast_ladder"
+      class_name: "LadderStrategy"
+      targets: 
+        - "KXHIGHCHI"
+      params:
+        consecutive_obs: 2
+        max_price_cents: 95
+
+    - id: "ny_safe_ladder"
+      class_name: "LadderStrategy"
+      targets: 
+        - "KXHIGHNY"
+      params:
+        consecutive_obs: 3
+        max_price_cents: 90
 

@@ -1,9 +1,16 @@
-"""
-Kalshi Information Arbitrage Weather Bot (Multi-Strategy Architecture)
+"""Kalshi Information Arbitrage Weather Bot (Multi-Strategy Architecture)
 
-This is the main entry point / Feed Manager.
-It handles WebSocket connections, parses incoming data, and routes them as events
-to the EventBus. Execution and Strategy logic are fully decoupled.
+Feed Manager — the main entry point. Handles WebSocket lifecycles and
+routes all incoming data through the EventBus. Strategy logic and order
+execution are fully decoupled in their respective managers.
+
+Architecture:
+    WeatherBot (Feed Manager)
+    ├── EventBus (in-memory pub/sub)
+    ├── StrategyManager
+    │   ├── LadderStrategy("chicago_fast_ladder", targets=["KXHIGHCHI"])
+    │   └── LadderStrategy("ny_safe_ladder", targets=["KXHIGHNY"])
+    └── ExecutionManager (risk guardrails + paper sweep)
 
 Usage:
     python -m services.bot.weather_bot
@@ -42,23 +49,41 @@ from services.bot.managers.strategy_manager import StrategyManager
 
 logger = logging.getLogger("WeatherBot")
 
+
+def _collect_strategy_targets(config: dict) -> list[str]:
+    """Extract the union of all series targets from bot.strategies config."""
+    targets: set[str] = set()
+    for sdef in config.get("bot", {}).get("strategies", []):
+        for t in sdef.get("targets", []):
+            targets.add(t)
+    return sorted(targets)
+
+
 class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
-    """
-    Feed Manager / Bot Host for paper-trading weather bot.
-    Responsible for websocket lifecycles and event dispatch.
+    """Feed Manager / Bot Host for paper-trading weather bot.
+
+    Responsible ONLY for:
+      - WebSocket lifecycle management (Kalshi + Synoptic)
+      - Parsing raw messages into typed Events
+      - Publishing events to the EventBus
+      - Periodic market re-discovery
     """
 
     def __init__(self, config: dict, config_path: Path, series_filter: list[str] | None = None):
         self.config = config
         self._config_path = config_path
 
-        # Event Bus & Sub-managers
+        # Event Bus & Managers
         self.event_bus = EventBus()
         self.execution_manager = ExecutionManager(self.event_bus, config, config_path)
         self.strategy_manager = StrategyManager(self.event_bus, config)
 
-        # Determine which series to target
-        all_series = get_event_series(config, "weather_bot")
+        # Determine which series to target:
+        # Union of event_series.weather_bot AND all strategy targets
+        es_series = set(get_event_series(config, "weather_bot"))
+        strat_series = set(_collect_strategy_targets(config))
+        all_series = sorted(es_series | strat_series)
+
         if series_filter:
             self._target_series = [s for s in series_filter if s in all_series or s in KALSHI_MARKET_REGISTRY]
         else:
@@ -67,7 +92,7 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
         if not self._target_series:
             raise ValueError("No event_series configured or matched by --series filter")
 
-        # Build market configs for targeted series
+        # Build market configs for all targeted series
         self._market_configs: dict[str, KalshiMarketConfig] = {}
         for s in self._target_series:
             if s in KALSHI_MARKET_REGISTRY:
@@ -96,38 +121,47 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
         self.orderbooks: dict[str, dict] = {}
         self._kalshi_subscribe_tickers: list[str] = []
 
+        logger.info(
+            "WeatherBot targeting %d series: %s",
+            len(self._target_series), self._target_series,
+        )
+        logger.info(
+            "Loaded %d strategies: %s",
+            len(self.strategy_manager.strategies),
+            list(self.strategy_manager.strategies.keys()),
+        )
+
     # -------------------------------------------------------------------------
-    # Market discovery (config-driven, multi-market)
+    # Market discovery
     # -------------------------------------------------------------------------
 
     def _discover(self):
-        """Resolve events and publish to EventBus."""
+        """Resolve events and publish MarketDiscoveryEvent to the bus."""
         event_tickers = resolve_event_tickers(self.kalshi_rest, self.config, consumer="weather_bot")
         if not event_tickers:
             return
         tickers, info = discover_markets(self.kalshi_rest, event_tickers)
-        
+
         self.market_tickers = tickers
-        
+
         for tk in tickers:
             if tk not in self.orderbooks:
                 self.orderbooks[tk] = {"yes": {}, "no": {}}
-                
-        # Send out event so strategies can build their ladders etc.
+
+        # Fan out to all subscribers (strategies, execution manager)
         self.event_bus.publish(MarketDiscoveryEvent(
             market_tickers=tickers,
-            market_info=info
+            market_info=info,
         ))
 
-        # Subscribe to all discovered tickers
         self._kalshi_subscribe_tickers = self.market_tickers
 
     # -------------------------------------------------------------------------
-    # SynopticWSMixin hook — react to weather observations
+    # SynopticWSMixin hook
     # -------------------------------------------------------------------------
 
     def on_synoptic_observation(self, row: dict):
-        """Each 1-minute ASOS observation is parsed and routed via EventBus."""
+        """Parse raw Synoptic message → WeatherObservationEvent."""
         station = row["stid"]
         temp = row["value"]
         ob_time_str = row["ob_timestamp"]
@@ -139,34 +173,44 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
             return
 
         logger.info("🌡️ [%s] %.1f°F at %s", station, temp, ob_time_str)
-        
+
         self.event_bus.publish(WeatherObservationEvent(
             station=station,
             temp=temp,
-            ob_time=ob_time
+            ob_time=ob_time,
         ))
 
     # -------------------------------------------------------------------------
-    # KalshiWSMixin hook - react to live orderbooks
+    # KalshiWSMixin hook
     # -------------------------------------------------------------------------
-    
+
     def on_kalshi_message(self, mtype: str, data: dict) -> None:
-        """Forward orderbook updates to the EventBus."""
+        """Forward orderbook state to the EventBus after the mixin applies it.
+
+        IMPORTANT: We publish a shallow copy of each side dict so that
+        subsequent WebSocket deltas cannot mutate the snapshot mid-sweep
+        inside ExecutionManager (race condition guard).
+        """
         if mtype in ("orderbook_snapshot", "orderbook_delta"):
             tk = data.get("market_ticker")
             if tk and tk in self.orderbooks:
-                # We publish the latest full orderbook state (which the mixin applied in-place to self.orderbooks[tk])
+                ob = self.orderbooks[tk]
                 self.event_bus.publish(OrderbookUpdateEvent(
                     market_ticker=tk,
-                    orderbook=self.orderbooks[tk]
+                    # Shallow-copy each side: copying ~10 price levels is
+                    # ~microseconds and prevents mid-sweep mutation.
+                    orderbook={
+                        "yes": dict(ob["yes"]),
+                        "no": dict(ob["no"]),
+                    },
                 ))
 
     # -------------------------------------------------------------------------
-    # Async Loops
+    # Async loops
     # -------------------------------------------------------------------------
 
     async def _rediscover_loop(self):
-        """Periodic re-discovery of event tickers."""
+        """Periodic re-discovery of event tickers (handles market rollover)."""
         if self.rediscover_interval <= 0:
             return
         while self._running:
@@ -218,7 +262,7 @@ def main():
     parser.add_argument(
         "--series", nargs="+", default=None,
         help="Limit to specific event series (e.g. KXHIGHCHI KXHIGHNY). "
-             "Default: all series in config.yaml.",
+             "Default: all series from config.yaml strategies + event_series.",
     )
     args = parser.parse_args()
 
