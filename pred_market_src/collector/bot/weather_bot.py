@@ -29,8 +29,7 @@ from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..core import (
-    AsyncService,
+from ..core.config import (
     load_config,
     make_kalshi_clients,
     get_synoptic_token,
@@ -38,14 +37,11 @@ from ..core import (
     configure_logging,
     standard_argparser,
 )
+from ..core.service import AsyncService
 from ..kalshi.ws import KalshiWSMixin
 from ..synoptic.ws import SynopticWSMixin
-from ..markets import (
-    discover_markets,
-    MarketConfig,
-    MARKET_REGISTRY,
-    all_synoptic_stations,
-)
+from ..markets.registry import MarketConfig, MARKET_REGISTRY, all_synoptic_stations
+from ..markets.ticker import discover_markets
 
 logger = logging.getLogger("WeatherBot")
 

@@ -15,16 +15,16 @@ import logging
 import time
 from pathlib import Path
 
-from ..core import (
-    AsyncService,
-    ParquetStorage,
+from ..core.config import (
     load_config,
     get_synoptic_token,
     build_synoptic_ws_url,
     standard_argparser,
     configure_logging,
 )
-from ..markets import all_synoptic_stations
+from ..core.service import AsyncService
+from ..core.storage import ParquetStorage
+from ..markets.registry import all_synoptic_stations
 from .ws import SynopticWSMixin
 
 logger = logging.getLogger(__name__)
