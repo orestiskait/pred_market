@@ -26,7 +26,7 @@ datetime.now()
 date.today()
 
 # ✅ CORRECT — always UTC
-from collector.tz import utc_now, utc_today
+from services.tz import utc_now, utc_today
 utc_now()
 utc_today()
 ```
@@ -41,7 +41,7 @@ This is handled via `StationInfo.tz` (IANA timezone string like `America/Chicago
 and only used in analysis code — never in storage or transport.
 
 ```python
-from research.weather.stations import STATION_REGISTRY  # derives from collector.markets.registry
+from research.weather.stations import STATION_REGISTRY  # derives from services.markets.registry
 
 chi = STATION_REGISTRY["KXHIGHCHI"]
 print(chi.tz)  # "America/Chicago"

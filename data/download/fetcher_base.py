@@ -1,10 +1,8 @@
-"""Abstract base for all weather fetcher classes.
+"""Base class for weather data fetchers.
 
-Provides:
-  - Config loading (reads weather_stations from config.yaml)
-  - Parquet storage helpers (append-friendly, one file per station per day)
-  - Logging setup
-  - Abstract fetch() / fetch_many() interface
+Provides parquet storage helpers (append-friendly, one file per station per day),
+abstract fetch() / fetch_many() interface, and read/save utilities.
+Used by all data-download modules in this package.
 """
 
 from __future__ import annotations
@@ -26,7 +24,7 @@ class WeatherFetcherBase(ABC):
     """Base class for weather data fetchers.
 
     Subclasses must implement:
-      - SOURCE_NAME (class attribute)  – e.g. "asos_1min"
+      - SOURCE_NAME (class attribute)  – e.g. "iem_asos_1min"
       - fetch(station, ...) -> pd.DataFrame
     """
 
@@ -35,7 +33,8 @@ class WeatherFetcherBase(ABC):
 
     def __init__(self, data_dir: Path | str | None = None):
         if data_dir is None:
-            data_dir = Path(__file__).resolve().parent.parent / "data" / "weather_obs"
+            # This file is in data/download/; parent.parent = data/
+            data_dir = Path(__file__).resolve().parent.parent
         self.data_dir = Path(data_dir) / self.SOURCE_NAME
         self.data_dir.mkdir(parents=True, exist_ok=True)
 

@@ -1,7 +1,7 @@
 """Station registry for weather fetchers.
 
 Derives StationInfo and lookup helpers from the central market registry
-(collector.markets.registry). Add new cities there; this module exposes
+(services.markets.registry). Add new cities there; this module exposes
 a lightweight view for weather fetchers that only need ICAO / IATA / city / tz.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from collector.markets.registry import MARKET_REGISTRY, MarketConfig
+from services.markets.registry import MARKET_REGISTRY, MarketConfig
 
 
 @dataclass(frozen=True)

@@ -15,7 +15,7 @@ set -euo pipefail
 REPO_DIR="/home/ubuntu/pred_market"
 OCI_ROOT="/home/ubuntu/pred_market/scripts/oci_collector"
 START_ALL_SCRIPT="$OCI_ROOT/manage_services/start_stop_all_services.sh"
-IMAGE="kalshi-collector:latest"  # Shared image for Kalshi listener, Synoptic listener, bot
+IMAGE="kalshi-services:latest"  # Shared image for Kalshi listener, Synoptic listener, bot
 
 DOCKER="docker"
 $DOCKER info &>/dev/null 2>&1 || DOCKER="sudo docker"
@@ -46,7 +46,7 @@ echo ""
 
 # ── Rebuild Docker image ─────────────────────────────────────────────────────
 echo "[update] Rebuilding Docker image..."
-$DOCKER build -f "$REPO_DIR/collector/Dockerfile" -t "$IMAGE" "$REPO_DIR"
+$DOCKER build -f "$REPO_DIR/services/Dockerfile" -t "$IMAGE" "$REPO_DIR"
 
 # ── Restart Kalshi listener, Synoptic listener, weather bot ──────────────────
 echo "[update] Restarting Kalshi listener, Synoptic listener, and weather bot..."

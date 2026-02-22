@@ -9,7 +9,7 @@ This module provides convenience helpers so no file ever needs to call
   date.today()       (naive — system-local, FORBIDDEN)
 
 Instead, import from here:
-  from collector.tz import utc_now, utc_today
+  from services.tz import utc_now, utc_today
 """
 
 from datetime import date, datetime, timezone

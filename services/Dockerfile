@@ -8,13 +8,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY collector/requirements.txt .
+COPY services/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY collector/ /app/collector/
+COPY services/ /app/services/
 ENV PYTHONPATH=/app
 
-COPY collector/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY services/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Data output directory — mount a host volume here to persist parquet files

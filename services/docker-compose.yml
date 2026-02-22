@@ -17,39 +17,39 @@
 services:
   # ── Kalshi market data listener ────────────────────────────────────────────
   kalshi-listener:
-    image: kalshi-collector:latest
+    image: kalshi-services:latest
     container_name: kalshi-listener
     restart: unless-stopped
     env_file:
       - ${SHARED_ENV_FILE:-.env}
     volumes:
-      - ${DATA_DIR:-./data}:/app/data
+      - ${DATA_DIR:-../data}:/app/data
     networks:
       - collector-net
 
   # ── Synoptic listener (WebSocket weather ingest) ─────────────────────────
   synoptic-listener:
-    image: kalshi-collector:latest
+    image: kalshi-services:latest
     container_name: synoptic-listener
     restart: unless-stopped
-    command: python -m collector.synoptic.listener
+    command: python -m services.synoptic.listener
     env_file:
       - ${SHARED_ENV_FILE:-.env}
     volumes:
-      - ${DATA_DIR:-./data}:/app/data
+      - ${DATA_DIR:-../data}:/app/data
     networks:
       - collector-net
 
   # ── Weather Paper Execution Bot ───────────────────────────────────────────
   weather-bot:
-    image: kalshi-collector:latest
+    image: kalshi-services:latest
     container_name: weather-bot
     restart: unless-stopped
-    command: python -m collector.bot.weather_bot
+    command: python -m services.bot.weather_bot
     env_file:
       - ${SHARED_ENV_FILE:-.env}
     volumes:
-      - ${DATA_DIR:-./data}:/app/data
+      - ${DATA_DIR:-../data}:/app/data
     networks:
       - collector-net
 

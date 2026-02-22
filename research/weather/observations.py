@@ -1,13 +1,13 @@
-"""Orchestrator that coordinates all weather fetchers.
+"""Orchestrator that coordinates weather data fetchers from download_data.
 
 Loads station configuration from config.yaml and provides a single
-`collect_all()` method to fetch ASOS 1-min, METAR, and daily climate
-data for all configured stations.
+`collect_all()` method to fetch ASOS 1-min (IEM), METAR (AWC), and
+daily climate (IEM) for all configured stations.
 
 Usage:
     from research.weather.observations import WeatherObservations
 
-    obs = WeatherObservations.from_config("collector/config.yaml")
+    obs = WeatherObservations.from_config("services/config.yaml")
     results = obs.collect_all(date(2026, 2, 18))
     # results["asos_1min"] → pd.DataFrame
     # results["metar"]     → pd.DataFrame
@@ -28,9 +28,9 @@ from typing import Any
 import pandas as pd
 import yaml
 
-from research.weather.asos_1min import ASOS1MinFetcher
-from research.weather.daily_climate import DailyClimateFetcher
-from research.weather.metar import METARFetcher
+from data.download.iem_asos_1min import IEMASOS1MinFetcher
+from data.download.iem_daily_climate import IEMDailyClimateFetcher
+from data.download.awc_metar import AWCMETARFetcher
 from research.weather.stations import (
     STATION_REGISTRY,
     StationInfo,
@@ -56,11 +56,11 @@ class WeatherObservations:
         self.stations = stations
         self.data_dir = Path(data_dir) if data_dir else None
 
-        # Initialize fetchers
+        # Initialize fetchers (from download_data)
         base = self.data_dir
-        self.asos = ASOS1MinFetcher(data_dir=base)
-        self.metar = METARFetcher(data_dir=base)
-        self.climate = DailyClimateFetcher(data_dir=base)
+        self.asos = IEMASOS1MinFetcher(data_dir=base)
+        self.metar = AWCMETARFetcher(data_dir=base)
+        self.climate = IEMDailyClimateFetcher(data_dir=base)
 
     @classmethod
     def from_config(cls, config_path: str | Path) -> WeatherObservations:
@@ -74,10 +74,10 @@ class WeatherObservations:
         with open(config_path) as f:
             cfg = yaml.safe_load(f)
 
-        # Determine data directory
+        # Determine data directory (project root data/)
         storage = cfg.get("storage", {})
-        rel_data_dir = storage.get("data_dir", "data")
-        data_dir = config_path.parent / rel_data_dir / "weather_obs"
+        rel_data_dir = storage.get("data_dir", "../data")
+        data_dir = (config_path.parent / rel_data_dir).resolve()
 
         # Resolve stations from event_series or explicit weather_stations
         stations: list[StationInfo] = []
@@ -197,7 +197,7 @@ class WeatherObservations:
             Whether to auto-save parquet files.
         sources : list[str], optional
             Which sources to fetch.  Defaults to all three:
-            ["asos_1min", "metar", "daily_climate"].
+            ["iem_asos_1min", "awc_metar", "iem_daily_climate"].
         skip_existing : bool, optional
             If True, skip fetch for stations that already have a parquet file.
 
@@ -207,36 +207,36 @@ class WeatherObservations:
         """
         stns = self._resolve_stations(stations)
         if sources is None:
-            sources = ["asos_1min", "metar", "daily_climate"]
+            sources = ["iem_asos_1min", "awc_metar", "iem_daily_climate"]
 
         results: dict[str, pd.DataFrame] = {}
 
-        if "asos_1min" in sources:
+        if "iem_asos_1min" in sources:
             df = self.asos.fetch_many(stns, target_date, skip_existing=skip_existing)
             if save and not df.empty:
                 for stn in stns:
                     mask = df["station"] == stn.icao
                     if mask.any():
                         self.asos.save_parquet(df[mask], stn, target_date)
-            results["asos_1min"] = df
+            results["iem_asos_1min"] = df
 
-        if "metar" in sources:
+        if "awc_metar" in sources:
             df = self.metar.fetch_many(stns, target_date, skip_existing=skip_existing)
             if save and not df.empty:
                 for stn in stns:
                     mask = df["station"] == stn.icao
                     if mask.any():
                         self.metar.save_parquet(df[mask], stn, target_date)
-            results["metar"] = df
+            results["awc_metar"] = df
 
-        if "daily_climate" in sources:
+        if "iem_daily_climate" in sources:
             df = self.climate.fetch_many(stns, target_date, skip_existing=skip_existing)
             if save and not df.empty:
                 for stn in stns:
                     mask = df["station"] == stn.icao
                     if mask.any():
                         self.climate.save_parquet(df[mask], stn, target_date)
-            results["daily_climate"] = df
+            results["iem_daily_climate"] = df
 
         for source, df in results.items():
             if not df.empty:

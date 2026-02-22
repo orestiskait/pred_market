@@ -10,7 +10,7 @@ set -euo pipefail
 
 ENV_FILE="/home/ubuntu/.kalshi/collector.env"
 DATA_DIR="/home/ubuntu/collector-data"
-IMAGE="kalshi-collector:latest"
+IMAGE="kalshi-services:latest"
 CONTAINER="synoptic-listener"
 
 DOCKER="docker"
@@ -44,7 +44,7 @@ case "$cmd" in
       --env-file "$ENV_FILE" \
       -v "$DATA_DIR:/app/data" \
       --restart unless-stopped \
-      "$IMAGE" python -m collector.synoptic.listener
+      "$IMAGE" python -m services.synoptic.listener
 
     echo "[start_stop_synoptic_listener] Synoptic listener running."
     sleep 2

@@ -4,8 +4,8 @@ Streams real-time Kalshi market data (orderbooks + tickers) and
 periodically snapshots state to Parquet.
 
 Usage:
-    python -m collector.kalshi.listener
-    python -m collector.kalshi.listener --config path/to/config.yaml
+    python -m services.kalshi.listener
+    python -m services.kalshi.listener --config path/to/config.yaml
 """
 
 from __future__ import annotations
@@ -44,8 +44,8 @@ class LiveListener(AsyncService, KalshiWSMixin):
         # Tell the mixin to subscribe to both channels
         self._kalshi_channels = ["orderbook_delta", "ticker"]
 
-        # Storage
-        data_dir = config_dir / config["storage"]["data_dir"]
+        # Storage (data_dir resolved to project root data/)
+        data_dir = (config_dir / config["storage"]["data_dir"]).resolve()
         self.storage = ParquetStorage(str(data_dir))
         self.flush_interval = config["storage"].get("flush_interval_seconds", 300)
 

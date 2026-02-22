@@ -10,7 +10,7 @@ set -euo pipefail
 
 ENV_FILE="/home/ubuntu/.kalshi/collector.env"
 DATA_DIR="/home/ubuntu/collector-data"
-IMAGE="kalshi-collector:latest"
+IMAGE="kalshi-services:latest"
 CONTAINER="weather-bot"
 
 DOCKER="docker"
@@ -44,7 +44,7 @@ case "$cmd" in
       --env-file "$ENV_FILE" \
       -v "$DATA_DIR:/app/data" \
       --restart unless-stopped \
-      "$IMAGE" python -m collector.bot.weather_bot
+      "$IMAGE" python -m services.bot.weather_bot
 
     echo "[start_stop_weather_bot] Weather bot running."
     sleep 2

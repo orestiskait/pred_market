@@ -8,7 +8,7 @@ This module runs three services:
 ## Package Layout
 
 ```
-collector/
+services/
 ├── config.yaml              # Central configuration
 ├── tz.py                    # UTC timezone utilities
 │
@@ -78,30 +78,30 @@ used at boundaries (computing event ticker dates, displaying to humans).
 ### Live Kalshi listener
 
 ```bash
-pred_env/bin/python -m collector.kalshi.listener
-pred_env/bin/python -m collector.kalshi.listener --config path/to/config.yaml
+pred_env/bin/python -m services.kalshi.listener
+pred_env/bin/python -m services.kalshi.listener --config path/to/config.yaml
 ```
 
 ### Live Synoptic listener
 
 ```bash
-pred_env/bin/python -m collector.synoptic.listener
+pred_env/bin/python -m services.synoptic.listener
 ```
 
 ### Weather arbitrage bot
 
 ```bash
 # All configured markets:
-pred_env/bin/python -m collector.bot.weather_bot
+pred_env/bin/python -m services.bot.weather_bot
 
 # Specific markets only:
-pred_env/bin/python -m collector.bot.weather_bot --series KXHIGHCHI KXHIGHNY
+pred_env/bin/python -m services.bot.weather_bot --series KXHIGHCHI KXHIGHNY
 ```
 
 ### Historical weather data
 
 ```bash
-pred_env/bin/python research/run_weather.py
+pred_env/bin/python data/download/run_weather_collection.py
 ```
 
 ### Docker
@@ -113,19 +113,20 @@ docker compose down            # Stop all services
 
 ## Data Storage
 
-All Parquet files are stored under `data/` (configurable in `config.yaml`):
+All data is stored under `data/` at project root (configurable in `config.yaml`):
 
 ```
 data/
 ├── market_snapshots/         # Kalshi market state (per-date parquet)
 ├── orderbook_snapshots/      # Kalshi orderbook depth (baseline + delta)
 ├── synoptic_ws/              # Synoptic 1-min ASOS observations
-├── weather_obs/              # Historical weather fetcher output
-│   ├── asos_1min/
-│   ├── metar/
-│   └── daily_climate/
-└── weather_bot/              # Paper trade logs
-    └── paper_trades.csv
+├── iem_asos_1min/            # IEM ASOS 1-min temperature
+├── awc_metar/                # AWC METAR observations
+├── iem_daily_climate/        # IEM NWS Daily Climate (CLI)
+├── weather_bot/              # Paper trade logs
+│   └── paper_trades.csv
+├── download/                 # Scripts that fetch weather data
+└── DATA_SOURCES.txt          # Source and content of each folder
 ```
 
 ## Configuration

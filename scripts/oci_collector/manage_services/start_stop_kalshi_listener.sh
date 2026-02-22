@@ -10,7 +10,7 @@ set -euo pipefail
 
 ENV_FILE="/home/ubuntu/.kalshi/collector.env"
 DATA_DIR="/home/ubuntu/collector-data"
-IMAGE="kalshi-collector:latest"
+IMAGE="kalshi-services:latest"
 CONTAINER="kalshi-listener"
 
 DOCKER="docker"

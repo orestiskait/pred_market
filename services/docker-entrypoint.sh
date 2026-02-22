@@ -4,11 +4,11 @@
 #   KALSHI_API_KEY_ID        - Kalshi API key ID
 #   KALSHI_PRIVATE_KEY_B64   - base64-encoded PEM private key
 # Optional:
-#   KALSHI_LISTENER_CONFIG   - path to config.yaml (default: /app/collector/config.yaml)
+#   KALSHI_LISTENER_CONFIG   - path to config.yaml (default: /app/services/config.yaml)
 set -e
 
 KEY_PATH="/tmp/kalshi_key.pem"
-CONFIG="${KALSHI_LISTENER_CONFIG:-${COLLECTOR_CONFIG:-/app/collector/config.yaml}}"
+CONFIG="${KALSHI_LISTENER_CONFIG:-${SERVICES_CONFIG:-/app/services/config.yaml}}"
 
 if [ -z "$KALSHI_API_KEY_ID" ] || [ -z "$KALSHI_PRIVATE_KEY_B64" ]; then
   echo "ERROR: KALSHI_API_KEY_ID and KALSHI_PRIVATE_KEY_B64 must be set" >&2
@@ -25,5 +25,5 @@ unset KALSHI_PRIVATE_KEY_B64
 if [ $# -gt 0 ]; then
   exec "$@"
 else
-  exec python -m collector.kalshi.listener --config "$CONFIG"
+  exec python -m services.kalshi.listener --config "$CONFIG"
 fi

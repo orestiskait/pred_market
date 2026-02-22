@@ -4,8 +4,8 @@ Streams real-time weather observations from the Synoptic push API
 and periodically flushes to Parquet.
 
 Usage:
-    python -m collector.synoptic.listener
-    python -m collector.synoptic.listener --config path/to/config.yaml
+    python -m services.synoptic.listener
+    python -m services.synoptic.listener --config path/to/config.yaml
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ class SynopticLiveCollector(AsyncService, SynopticWSMixin):
         )
 
         # Storage
-        data_dir = config_dir / config["storage"]["data_dir"]
+        data_dir = (config_dir / config["storage"]["data_dir"]).resolve()
         self.storage = ParquetStorage(str(data_dir))
         self.flush_interval = config["storage"].get("flush_interval_seconds", 300)
 
@@ -114,8 +114,8 @@ def main():
     configure_logging(args.log_level)
 
     config, config_path = load_config(args.config)
-    collector = SynopticLiveCollector(config, config_dir=config_path.parent)
-    asyncio.run(collector.run())
+    svc = SynopticLiveCollector(config, config_dir=config_path.parent)
+    asyncio.run(svc.run())
 
 
 if __name__ == "__main__":

@@ -3,7 +3,14 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 .env
-collector/config.yaml
-collector/data/**/*.parquet
-collector/data/market_snapshots/*.parquet
-collector/data/orderbook_snapshots/*.parquet
+services/config.yaml
+# Data outputs (keep data/download/ scripts in git)
+**/*.parquet
+data/iem_asos_1min/
+data/awc_metar/
+data/iem_daily_climate/
+data/market_snapshots/
+data/orderbook_snapshots/
+data/synoptic_ws/
+data/weather_bot/
+data/iem_metar_extracted/

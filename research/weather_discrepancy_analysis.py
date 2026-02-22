@@ -1,11 +1,10 @@
-"""Weather discrepancy analysis: Can we derive CLI (official high) from ASOS 1-min?
+"""Compare ASOS 1-min and METAR daily max vs NWS official high (CLI).
 
 Workflow:
-  1. Fetch and save data to parquet using the production `WeatherObservations` class.
-     (Ensures we analyze exactly what the system collects).
-  2. Load the saved parquet files.
-  3. Compute daily max from ASOS 1-min using proper Local Standard Time (LST) windows.
-  4. Compare against CLI official highs.
+  1. Fetch and save data via WeatherObservations (uses download_data fetchers).
+  2. Load saved parquet files.
+  3. Compute daily max from ASOS 1-min (IEM) and METAR (AWC) using LST windows.
+  4. Compare against CLI (IEM) official highs.
 
 Config:
   - 50-day window ending yesterday.
@@ -96,7 +95,7 @@ def analyze_station(obs: WeatherObservations, icao: str):
     metar_df = obs.metar.read_all(start_date=START_DATE, end_date=END_DATE)
     cli_df = obs.climate.read_all(start_date=START_DATE, end_date=END_DATE)
     
-    # Filter by station
+    # Filter by station (asos/metar/climate are fetcher attributes)
     if not asos_df.empty:
         asos_df = asos_df[asos_df["station"] == icao]
     if not metar_df.empty:
@@ -185,13 +184,13 @@ def main():
     print(f"Period: {START_DATE} -> {END_DATE}")
     print("=" * 70)
     
-    config_path = _project_root / "collector" / "config.yaml"
+    config_path = _project_root / "services" / "config.yaml"
     obs = WeatherObservations.from_config(config_path)
 
     # 1. FETCH & SAVE (Production Pipeline)
     print("\n[Step 1] Fetching and saving data...")
     # This will loop day-by-day, fetch from APIs, and save to parquet
-    # matching the production collector logic.
+    # matching the production services logic.
     obs.collect_date_range(START_DATE, END_DATE)
     
     # 2. ANALYZE

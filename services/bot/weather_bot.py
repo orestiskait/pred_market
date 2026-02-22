@@ -15,9 +15,9 @@ Configuration:
   city requires zero code changes — just add it to the registry and config.
 
 Usage:
-    python -m collector.bot.weather_bot
-    python -m collector.bot.weather_bot --config config.yaml
-    python -m collector.bot.weather_bot --series KXHIGHCHI
+    python -m services.bot.weather_bot
+    python -m services.bot.weather_bot --config config.yaml
+    python -m services.bot.weather_bot --series KXHIGHCHI
 """
 
 from __future__ import annotations
@@ -137,7 +137,7 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
         if Path("/app/data").exists():
             data_dir = Path("/app/data")  # Docker: volume mount
         else:
-            data_dir = config_path.parent / config.get("storage", {}).get("data_dir", "data")
+            data_dir = (config_path.parent / config.get("storage", {}).get("data_dir", "../data")).resolve()
         self.csv_log = data_dir / "weather_bot" / "paper_trades.csv"
         self.csv_log.parent.mkdir(parents=True, exist_ok=True)
         self._init_csv()

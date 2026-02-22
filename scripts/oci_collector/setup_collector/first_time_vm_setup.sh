@@ -15,7 +15,7 @@ REPO_DIR="/home/ubuntu/pred_market"
 CREDS_DIR="/home/ubuntu/.kalshi"
 ENV_FILE="$CREDS_DIR/collector.env"
 DATA_DIR="/home/ubuntu/collector-data"
-IMAGE="kalshi-collector:latest"
+IMAGE="kalshi-services:latest"
 CONTAINER="kalshi-listener"
 
 OCI_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -56,7 +56,7 @@ unset GITHUB_TOKEN
 
 # ── Docker image ──────────────────────────────────────────────────────────────
 echo "[setup] Building Docker image..."
-$DOCKER build -f "$REPO_DIR/collector/Dockerfile" -t "$IMAGE" "$REPO_DIR"
+$DOCKER build -f "$REPO_DIR/services/Dockerfile" -t "$IMAGE" "$REPO_DIR"
 echo "[setup] Image built: $IMAGE"
 
 # ── Credentials ───────────────────────────────────────────────────────────────

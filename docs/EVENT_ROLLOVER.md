@@ -1,6 +1,6 @@
 # Event Rollover Strategy
 
-How the collector handles market ticker changes as days pass, without cron restarts.
+How the services handle market ticker changes as days pass, without cron restarts.
 
 ---
 

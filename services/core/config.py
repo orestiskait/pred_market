@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 def load_config(config_path: Optional[str] = None) -> tuple[dict, Path]:
     """Load and return the YAML config dictionary.
 
-    Falls back to ``config.yaml`` next to the collector package root
+    Falls back to ``config.yaml`` next to the services package root
     when no path is given.
     """
     if config_path:

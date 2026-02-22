@@ -45,10 +45,10 @@ The VM runs Docker containers for data collection:
 │  │  ├── market_snapshots/     ← Kalshi prices                │   │
 │  │  ├── orderbook_snapshots/  ← Kalshi orderbooks            │   │
 │  │  ├── synoptic_ws/          ← Synoptic Websocket API       │   │
-│  │  └── weather_obs/                                          │   │
-│  │      ├── asos_1min/        ← ASOS 1-min (IEM, ~24h lag)   │   │
-│  │      ├── metar/            ← METAR (AWC API)              │   │
-│  │      └── daily_climate/    ← Official CLI high/low        │   │
+│  │  ├── iem_asos_1min/       ← IEM ASOS 1-min (~24h lag)     │   │
+│  │  ├── awc_metar/           ← AWC METAR                     │   │
+│  │  ├── iem_daily_climate/   ← IEM NWS Daily Climate (CLI)   │   │
+│  │  └── weather_bot/         ← Paper trade logs              │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -206,7 +206,7 @@ scp -r ubuntu@<PUBLIC_IP>:~/collector-data ./collector_data_backup/
 
 ## Fetching Data Locally
 
-`maintenance/sync_collected_data_to_local.sh` syncs the collected parquet files from the VM to `collector/data/` (the path the analysis notebook reads from). It uses `rsync` — only new/changed files are transferred.
+`maintenance/sync_collected_data_to_local.sh` syncs the collected parquet files from the VM to `data/` (the path the analysis notebook reads from). It uses `rsync` — only new/changed files are transferred.
 
 ```bash
 cd scripts/oci_collector/maintenance
