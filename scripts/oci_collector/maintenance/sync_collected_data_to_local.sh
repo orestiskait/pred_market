@@ -2,7 +2,7 @@
 # Sync collected parquet files from the OCI VM to this machine.
 # Uses rsync — incremental, skips files already present, fast for daily runs.
 #
-# By default syncs to pred_market_src/collector/data/ (where the notebook reads from).
+# By default syncs to collector/data/ (where the notebook reads from).
 # Override with: LOCAL_DATA_DIR=/your/path ./sync_collected_data_to_local.sh
 #
 # Usage:
@@ -12,12 +12,12 @@
 # Env vars (auto-detected if not set):
 #   COMPARTMENT_ID  — OCI compartment (default: tenancy root)
 #   DISPLAY_NAME    — instance name (default: kalshi-collector)
-#   LOCAL_DATA_DIR  — local destination (default: ../../pred_market_src/collector/data)
+#   LOCAL_DATA_DIR  — local destination (default: ../../collector/data)
 set -euo pipefail
 
 DISPLAY_NAME="${DISPLAY_NAME:-kalshi-collector}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-LOCAL_DATA_DIR="${LOCAL_DATA_DIR:-$SCRIPT_DIR/../../pred_market_src/collector/data}"
+LOCAL_DATA_DIR="${LOCAL_DATA_DIR:-$SCRIPT_DIR/../../collector/data}"
 LOCAL_DATA_DIR="$(realpath "$LOCAL_DATA_DIR")"
 
 DRY_RUN=""

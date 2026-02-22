@@ -206,7 +206,7 @@ scp -r ubuntu@<PUBLIC_IP>:~/collector-data ./collector_data_backup/
 
 ## Fetching Data Locally
 
-`maintenance/sync_collected_data_to_local.sh` syncs the collected parquet files from the VM to `pred_market_src/collector/data/` (the path the analysis notebook reads from). It uses `rsync` — only new/changed files are transferred.
+`maintenance/sync_collected_data_to_local.sh` syncs the collected parquet files from the VM to `collector/data/` (the path the analysis notebook reads from). It uses `rsync` — only new/changed files are transferred.
 
 ```bash
 cd scripts/oci_collector/maintenance
@@ -223,27 +223,16 @@ LOCAL_DATA_DIR=~/my-data ./sync_collected_data_to_local.sh
 
 The script auto-detects the VM's public IP via OCI CLI. On success it prints a summary of all local parquet files and their sizes.
 
-## Daily Restart (Event Series Roll)
+## Event Series Roll (No Cron Required)
 
-The Kalshi listener resolves event series prefixes (e.g. `KXHIGHCHI`) to dated tickers (e.g. `KXHIGHCHI-26FEB19`) once at startup. To pick up the next day's events, the services restart automatically at **12:01 AM** and **1:01 AM New York time** via cron jobs installed by `first_time_vm_setup.sh`.
+The Kalshi listener and weather bot **periodically re-discover** event tickers in-process (every `rediscover_interval_seconds`, default 5 min). When markets roll over at local midnight (NWS timezone per city), new tickers are picked up automatically and the WebSocket reconnects with updated subscriptions. **Cron jobs are no longer required.**
 
-Two restarts are necessary because NY contracts typically roll over around midnight, and Chicago contracts roll over around 1:00 AM ET (midnight CT).
+Config (`config.yaml` → `event_rollover`):
 
-The VM timezone is set to `America/New_York` by cloud-init, so the cron schedule adjusts for daylight saving time automatically.
+- `event_selection`: `"active"` (today's market) or `"next"` (trade tomorrow's market when it opens, e.g. Feb 22 on Feb 21)
+- `rediscover_interval_seconds`: 300 (5 min). Set to 0 to disable in-process rollover.
 
-Restart log: `~/collector-data/daily-restart.log`
-
-To verify the cron is installed:
-
-```bash
-crontab -l | grep start_stop_all_services
-```
-
-To change the schedule, edit the crontab on the VM:
-
-```bash
-crontab -e
-```
+Legacy cron (optional): `first_time_vm_setup.sh` skips cron by default. To restore the old 12:01/1:01 AM restarts, run `SKIP_CRON=0 ./first_time_vm_setup.sh`.
 
 ## Service Commands
 

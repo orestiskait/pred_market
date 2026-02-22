@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 .env
-pred_market_src/collector/config.yaml
-pred_market_src/collector/data/**/*.parquet
-pred_market_src/collector/data/market_snapshots/*.parquet
-pred_market_src/collector/data/orderbook_snapshots/*.parquet
+collector/config.yaml
+collector/data/**/*.parquet
+collector/data/market_snapshots/*.parquet
+collector/data/orderbook_snapshots/*.parquet

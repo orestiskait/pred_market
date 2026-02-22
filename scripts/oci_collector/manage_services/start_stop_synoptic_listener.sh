@@ -44,7 +44,7 @@ case "$cmd" in
       --env-file "$ENV_FILE" \
       -v "$DATA_DIR:/app/data" \
       --restart unless-stopped \
-      "$IMAGE" python -m pred_market_src.collector.synoptic.listener
+      "$IMAGE" python -m collector.synoptic.listener
 
     echo "[start_stop_synoptic_listener] Synoptic listener running."
     sleep 2

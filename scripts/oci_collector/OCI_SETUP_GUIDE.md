@@ -40,7 +40,7 @@ cd scripts/oci_collector/provision_vm
 
 **Where:** Run **on the VM** (after `ssh ubuntu@<PUBLIC_IP>`).
 
-**What it does:** Clones the repo (if needed), builds the Docker image, prompts for Kalshi + Synoptic credentials, creates `~/.kalshi/collector.env`, installs daily-restart cron jobs.
+**What it does:** Clones the repo (if needed), builds the Docker image, prompts for Kalshi + Synoptic credentials, creates `~/.kalshi/collector.env`. Cron jobs are skipped by default (in-process periodic re-discovery handles event rollover).
 
 **Prerequisite:** Copy your Kalshi private key to the VM first:  
 `scp ~/.kalshi/kalshi_api_key.txt ubuntu@<PUBLIC_IP>:~/.kalshi/`
@@ -152,12 +152,12 @@ ssh ubuntu@<PUBLIC_IP> '~/pred_market/scripts/oci_collector/maintenance/update_c
 2. **Local:** `scp ~/.kalshi/kalshi_api_key.txt ubuntu@<IP>:~/.kalshi/`
 3. **Local:** `ssh ubuntu@<IP>`
 4. **VM:** `git clone ... ~/pred_market` (or clone before SSH)
-5. **VM:** `setup_collector/first_time_vm_setup.sh` → credentials, Docker image, cron
+5. **VM:** `setup_collector/first_time_vm_setup.sh` → credentials, Docker image
 6. **VM:** `manage_services/start_stop_all_services.sh start` → start collecting
 
 ### Ongoing
 
-- **Daily:** Cron restarts services at 12:01 AM and 1:01 AM ET (no action needed)
+- **Daily:** In-process re-discovery picks up new event tickers every 5 min (no cron, no action needed)
 - **When you want local data:** `maintenance/sync_collected_data_to_local.sh`
 - **When you want a health check:** `maintenance/probe_vm_and_container_status.sh`
 - **When you push code changes:** `maintenance/update_code_and_restart_services.sh` (on VM or via SSH)

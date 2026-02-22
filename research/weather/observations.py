@@ -5,9 +5,9 @@ Loads station configuration from config.yaml and provides a single
 data for all configured stations.
 
 Usage:
-    from research.weather import WeatherObservations
+    from research.weather.observations import WeatherObservations
 
-    obs = WeatherObservations.from_config("pred_market_src/collector/config.yaml")
+    obs = WeatherObservations.from_config("collector/config.yaml")
     results = obs.collect_all(date(2026, 2, 18))
     # results["asos_1min"] → pd.DataFrame
     # results["metar"]     → pd.DataFrame

@@ -185,7 +185,7 @@ def main():
     print(f"Period: {START_DATE} -> {END_DATE}")
     print("=" * 70)
     
-    config_path = _project_root / "pred_market_src" / "collector" / "config.yaml"
+    config_path = _project_root / "collector" / "config.yaml"
     obs = WeatherObservations.from_config(config_path)
 
     # 1. FETCH & SAVE (Production Pipeline)

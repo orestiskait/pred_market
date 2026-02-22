@@ -44,7 +44,7 @@ case "$cmd" in
       --env-file "$ENV_FILE" \
       -v "$DATA_DIR:/app/data" \
       --restart unless-stopped \
-      "$IMAGE" python -m pred_market_src.collector.bot.weather_bot
+      "$IMAGE" python -m collector.bot.weather_bot
 
     echo "[start_stop_weather_bot] Weather bot running."
     sleep 2

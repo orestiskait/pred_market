@@ -56,7 +56,7 @@ unset GITHUB_TOKEN
 
 # ── Docker image ──────────────────────────────────────────────────────────────
 echo "[setup] Building Docker image..."
-$DOCKER build -t "$IMAGE" "$REPO_DIR/pred_market_src/collector/"
+$DOCKER build -f "$REPO_DIR/collector/Dockerfile" -t "$IMAGE" "$REPO_DIR"
 echo "[setup] Image built: $IMAGE"
 
 # ── Credentials ───────────────────────────────────────────────────────────────
@@ -98,19 +98,23 @@ fi
 # ── Data directory ────────────────────────────────────────────────────────────
 mkdir -p "$DATA_DIR"
 
-# ── Daily restarts (re-resolves event series for new NY/CHI dates) ──────────
-CRON_CMD_NY="1 0 * * * ${START_ALL_SCRIPT} start >> ${DATA_DIR}/daily-restart.log 2>&1"
-CRON_CMD_CHI="1 1 * * * ${START_ALL_SCRIPT} start >> ${DATA_DIR}/daily-restart.log 2>&1"
-
-# Remove the old 2 AM cron job if it exists
-( crontab -l 2>/dev/null | grep -vF "0 2 * * * ${START_ALL_SCRIPT} start" ) | crontab -
-
-if crontab -l 2>/dev/null | grep -qF "1 0 * * * ${START_ALL_SCRIPT} start"; then
-  echo "[setup] Daily restart crons already installed — skipping."
+# ── Daily restarts (optional; superseded by in-process periodic re-discovery) ─
+# Services now re-discover event tickers every rediscover_interval_seconds (default 5 min)
+# via config event_rollover. Cron is no longer required. To keep legacy cron:
+#   SKIP_CRON=0 ./first_time_vm_setup.sh
+if [[ "${SKIP_CRON:-1}" != "0" ]]; then
+  echo "[setup] Skipping daily restart crons (event_rollover.rediscover_interval_seconds handles rollover)."
+  ( crontab -l 2>/dev/null | grep -vF "${START_ALL_SCRIPT} start" ) | crontab - 2>/dev/null || true
 else
-  ( crontab -l 2>/dev/null; echo "$CRON_CMD_NY"; echo "$CRON_CMD_CHI" ) | crontab -
-  echo "[setup] Installed daily restart crons (12:01 AM and 1:01 AM America/New_York)."
-  echo "        Log: $DATA_DIR/daily-restart.log"
+  CRON_CMD_NY="1 0 * * * ${START_ALL_SCRIPT} start >> ${DATA_DIR}/daily-restart.log 2>&1"
+  CRON_CMD_CHI="1 1 * * * ${START_ALL_SCRIPT} start >> ${DATA_DIR}/daily-restart.log 2>&1"
+  ( crontab -l 2>/dev/null | grep -vF "0 2 * * * ${START_ALL_SCRIPT} start" ) | crontab -
+  if crontab -l 2>/dev/null | grep -qF "1 0 * * * ${START_ALL_SCRIPT} start"; then
+    echo "[setup] Daily restart crons already installed — skipping."
+  else
+    ( crontab -l 2>/dev/null; echo "$CRON_CMD_NY"; echo "$CRON_CMD_CHI" ) | crontab -
+    echo "[setup] Installed daily restart crons (12:01 AM and 1:01 AM America/New_York)."
+  fi
 fi
 
 echo ""

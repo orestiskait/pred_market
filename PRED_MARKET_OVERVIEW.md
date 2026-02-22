@@ -44,23 +44,20 @@ Station mapping (e.g. `KXHIGHCHI` → KMDW, `KXHIGHNY` → KNYC) is configured i
 
 ```
 pred_market/
-├── pred_market_src/
-│   └── collector/              # Kalshi listener, Synoptic listener, bot
-│       ├── kalshi/listener.py  # Live Kalshi WebSocket listener
-│       ├── synoptic/listener.py # Synoptic weather WebSocket listener
-│       ├── bot/weather_bot.py  # Paper-trading weather arbitrage bot
-│       ├── core/               # Config, service, storage
-│       ├── markets/             # Registry, ticker resolution
-│       ├── config.yaml
-│       └── docker-compose.yml
+├── collector/                  # Kalshi listener, Synoptic listener, bot
+│   ├── kalshi/listener.py     # Live Kalshi WebSocket listener
+│   ├── synoptic/listener.py   # Synoptic weather WebSocket listener
+│   ├── bot/weather_bot.py     # Paper-trading weather arbitrage bot
+│   ├── core/                  # Config, service, storage
+│   ├── markets/               # Registry, ticker resolution
+│   ├── config.yaml
+│   └── docker-compose.yml
 ├── research/
-│   ├── weather/                # Historical weather fetchers (ASOS, METAR, CLI)
-│   ├── run_weather.py          # Weather collection script
+│   ├── weather/               # Historical weather fetchers (ASOS, METAR, CLI)
+│   ├── run_weather.py         # Weather collection script
 │   └── weather_discrepancy_analysis.py  # ASOS vs official high comparison
-├── pred_market_src/exploration/
-│   └── market_analysis.ipynb   # Orderbook, probabilities, charts
-├── scripts/oci_collector/      # OCI deployment (Kalshi listener, Synoptic listener, bot)
-└── pred_env/                   # Python virtual environment
+├── scripts/oci_collector/     # OCI deployment (Kalshi listener, Synoptic listener, bot)
+└── pred_env/                  # Python virtual environment
 ```
 
 ---
@@ -76,27 +73,27 @@ pred_market/
 ### Installation
 
 ```bash
-pred_env/bin/pip install -r pred_market_src/collector/requirements.txt
+pred_env/bin/pip install -r collector/requirements.txt
 ```
 
 ### Configuration
 
-1. Copy `pred_market_src/collector/.env.example` to `.env` and set:
+1. Copy `collector/.env.example` to `collector/.env` and set:
    - `KALSHI_API_KEY_ID`
    - `KALSHI_PRIVATE_KEY_PATH`
-2. Edit `pred_market_src/collector/config.yaml` for event series, collection intervals, and storage paths.
+2. Edit `collector/config.yaml` for event series, collection intervals, and storage paths.
 
 ### Running Services
 
 ```bash
 # Live Kalshi listener (WebSocket)
-pred_env/bin/python -m pred_market_src.collector.kalshi.listener
+pred_env/bin/python -m collector.kalshi.listener
 
 # Live Synoptic listener
-pred_env/bin/python -m pred_market_src.collector.synoptic.listener
+pred_env/bin/python -m collector.synoptic.listener
 
 # Weather arbitrage bot
-pred_env/bin/python -m pred_market_src.collector.bot.weather_bot
+pred_env/bin/python -m collector.bot.weather_bot
 
 # Historical weather data (ASOS, METAR, daily climate)
 pred_env/bin/python research/run_weather.py

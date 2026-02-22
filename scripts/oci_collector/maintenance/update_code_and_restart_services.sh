@@ -46,7 +46,7 @@ echo ""
 
 # ── Rebuild Docker image ─────────────────────────────────────────────────────
 echo "[update] Rebuilding Docker image..."
-$DOCKER build -t "$IMAGE" "$REPO_DIR/pred_market_src/collector/"
+$DOCKER build -f "$REPO_DIR/collector/Dockerfile" -t "$IMAGE" "$REPO_DIR"
 
 # ── Restart Kalshi listener, Synoptic listener, weather bot ──────────────────
 echo "[update] Restarting Kalshi listener, Synoptic listener, and weather bot..."

@@ -16,7 +16,7 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from pred_market_src.collector.tz import utc_today
+from collector.tz import utc_today
 from research.weather.observations import WeatherObservations
 
 # MEANINGFUL VARIABLES
@@ -41,7 +41,7 @@ def main():
     target_end = END_DATE if END_DATE else utc_today() - timedelta(days=1)
     target_start = START_DATE if START_DATE else target_end
 
-    config_path = _project_root / "pred_market_src" / "collector" / "config.yaml"
+    config_path = _project_root / "collector" / "config.yaml"
     
     # Initialize the coordinator
     obs = WeatherObservations.from_config(config_path)
