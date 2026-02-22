@@ -38,6 +38,8 @@ class LadderStrategy(BaseStrategy):
         # Per-instance params (from config.yaml → bot.strategies[].params)
         self.consecutive_obs_required = params.get("consecutive_obs", 2)
         self.max_price_cents = params.get("max_price_cents", 95)
+        self.max_spend_per_event = int(params.get("max_spend_per_event", 0) * 100)  # dollars → cents
+        self.paper_mode = params.get("paper_mode", True)
 
         # Build market configs for THIS instance's targets only
         self._market_configs = {
@@ -108,6 +110,7 @@ class LadderStrategy(BaseStrategy):
                 "subtitle": info.get("subtitle"),
                 "executed": False,
                 "series": series,
+                "event_ticker": event_ticker,
                 "station": mc.synoptic_station,
                 "nws_start": nws_start_utc,
                 "nws_end": nws_end_utc,
@@ -166,6 +169,9 @@ class LadderStrategy(BaseStrategy):
                     market_ticker=tk,
                     side="no",
                     max_price_cents=self.max_price_cents,
+                    max_spend_cents=self.max_spend_per_event,
+                    paper_mode=self.paper_mode,
                     station=station,
                     series=info["series"],
+                    event_ticker=info["event_ticker"],
                 ))

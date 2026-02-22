@@ -1,11 +1,26 @@
-"""Centralized Execution Manager with risk guardrails.
+"""Centralized Execution Manager with per-strategy, per-event risk guardrails.
 
-Listens for OrderIntents from strategies, enforces risk limits
-(global drawdown, per-series allocation caps), and simulates
-market sweep orders against the live shared orderbook state.
+Listens for OrderIntents from strategies, enforces spend limits, and
+simulates market sweep orders against the live shared orderbook state.
 
 All order execution is centralized here to prevent strategies from
-double-trading, exceeding balance, or breaching risk limits.
+double-trading or exceeding risk limits.
+
+GUARDRAIL MODEL:
+  Each strategy declares its own ``max_spend_per_event`` (in its config
+  params).  Spend is tracked per (strategy_id, event_ticker) pair — e.g.
+  ("chicago_fast_ladder", "KXHIGHCHI-26FEB22").  When the event rolls to
+  the next day the ticker changes, so the budget resets automatically.
+  The bot never permanently halts.
+
+PAPER / LIVE EQUIVALENCE:
+  Paper and live modes MUST use identical execution logic:
+  - Same orderbook source (Kalshi WS orderbook_delta → snapshot + deltas)
+  - Same sweep algorithm (buy at each level up to max_price_cents)
+  - Same risk checks (per-strategy-event spend cap)
+  When adding live order placement, keep this module as the single source
+  of truth: live should call Kalshi API to place the same orders this
+  sweep would simulate.
 """
 
 from __future__ import annotations
@@ -23,40 +38,17 @@ logger = logging.getLogger("ExecutionManager")
 
 
 class ExecutionManager:
-    """Paper-trading execution engine with per-series and global risk guardrails."""
+    """Paper-trading execution engine with per-strategy, per-event risk guardrails."""
 
     def __init__(self, event_bus: EventBus, config: dict, config_path: Path):
         self.event_bus = event_bus
         self.config = config
 
-        # Paper vs real mode: paper = no capital limits; real = enforce guardrails
-        bot_cfg = config.get("bot", {})
-        self.paper_mode = bot_cfg.get("paper_mode", True)
-
-        # Parse guardrails from config
-        guardrails = bot_cfg.get("execution_guardrails", {})
-        starting = guardrails.get("starting_balance_cents", 100_000)
-        self.max_total_drawdown = guardrails.get("max_total_drawdown_cents", 0)  # 0 = disabled
-        self.max_allocation_per_series = guardrails.get("max_allocation_per_series_cents", 0)  # 0 = disabled
-
-        if self.paper_mode:
-            # Paper mode: no capital limits — use high balance, disable all guardrails
-            self.paper_balance = 100_000_000  # $1M simulated balance
-            self.starting_balance = self.paper_balance
-            self.max_total_drawdown = 0
-            self.max_allocation_per_series = 0
-        else:
-            # Real mode: enforce guardrails
-            self.paper_balance = starting
-            self.starting_balance = starting
-
-        # Tracking
+        # Tracking: (strategy_id, event_ticker) → total cents spent
         self.orderbooks: dict[str, dict] = {}
         self.market_info: dict[str, dict] = {}
-        self._series_spent: dict[str, int] = defaultdict(int)  # series → total cents spent
-        self._halted = False  # global kill switch
+        self._spent: dict[tuple[str, str], int] = defaultdict(int)
 
-        # Subscribe to events
         self.event_bus.subscribe(OrderIntent, self.on_order_intent)
         self.event_bus.subscribe(OrderbookUpdateEvent, self.on_orderbook_update)
         self.event_bus.subscribe(MarketDiscoveryEvent, self.on_market_discovery)
@@ -74,14 +66,7 @@ class ExecutionManager:
         self.csv_log.parent.mkdir(parents=True, exist_ok=True)
         self._init_csv()
 
-        mode = "PAPER (no capital limits)" if self.paper_mode else "LIVE (guardrails enforced)"
-        logger.info(
-            "ExecutionManager initialized — mode=%s, balance=$%.2f, max_drawdown=$%.2f, max_per_series=$%.2f",
-            mode,
-            self.paper_balance / 100,
-            self.max_total_drawdown / 100,
-            self.max_allocation_per_series / 100,
-        )
+        logger.info("ExecutionManager initialized (paper_mode is per-strategy)")
 
     # ------------------------------------------------------------------
     # CSV logging
@@ -94,6 +79,7 @@ class ExecutionManager:
                 writer.writerow([
                     "execution_timestamp_utc",
                     "strategy_id",
+                    "event_ticker",
                     "series",
                     "station",
                     "market_ticker",
@@ -101,35 +87,33 @@ class ExecutionManager:
                     "contracts_filled",
                     "avg_fill_price_cents",
                     "total_cost_cents",
-                    "remaining_balance_cents",
-                    "series_allocation_cents",
+                    "strategy_event_spent_cents",
                 ])
 
-    def _log_trade(self, strategy_id, series, station, ticker, side, filled, avg_price, total_cost):
+    def _log_trade(self, intent: OrderIntent, filled: int, avg_price: float, total_cost: int):
+        key = (intent.strategy_id, intent.event_ticker)
         now = datetime.now(timezone.utc)
         with open(self.csv_log, "a", newline="") as f:
             writer = csv.writer(f)
             writer.writerow([
-                now.isoformat(), strategy_id, series, station,
-                ticker, side, filled,
-                round(avg_price, 2), total_cost,
-                self.paper_balance,
-                self._series_spent[series],
+                now.isoformat(), intent.strategy_id, intent.event_ticker,
+                intent.series, intent.station, intent.market_ticker,
+                intent.side, filled, round(avg_price, 2), total_cost,
+                self._spent[key],
             ])
 
-        # Parquet output (primary for analysis)
         row = {
             "execution_ts": now,
-            "strategy_id": strategy_id,
-            "series": series,
-            "station": station,
-            "market_ticker": ticker,
-            "side": side,
+            "strategy_id": intent.strategy_id,
+            "event_ticker": intent.event_ticker,
+            "series": intent.series,
+            "station": intent.station,
+            "market_ticker": intent.market_ticker,
+            "side": intent.side,
             "contracts_filled": int(filled),
             "avg_fill_price_cents": round(avg_price, 2),
             "total_cost_cents": total_cost,
-            "remaining_balance_cents": self.paper_balance,
-            "series_allocation_cents": self._series_spent[series],
+            "strategy_event_spent_cents": self._spent[key],
         }
         self._parquet_storage.write_paper_trades([row])
 
@@ -147,53 +131,28 @@ class ExecutionManager:
         self.orderbooks[event.market_ticker] = event.orderbook
 
     # ------------------------------------------------------------------
-    # Risk checks
-    # ------------------------------------------------------------------
-
-    def _check_drawdown(self) -> bool:
-        """Return True if global drawdown limit is breached."""
-        if self.max_total_drawdown <= 0:
-            return False
-        total_spent = self.starting_balance - self.paper_balance
-        if total_spent >= self.max_total_drawdown:
-            logger.error(
-                "🛑 GLOBAL DRAWDOWN LIMIT HIT: spent $%.2f >= limit $%.2f — HALTING ALL TRADING",
-                total_spent / 100, self.max_total_drawdown / 100,
-            )
-            self._halted = True
-            return True
-        return False
-
-    def _check_series_allocation(self, series: str, proposed_cost: int) -> bool:
-        """Return True if per-series allocation would be breached."""
-        if self.max_allocation_per_series <= 0:
-            return False
-        projected = self._series_spent[series] + proposed_cost
-        if projected > self.max_allocation_per_series:
-            logger.warning(
-                "⚠️ [%s] Series allocation limit: already $%.2f + proposed $%.2f > limit $%.2f — BLOCKING",
-                series,
-                self._series_spent[series] / 100,
-                proposed_cost / 100,
-                self.max_allocation_per_series / 100,
-            )
-            return True
-        return False
-
-    # ------------------------------------------------------------------
     # Order execution
     # ------------------------------------------------------------------
 
-    async def on_order_intent(self, intent: OrderIntent):
-        """Receive an OrderIntent, check risk, execute paper sweep."""
-        if self._halted:
-            logger.warning(
-                "🛑 [%s] Trading halted — ignoring intent for %s",
-                intent.strategy_id, intent.market_ticker,
-            )
-            return
+    def _remaining(self, intent: OrderIntent) -> int:
+        """Cents remaining for this (strategy, event) pair, or -1 if uncapped."""
+        if intent.max_spend_cents <= 0:
+            return -1
+        key = (intent.strategy_id, intent.event_ticker)
+        return max(0, intent.max_spend_cents - self._spent.get(key, 0))
 
-        if self._check_drawdown():
+    async def on_order_intent(self, intent: OrderIntent):
+        """Receive an OrderIntent, check per-strategy-event budget, execute paper sweep."""
+
+        budget = self._remaining(intent)
+        if budget == 0:
+            key = (intent.strategy_id, intent.event_ticker)
+            logger.warning(
+                "[%s] Budget exhausted for event %s ($%.2f spent) — skipping %s",
+                intent.strategy_id, intent.event_ticker,
+                self._spent.get(key, 0) / 100,
+                intent.market_ticker,
+            )
             return
 
         logger.info(
@@ -207,10 +166,6 @@ class ExecutionManager:
                 "[%s] Cannot execute: Orderbook missing for %s",
                 intent.strategy_id, intent.market_ticker,
             )
-            return
-
-        if self.paper_balance <= 0:
-            logger.error("[%s] Cannot execute: Zero paper balance", intent.strategy_id)
             return
 
         # Build available levels
@@ -232,63 +187,51 @@ class ExecutionManager:
         for price, qty in available_levels:
             if price > intent.max_price_cents:
                 break
-            if self.paper_balance < price:
-                break
 
-            # Per-series allocation check: estimate max we can spend on this level
-            if self.max_allocation_per_series > 0:
-                series_remaining = self.max_allocation_per_series - self._series_spent.get(intent.series, 0) - total_cost
-                if series_remaining <= 0:
+            if budget >= 0:
+                budget_left = budget - total_cost
+                if budget_left <= 0:
                     logger.warning(
-                        "   [%s] Series %s allocation exhausted mid-sweep",
-                        intent.strategy_id, intent.series,
+                        "   [%s] Event %s budget exhausted mid-sweep",
+                        intent.strategy_id, intent.event_ticker,
                     )
                     break
-                max_by_series = series_remaining // price
+                max_by_budget = budget_left // price
             else:
-                max_by_series = qty
+                max_by_budget = qty
 
-            affordable_qty = min(qty, self.paper_balance // price, max_by_series)
+            affordable_qty = min(qty, max_by_budget)
             if affordable_qty > 0:
                 total_contracts_bought += affordable_qty
                 cost = affordable_qty * price
                 total_cost += cost
-                self.paper_balance -= cost
                 logger.info(
                     "   [%s] Filled: %d contracts @ %d¢",
                     intent.strategy_id, affordable_qty, price,
                 )
 
-            if self.paper_balance < price:
-                break
-
         if total_contracts_bought > 0:
             avg_price = total_cost / total_contracts_bought
-            self._series_spent[intent.series] += total_cost
+            key = (intent.strategy_id, intent.event_ticker)
+            self._spent[key] += total_cost
 
+            cap_str = "$%.2f" % (intent.max_spend_cents / 100) if intent.max_spend_cents > 0 else "uncapped"
+            mode_tag = "PAPER" if intent.paper_mode else "LIVE"
             logger.info(
-                "✅ [%s] PAPER TRADE COMPLETED: Bought %d %s (%s) at avg %.2f¢",
-                intent.strategy_id, total_contracts_bought,
+                "✅ [%s] %s TRADE COMPLETED: Bought %d %s (%s) at avg %.2f¢",
+                intent.strategy_id, mode_tag, total_contracts_bought,
                 intent.market_ticker, intent.side.upper(), avg_price,
             )
             logger.info(
-                "   Total Layout: $%.2f | Balance: $%.2f | Series %s alloc: $%.2f/$%.2f",
-                total_cost / 100, self.paper_balance / 100,
-                intent.series,
-                self._series_spent[intent.series] / 100,
-                self.max_allocation_per_series / 100 if self.max_allocation_per_series > 0 else float("inf"),
+                "   Cost: $%.2f | %s / %s spent: $%.2f/%s",
+                total_cost / 100,
+                intent.strategy_id, intent.event_ticker,
+                self._spent[key] / 100, cap_str,
             )
 
-            self._log_trade(
-                intent.strategy_id, intent.series, intent.station,
-                intent.market_ticker, intent.side,
-                total_contracts_bought, avg_price, total_cost,
-            )
-
-            # Check drawdown after the trade
-            self._check_drawdown()
+            self._log_trade(intent, total_contracts_bought, avg_price, total_cost)
         else:
             logger.warning(
-                "❌ [%s] PAPER TRADE FAILED: No liquidity under %d¢, balance exhausted, or allocation capped.",
+                "❌ [%s] PAPER TRADE FAILED: No liquidity under %d¢ or budget capped.",
                 intent.strategy_id, intent.max_price_cents,
             )

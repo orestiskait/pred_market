@@ -147,33 +147,26 @@ synoptic:
 # WEATHER BOT — Paper trading strategy
 # =============================================================================
 # Used by: bot/weather_bot.py ONLY
-# Strategy: when N consecutive 1-min ASOS obs ≥ cap_strike, buy NO contracts.
 #
-# paper_mode: true  → no capital limits (unlimited simulated balance)
-# paper_mode: false → LIVE mode: guardrails enforced (use with real money only)
+# All risk/execution settings live in each strategy's params block:
+#
+#   paper_mode          true = simulated fills, false = real Kalshi orders
+#   consecutive_obs     ASOS obs ≥ cap_strike needed before buying NO
+#   max_price_cents     max price (in cents) the sweep will pay
+#   max_spend_per_event max $ to spend per event ticker (e.g. KXHIGHCHI-26FEB22)
+#                       tracked per (strategy_id, event_ticker) — resets
+#                       automatically when the event rolls to the next day.
+#                       0 or omitted = uncapped.
 # =============================================================================
 bot:
-  paper_mode: true   # Paper: no limits. Real: guardrails enforced.
-
-  execution_guardrails:
-    starting_balance_cents: 100000  # Used in LIVE mode only
-    max_total_drawdown_cents: 10000 # LIVE: stop if total loss exceeds $100
-    max_allocation_per_series_cents: 20000 # LIVE: max $200 per city/series
-  
   strategies:
     - id: "chicago_fast_ladder"
       class_name: "LadderStrategy"
       targets: 
         - "KXHIGHCHI"
       params:
+        paper_mode: true
         consecutive_obs: 2
         max_price_cents: 95
-
-    - id: "ny_safe_ladder"
-      class_name: "LadderStrategy"
-      targets: 
-        - "KXHIGHNY"
-      params:
-        consecutive_obs: 3
-        max_price_cents: 90
+        max_spend_per_event: 1000
 

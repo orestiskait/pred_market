@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from services.core.config import (
@@ -100,9 +100,10 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
             else:
                 logger.warning("Series %s not in KALSHI_MARKET_REGISTRY, skipping", s)
 
-        # Kalshi
+        # Kalshi — same orderbook channel as kalshi_listener (snapshot + deltas)
         self.kalshi_auth, self.kalshi_rest = make_kalshi_clients(config)
         self.kalshi_ws_url = config["kalshi"]["ws_url"]
+        self._kalshi_channels = ["orderbook_delta"]
 
         # Synoptic — subscribe only to stations we care about
         self._synoptic_token = get_synoptic_token(config)
@@ -124,34 +125,20 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
         self._log_startup_banner()
 
     def _log_startup_banner(self):
-        """Log strategy, capital, and important info at startup."""
-        em = self.execution_manager
-        paper_mode = em.paper_mode
-        mode_str = "PAPER TRADING (no capital limits)" if paper_mode else "LIVE TRADING (guardrails enforced)"
-
+        """Log strategy info at startup."""
         logger.info("=" * 60)
         logger.info("WEATHER BOT STARTUP")
         logger.info("=" * 60)
-        logger.info("Mode: %s", mode_str)
         logger.info("Target series (%d): %s", len(self._target_series), self._target_series)
-        logger.info(
-            "Capital: $%.2f%s",
-            em.paper_balance / 100,
-            " (unlimited for paper)" if paper_mode else "",
-        )
-        if not paper_mode:
-            logger.info(
-                "Guardrails: max_drawdown=$%.2f, max_per_series=$%.2f",
-                em.max_total_drawdown / 100,
-                em.max_allocation_per_series / 100,
-            )
         logger.info("-" * 60)
         logger.info("Strategies (%d):", len(self.strategy_manager.strategies))
         for sid, strat in self.strategy_manager.strategies.items():
             params_str = ", ".join(f"{k}={v}" for k, v in strat.params.items())
+            mode_str = "PAPER" if strat.params.get("paper_mode", True) else "LIVE"
             logger.info(
-                "  • %s: class=%s, targets=%s, params={%s}",
+                "  • %s [%s]: class=%s, targets=%s, params={%s}",
                 sid,
+                mode_str,
                 strat.__class__.__name__,
                 strat.targets,
                 params_str,

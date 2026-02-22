@@ -20,8 +20,11 @@ class OrderIntent:
     market_ticker: str
     side: str
     max_price_cents: int
+    max_spend_cents: int = 0          # per-(strategy, event) budget in cents; 0 = uncapped
+    paper_mode: bool = True
     station: str = ""
     series: str = ""
+    event_ticker: str = ""
 
 @dataclass
 class MarketDiscoveryEvent:
