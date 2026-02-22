@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from services.bot.events import EventBus, OrderIntent, OrderbookUpdateEvent, MarketDiscoveryEvent
+from services.core.storage import ParquetStorage
 
 logger = logging.getLogger("ExecutionManager")
 
@@ -28,12 +29,26 @@ class ExecutionManager:
         self.event_bus = event_bus
         self.config = config
 
+        # Paper vs real mode: paper = no capital limits; real = enforce guardrails
+        bot_cfg = config.get("bot", {})
+        self.paper_mode = bot_cfg.get("paper_mode", True)
+
         # Parse guardrails from config
-        guardrails = config.get("bot", {}).get("execution_guardrails", {})
-        self.paper_balance = guardrails.get("starting_balance_cents", 100_000)
-        self.starting_balance = self.paper_balance  # remember for drawdown calc
+        guardrails = bot_cfg.get("execution_guardrails", {})
+        starting = guardrails.get("starting_balance_cents", 100_000)
         self.max_total_drawdown = guardrails.get("max_total_drawdown_cents", 0)  # 0 = disabled
         self.max_allocation_per_series = guardrails.get("max_allocation_per_series_cents", 0)  # 0 = disabled
+
+        if self.paper_mode:
+            # Paper mode: no capital limits — use high balance, disable all guardrails
+            self.paper_balance = 100_000_000  # $1M simulated balance
+            self.starting_balance = self.paper_balance
+            self.max_total_drawdown = 0
+            self.max_allocation_per_series = 0
+        else:
+            # Real mode: enforce guardrails
+            self.paper_balance = starting
+            self.starting_balance = starting
 
         # Tracking
         self.orderbooks: dict[str, dict] = {}
@@ -46,18 +61,23 @@ class ExecutionManager:
         self.event_bus.subscribe(OrderbookUpdateEvent, self.on_orderbook_update)
         self.event_bus.subscribe(MarketDiscoveryEvent, self.on_market_discovery)
 
-        # Paper trade CSV log
+        # Paper trade persistence: CSV (legacy) + Parquet (primary)
         if Path("/app/data").exists():
             data_dir = Path("/app/data")
         else:
             data_dir = (config_path.parent / config.get("storage", {}).get("data_dir", "../data")).resolve()
 
+        self._data_dir = data_dir
+        self._parquet_storage = ParquetStorage(str(data_dir))
+
         self.csv_log = data_dir / "weather_bot_paper_trades" / "paper_trades.csv"
         self.csv_log.parent.mkdir(parents=True, exist_ok=True)
         self._init_csv()
 
+        mode = "PAPER (no capital limits)" if self.paper_mode else "LIVE (guardrails enforced)"
         logger.info(
-            "ExecutionManager initialized — balance=$%.2f, max_drawdown=$%.2f, max_per_series=$%.2f",
+            "ExecutionManager initialized — mode=%s, balance=$%.2f, max_drawdown=$%.2f, max_per_series=$%.2f",
+            mode,
             self.paper_balance / 100,
             self.max_total_drawdown / 100,
             self.max_allocation_per_series / 100,
@@ -86,16 +106,32 @@ class ExecutionManager:
                 ])
 
     def _log_trade(self, strategy_id, series, station, ticker, side, filled, avg_price, total_cost):
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
         with open(self.csv_log, "a", newline="") as f:
             writer = csv.writer(f)
             writer.writerow([
-                now, strategy_id, series, station,
+                now.isoformat(), strategy_id, series, station,
                 ticker, side, filled,
                 round(avg_price, 2), total_cost,
                 self.paper_balance,
                 self._series_spent[series],
             ])
+
+        # Parquet output (primary for analysis)
+        row = {
+            "execution_ts": now,
+            "strategy_id": strategy_id,
+            "series": series,
+            "station": station,
+            "market_ticker": ticker,
+            "side": side,
+            "contracts_filled": int(filled),
+            "avg_fill_price_cents": round(avg_price, 2),
+            "total_cost_cents": total_cost,
+            "remaining_balance_cents": self.paper_balance,
+            "series_allocation_cents": self._series_spent[series],
+        }
+        self._parquet_storage.write_paper_trades([row])
 
     # ------------------------------------------------------------------
     # Event handlers

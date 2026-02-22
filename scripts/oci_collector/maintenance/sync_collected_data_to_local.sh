@@ -85,18 +85,18 @@ for subdir in "${REMOTE_DIRS[@]}"; do
   mkdir -p "$LOCAL_PATH"
   echo "[fetch] Syncing $subdir/ ..."
 
-  # weather_bot_paper_trades has CSV files; others have parquet
+  # weather_bot_paper_trades has CSV (legacy) + parquet; others have parquet only
   if [[ "$subdir" == "weather_bot_paper_trades" ]]; then
-    INCLUDE="*.csv"
-    COUNT_PATTERN='\.csv$'
+    RSYNC_INCLUDES=(--include="*.csv" --include="*.parquet")
+    COUNT_PATTERN='\.\(csv\|parquet\)$'
   else
-    INCLUDE="*.parquet"
+    RSYNC_INCLUDES=(--include="*.parquet")
     COUNT_PATTERN='\.parquet$'
   fi
 
   rsync -avz --progress $DRY_RUN \
     -e "ssh -o ConnectTimeout=10 -o BatchMode=yes" \
-    --include="$INCLUDE" \
+    "${RSYNC_INCLUDES[@]}" \
     --exclude="*" \
     "$REMOTE_PATH" "$LOCAL_PATH" 2>&1 | tee /tmp/rsync_out.txt
 

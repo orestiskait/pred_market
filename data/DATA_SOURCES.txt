@@ -5,7 +5,7 @@ iem_daily_climate | Iowa Environmental Mesonet (IEM) | NWS Daily Climate Report 
 kalshi_market_snapshots | Kalshi WebSocket | Market snapshots (yes_bid, yes_ask, no_bid, no_ask, last_price)
 kalshi_orderbook_snapshots | Kalshi WebSocket | Orderbook depth
 synoptic_weather_observations | Synoptic WebSocket | Real-time weather observations
-weather_bot_paper_trades | Paper execution | Bot trade log
+weather_bot_paper_trades | Paper execution | Bot trade log (CSV + parquet YYYY-MM-DD.parquet)
 kalshi_historical | Kalshi REST API | Historical candlesticks and trades (backfill)
 
 Download scripts: research/download_data/

@@ -57,6 +57,20 @@ SYNOPTIC_WS_SCHEMA = pa.schema([
     ("value",         pa.float64()),
 ])
 
+PAPER_TRADE_SCHEMA = pa.schema([
+    ("execution_ts",           pa.timestamp("us", tz="UTC")),
+    ("strategy_id",            pa.string()),
+    ("series",                 pa.string()),
+    ("station",                 pa.string()),
+    ("market_ticker",          pa.string()),
+    ("side",                   pa.string()),
+    ("contracts_filled",       pa.int32()),
+    ("avg_fill_price_cents",   pa.float64()),
+    ("total_cost_cents",       pa.int64()),
+    ("remaining_balance_cents", pa.int64()),
+    ("series_allocation_cents", pa.int64()),
+])
+
 
 # ======================================================================
 # Storage class
@@ -68,9 +82,10 @@ class ParquetStorage:
     def __init__(self, data_dir: str):
         self.data_dir = Path(data_dir)
         self.dirs = {
-            "market":      self.data_dir / "kalshi_market_snapshots",
-            "orderbook":   self.data_dir / "kalshi_orderbook_snapshots",
-            "synoptic_ws": self.data_dir / "synoptic_weather_observations",
+            "market":       self.data_dir / "kalshi_market_snapshots",
+            "orderbook":    self.data_dir / "kalshi_orderbook_snapshots",
+            "synoptic_ws":  self.data_dir / "synoptic_weather_observations",
+            "paper_trades": self.data_dir / "weather_bot_paper_trades",
         }
         for d in self.dirs.values():
             d.mkdir(parents=True, exist_ok=True)
@@ -124,6 +139,13 @@ class ParquetStorage:
         dt = dt or utc_today()
         self._write("synoptic_ws", f"{dt.isoformat()}.parquet", rows, SYNOPTIC_WS_SCHEMA)
 
+    def write_paper_trades(
+        self, rows: List[Dict], dt: Optional[date] = None,
+    ) -> None:
+        """Append paper trade rows to daily parquet (YYYY-MM-DD.parquet)."""
+        dt = dt or utc_today()
+        self._write("paper_trades", f"{dt.isoformat()}.parquet", rows, PAPER_TRADE_SCHEMA)
+
     # ------------------------------------------------------------------
     # Readers
     # ------------------------------------------------------------------
@@ -136,7 +158,7 @@ class ParquetStorage:
     ) -> pd.DataFrame:
         """Read and concatenate parquet files for *kind*.
 
-        kind: ``"market"`` | ``"orderbook"`` | ``"synoptic_ws"``
+        kind: ``"market"`` | ``"orderbook"`` | ``"synoptic_ws"`` | ``"paper_trades"``
         """
         base = self.dirs[kind]
         files = sorted(base.glob("*.parquet"))

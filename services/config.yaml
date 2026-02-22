@@ -74,11 +74,19 @@ event_series:
   default: &default_series
     - "KXHIGHCHI"
     - "KXHIGHNY"
+    - "KXHIGHLAX"   # Los Angeles
+    - "KXHIGHMIA"   # Miami
+    - "KXHIGHDCA"   # Washington DC
+    - "KXHIGHATL"   # Atlanta
+    - "KXHIGHAUS"   # Austin
 
   kalshi_listener: *default_series
-  synoptic_listener: *default_series
-  weather_bot: *default_series
-  research: *default_series
+  synoptic_listener:
+    - "KXHIGHCHI"
+  weather_bot:
+    - "KXHIGHCHI"
+  research:
+    - "KXHIGHCHI"
 
 # =============================================================================
 # EVENT ROLLOVER
@@ -140,12 +148,17 @@ synoptic:
 # =============================================================================
 # Used by: bot/weather_bot.py ONLY
 # Strategy: when N consecutive 1-min ASOS obs ≥ cap_strike, buy NO contracts.
+#
+# paper_mode: true  → no capital limits (unlimited simulated balance)
+# paper_mode: false → LIVE mode: guardrails enforced (use with real money only)
 # =============================================================================
 bot:
+  paper_mode: true   # Paper: no limits. Real: guardrails enforced.
+
   execution_guardrails:
-    starting_balance_cents: 100000  # Initial paper balance ($1,000)
-    max_total_drawdown_cents: 10000 # Stop trading if total realized/paper loss exceeds $100
-    max_allocation_per_series_cents: 20000 # Max exposure per city/series ($200)
+    starting_balance_cents: 100000  # Used in LIVE mode only
+    max_total_drawdown_cents: 10000 # LIVE: stop if total loss exceeds $100
+    max_allocation_per_series_cents: 20000 # LIVE: max $200 per city/series
   
   strategies:
     - id: "chicago_fast_ladder"

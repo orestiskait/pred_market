@@ -121,15 +121,42 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
         self.orderbooks: dict[str, dict] = {}
         self._kalshi_subscribe_tickers: list[str] = []
 
+        self._log_startup_banner()
+
+    def _log_startup_banner(self):
+        """Log strategy, capital, and important info at startup."""
+        em = self.execution_manager
+        paper_mode = em.paper_mode
+        mode_str = "PAPER TRADING (no capital limits)" if paper_mode else "LIVE TRADING (guardrails enforced)"
+
+        logger.info("=" * 60)
+        logger.info("WEATHER BOT STARTUP")
+        logger.info("=" * 60)
+        logger.info("Mode: %s", mode_str)
+        logger.info("Target series (%d): %s", len(self._target_series), self._target_series)
         logger.info(
-            "WeatherBot targeting %d series: %s",
-            len(self._target_series), self._target_series,
+            "Capital: $%.2f%s",
+            em.paper_balance / 100,
+            " (unlimited for paper)" if paper_mode else "",
         )
-        logger.info(
-            "Loaded %d strategies: %s",
-            len(self.strategy_manager.strategies),
-            list(self.strategy_manager.strategies.keys()),
-        )
+        if not paper_mode:
+            logger.info(
+                "Guardrails: max_drawdown=$%.2f, max_per_series=$%.2f",
+                em.max_total_drawdown / 100,
+                em.max_allocation_per_series / 100,
+            )
+        logger.info("-" * 60)
+        logger.info("Strategies (%d):", len(self.strategy_manager.strategies))
+        for sid, strat in self.strategy_manager.strategies.items():
+            params_str = ", ".join(f"{k}={v}" for k, v in strat.params.items())
+            logger.info(
+                "  • %s: class=%s, targets=%s, params={%s}",
+                sid,
+                strat.__class__.__name__,
+                strat.targets,
+                params_str,
+            )
+        logger.info("=" * 60)
 
     # -------------------------------------------------------------------------
     # Market discovery
