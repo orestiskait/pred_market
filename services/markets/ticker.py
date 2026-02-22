@@ -17,7 +17,7 @@ Event selection strategies
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 from services.markets.kalshi_registry import KalshiMarketConfig, KALSHI_MARKET_REGISTRY, market_for_series
@@ -176,3 +176,85 @@ def local_date_for_market(series_prefix: str) -> str:
     mc = market_for_series(series_prefix)
     tz = ZoneInfo(mc.tz)
     return datetime.now(tz).strftime("%Y-%m-%d")
+
+
+def nws_observation_period(event_ticker: str, tz_name: str) -> tuple[datetime, datetime]:
+    """Return the NWS climate-day observation window in UTC for an event ticker.
+
+    The NWS records climate data in **Local Standard Time (LST)** year-round.
+    The climate day runs midnight-to-midnight LST (see docs/events/kalshi_settlement_rules.md).
+
+    Parameters
+    ----------
+    event_ticker : str
+        E.g. ``"KXHIGHCHI-26FEB21"`` — the date suffix is parsed to determine
+        which calendar day the market covers.
+    tz_name : str
+        IANA timezone for the station (e.g. ``"America/Chicago"``).  The
+        Standard Time UTC offset is derived from this (winter Jan 15 trick).
+
+    Returns
+    -------
+    (nws_start_utc, nws_end_utc) : tuple[datetime, datetime]
+        The UTC times corresponding to midnight-to-midnight in Local Standard Time
+        for the event's calendar day.
+
+    Example
+    -------
+    >>> nws_observation_period("KXHIGHCHI-26FEB21", "America/Chicago")
+    (datetime(2026, 2, 21, 6, 0, tzinfo=UTC), datetime(2026, 2, 22, 6, 0, tzinfo=UTC))
+    # CST = UTC-6, so midnight CST = 06:00 UTC
+    """
+    # Parse the date from the event ticker suffix (e.g. "26FEB21" → Feb 21, 2026)
+    parts = event_ticker.split("-")
+    if len(parts) >= 2:
+        date_suffix = parts[-1]  # e.g. "26FEB21"
+        # Format: YYMMMDD — but actually the Kalshi format looks like "26FEB21"
+        # which is century + month + day.  Let's parse more carefully.
+        # Could be "T42" or "B39.5" for contract market tickers — need to find the date part.
+        # Walk backwards through parts until we find one that looks like a date.
+        date_part = None
+        for p in parts[1:]:
+            # Date suffix has 3-letter month embedded, e.g. "26FEB21"
+            import re
+            m = re.match(r'^(\d{2})([A-Z]{3})(\d{2})$', p)
+            if m:
+                date_part = p
+                break
+        if date_part is None:
+            # Fallback: use today
+            logger.warning("Cannot parse date from event ticker %s; using today", event_ticker)
+            tz = ZoneInfo(tz_name)
+            event_date = datetime.now(tz).date()
+        else:
+            # Parse "26FEB21" → 2026-02-21
+            century_prefix = date_part[:2]  # "26"
+            month_str = date_part[2:5]      # "FEB"
+            day_str = date_part[5:7]        # "21"
+            month_map = {
+                "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+                "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+            }
+            year = 2000 + int(century_prefix)
+            month = month_map.get(month_str, 1)
+            day = int(day_str)
+            event_date = date(year, month, day)
+    else:
+        logger.warning("Cannot parse event ticker %s; using today", event_ticker)
+        tz = ZoneInfo(tz_name)
+        event_date = datetime.now(tz).date()
+
+    # Compute the Standard Time UTC offset.
+    # NWS always uses LST, even during DST.  The "Jan 15 trick":
+    # use a winter date to get the standard offset (no DST).
+    tz = ZoneInfo(tz_name)
+    winter_dt = datetime(event_date.year, 1, 15, 12, 0, tzinfo=tz)
+    lst_utc_offset = winter_dt.utcoffset()  # e.g. -6h for CST
+
+    # Climate day: midnight LST on event_date → midnight LST on event_date + 1
+    from datetime import timedelta
+    midnight_lst = datetime(event_date.year, event_date.month, event_date.day, 0, 0, 0)
+    nws_start_utc = (midnight_lst - lst_utc_offset).replace(tzinfo=timezone.utc)
+    nws_end_utc = nws_start_utc + timedelta(hours=24)
+
+    return nws_start_utc, nws_end_utc

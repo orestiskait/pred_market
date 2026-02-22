@@ -214,3 +214,15 @@ def all_synoptic_stations(series_list: list[str]) -> list[str]:
             seen.add(mc.synoptic_station)
             result.append(mc.synoptic_station)
     return result
+
+
+def synoptic_station_for_icao(icao: str) -> str | None:
+    """Return Synoptic station ID for the given ICAO (e.g. KMDW -> KMDW1M).
+
+    Used by research Synoptic historical fetchers. Returns None if no
+    synoptic_station is configured for that ICAO.
+    """
+    for mc in KALSHI_MARKET_REGISTRY.values():
+        if mc.icao == icao:
+            return mc.synoptic_station or None
+    return None

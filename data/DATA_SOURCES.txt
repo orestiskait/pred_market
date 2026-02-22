@@ -14,6 +14,8 @@ nbm | NOAA NBM via AWS S3 (noaa-nbm-grib2-pds) | NBM 2.5km bias-corrected hourly
 
 Download scripts: research/download_data/
   iem_asos_1min.py - IEM ASOS 1-min
+  synoptic_asos_1min.py - Synoptic HF-ASOS 1-min (historical)
+  run_synoptic_asos_collection.py - Synoptic 1-min backfill (e.g. last 1 year for Chicago)
   awc_metar.py - AWC METAR
   iem_daily_climate.py - IEM Daily Climate
   run_weather_collection.py - Run all weather downloads

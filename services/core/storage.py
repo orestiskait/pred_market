@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from datetime import date
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import pyarrow as pa
@@ -95,11 +95,31 @@ class ParquetStorage:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _append(path: Path, table: pa.Table) -> None:
-        """Write table to *path*, appending to an existing file if present."""
+    def _append(
+        path: Path,
+        table: pa.Table,
+        schema_defaults: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Write table to *path*, appending to an existing file if present.
+
+        schema_defaults: when appending, add missing columns to existing table
+        with these default values (e.g. {"source": "live"} for backward compat).
+        """
         if path.exists():
             existing = pq.read_table(path)
-            table = pa.concat_tables([existing, table])
+            if schema_defaults:
+                for col, default in schema_defaults.items():
+                    if col not in existing.schema.names:
+                        n = len(existing)
+                        if isinstance(default, str):
+                            existing = existing.append_column(
+                                col, pa.array([default] * n, type=pa.string())
+                            )
+                        else:
+                            existing = existing.append_column(
+                                col, pa.array([default] * n)
+                            )
+            table = pa.concat_tables([existing, table], promote_options="default")
         pq.write_table(table, path)
 
     def _write(
@@ -108,13 +128,14 @@ class ParquetStorage:
         filename: str,
         rows: List[Dict],
         schema: pa.Schema,
+        schema_defaults: Optional[Dict[str, Any]] = None,
     ) -> None:
         if not rows:
             return
         df = pd.DataFrame(rows)
         table = pa.Table.from_pandas(df, schema=schema, preserve_index=False)
         path = self.dirs[kind] / filename
-        self._append(path, table)
+        self._append(path, table, schema_defaults=schema_defaults)
         logger.info("Wrote %d rows to %s", len(rows), path)
 
     # ------------------------------------------------------------------
@@ -137,7 +158,13 @@ class ParquetStorage:
         self, rows: List[Dict], dt: Optional[date] = None,
     ) -> None:
         dt = dt or utc_today()
-        self._write("synoptic_ws", f"{dt.isoformat()}.parquet", rows, SYNOPTIC_WS_SCHEMA)
+        self._write(
+            "synoptic_ws",
+            f"{dt.isoformat()}.parquet",
+            rows,
+            SYNOPTIC_WS_SCHEMA,
+            schema_defaults={"source": "live"},  # backward compat for pre-source parquets
+        )
 
     def write_paper_trades(
         self, rows: List[Dict], dt: Optional[date] = None,
