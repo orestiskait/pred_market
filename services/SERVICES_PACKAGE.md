@@ -130,19 +130,22 @@ data/
 
 ## Configuration
 
-### Environment Variables (`.env`)
+Credentials live in files under `~/.kalshi/` (override with `CREDENTIALS_DIR` in Docker):
 
-| Variable | Description |
+| File | Purpose |
 |---|---|
-| `KALSHI_API_KEY_ID` | Kalshi API key ID |
-| `KALSHI_PRIVATE_KEY_PATH` | Path to RSA private key PEM file |
-| `SYNOPTIC_API_TOKEN` | Synoptic Data API token |
+| `kalshi_api_key.txt` | Kalshi private key PEM |
+| `kalshi_api_key_id` | Kalshi API key ID (one line) |
+| `synoptic_token` | Synoptic API token (one line) |
+
+No `.env` file needed. Paths are in `config.yaml` → `credentials`.
 
 ### `config.yaml` Sections
 
 | Section | Used by | Description |
 |---|---|---|
-| `kalshi` | Kalshi listener, Weather bot | API URLs and credentials |
+| `credentials` | All services | Paths to credential files (dir + filenames) |
+| `kalshi` | Kalshi listener, Weather bot | API URLs |
 | `event_series` | All three services | Which markets to track (auto-resolves to today's events) |
 | `event_rollover` | Kalshi listener, Weather bot | Periodic re-discovery; event selection strategy |
 | `storage` | All three services | Data directory, flush intervals |

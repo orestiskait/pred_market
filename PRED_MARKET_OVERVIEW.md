@@ -84,9 +84,10 @@ pred_env/bin/pip install -r services/requirements.txt
 
 ### Configuration
 
-1. Copy `services/.env.example` to `services/.env` and set:
-   - `KALSHI_API_KEY_ID`
-   - `KALSHI_PRIVATE_KEY_PATH`
+1. Create `~/.kalshi/` with credential files:
+   - `kalshi_api_key.txt` — Kalshi private key PEM
+   - `kalshi_api_key_id` — Kalshi API key ID (one line)
+   - `synoptic_token` — Synoptic API token (one line)
 2. Edit `services/config.yaml` for event series, collection intervals, and storage paths.
 
 ### Running Services

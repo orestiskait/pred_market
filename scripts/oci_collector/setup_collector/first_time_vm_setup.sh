@@ -6,14 +6,16 @@
 #   ./first_time_vm_setup.sh                          # interactive credential prompt on first run
 #   GITHUB_TOKEN=xxx ./first_time_vm_setup.sh         # private repo
 #   KALSHI_API_KEY_ID=xxx \
-#     KALSHI_PRIVATE_KEY_FILE=/path/to/key.pem \
+#     KALSHI_PRIVATE_KEY_FILE=~/.kalshi/kalshi_api_key.txt \
+#     SYNOPTIC_API_TOKEN=xxx \
 #     ./first_time_vm_setup.sh                        # non-interactive credential setup
 set -euo pipefail
 
 REPO_URL="https://github.com/orestiskait/pred_market.git"
 REPO_DIR="/home/ubuntu/pred_market"
 CREDS_DIR="/home/ubuntu/.kalshi"
-ENV_FILE="$CREDS_DIR/collector.env"
+KEY_ID_FILE="$CREDS_DIR/kalshi_api_key_id"
+SYNOPTIC_FILE="$CREDS_DIR/synoptic_token"
 DATA_DIR="/home/ubuntu/collector-data"
 IMAGE="kalshi-services:latest"
 CONTAINER="kalshi-listener"
@@ -63,36 +65,38 @@ echo "[setup] Image built: $IMAGE"
 mkdir -p "$CREDS_DIR"
 chmod 700 "$CREDS_DIR"
 
-if [[ -f "$ENV_FILE" ]]; then
-  echo "[setup] Credentials already exist at $ENV_FILE — skipping."
-  echo "        Delete the file and re-run to reset credentials."
-else
-  echo "[setup] Configuring credentials..."
+# Kalshi private key: use KALSHI_PRIVATE_KEY_FILE or default ~/.kalshi/kalshi_api_key.txt
+KALSHI_KEY_SRC="${KALSHI_PRIVATE_KEY_FILE:-$CREDS_DIR/kalshi_api_key.txt}"
+KALSHI_KEY_DST="$CREDS_DIR/kalshi_api_key.txt"
+if [[ ! -f "$KALSHI_KEY_SRC" ]]; then
+  echo "ERROR: Kalshi private key not found at $KALSHI_KEY_SRC"
+  echo "       Copy it first: scp ~/.kalshi/kalshi_api_key.txt ubuntu@<IP>:~/.kalshi/"
+  exit 1
+fi
+if [[ "$KALSHI_KEY_SRC" != "$KALSHI_KEY_DST" ]]; then
+  cp "$KALSHI_KEY_SRC" "$KALSHI_KEY_DST"
+  chmod 600 "$KALSHI_KEY_DST"
+fi
 
-  # Prefer env vars; fall back to interactive prompts
+if [[ -f "$KEY_ID_FILE" ]] && [[ -f "$SYNOPTIC_FILE" ]]; then
+  echo "[setup] Credentials already exist in $CREDS_DIR — skipping."
+  echo "        Delete kalshi_api_key_id and synoptic_token to reset."
+else
+  echo "[setup] Configuring credentials (files in $CREDS_DIR)..."
+
   if [[ -z "${KALSHI_API_KEY_ID:-}" ]]; then
     read -rp "  KALSHI_API_KEY_ID: " KALSHI_API_KEY_ID
   fi
-
-  if [[ -z "${KALSHI_PRIVATE_KEY_FILE:-}" ]]; then
-    read -rp "  Path to Kalshi private key PEM file: " KALSHI_PRIVATE_KEY_FILE
-  fi
+  printf '%s' "$KALSHI_API_KEY_ID" > "$KEY_ID_FILE"
+  chmod 600 "$KEY_ID_FILE"
 
   if [[ -z "${SYNOPTIC_API_TOKEN:-}" ]]; then
     read -rp "  SYNOPTIC_API_TOKEN: " SYNOPTIC_API_TOKEN
   fi
+  printf '%s' "$SYNOPTIC_API_TOKEN" > "$SYNOPTIC_FILE"
+  chmod 600 "$SYNOPTIC_FILE"
 
-  [[ ! -f "$KALSHI_PRIVATE_KEY_FILE" ]] && \
-    echo "ERROR: key file not found: $KALSHI_PRIVATE_KEY_FILE" && exit 1
-
-  KALSHI_PRIVATE_KEY_B64=$(base64 -w0 "$KALSHI_PRIVATE_KEY_FILE" 2>/dev/null \
-    || base64 "$KALSHI_PRIVATE_KEY_FILE" | tr -d '\n')
-
-  printf 'KALSHI_API_KEY_ID=%s\nKALSHI_PRIVATE_KEY_B64=%s\nSYNOPTIC_API_TOKEN=%s\n' \
-    "$KALSHI_API_KEY_ID" "$KALSHI_PRIVATE_KEY_B64" "$SYNOPTIC_API_TOKEN" > "$ENV_FILE"
-  chmod 600 "$ENV_FILE"
-  echo "[setup] Credentials saved to $ENV_FILE"
-  unset KALSHI_PRIVATE_KEY_B64
+  echo "[setup] Credentials saved to $CREDS_DIR"
 fi
 
 # ── Data directory ────────────────────────────────────────────────────────────

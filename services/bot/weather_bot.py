@@ -93,7 +93,7 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
         self.kalshi_ws_url = config["kalshi"]["ws_url"]
 
         # Synoptic — subscribe only to stations we care about
-        self._synoptic_token = get_synoptic_token()
+        self._synoptic_token = get_synoptic_token(config)
         synoptic_stations = all_synoptic_stations(self._target_series)
         self.synoptic_ws_url = build_synoptic_ws_url(
             self._synoptic_token, synoptic_stations, ["air_temp"],

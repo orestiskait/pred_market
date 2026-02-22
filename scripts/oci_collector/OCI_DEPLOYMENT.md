@@ -132,14 +132,14 @@ cd ~/pred_market/scripts/oci_collector/setup_collector
 
 Setup will prompt for:
 - **KALSHI_API_KEY_ID** — your Kalshi API key ID
-- **Path to Kalshi private key** — e.g. `~/.kalshi/kalshi_api_key.txt`
 - **SYNOPTIC_API_TOKEN** — your Synoptic Push API Token
 
-Or pass them non-interactively:
+Credentials are written to `~/.kalshi/` (kalshi_api_key_id, synoptic_token). The Kalshi private key must already be at `~/.kalshi/kalshi_api_key.txt` (copy via scp first).
+
+Or pass non-interactively:
 
 ```bash
 KALSHI_API_KEY_ID=your-key-id \
-  KALSHI_PRIVATE_KEY_FILE=~/.kalshi/kalshi_api_key.txt \
   SYNOPTIC_API_TOKEN=your-synoptic-token \
   ./first_time_vm_setup.sh
 ```
@@ -303,9 +303,10 @@ To change the frequency, adjust the cron schedule (e.g. `*/30 * * * *` for every
 | Path | Purpose |
 |------|---------|
 | `~/pred_market` | Repo clone |
-| `~/.kalshi/collector.env` | Credentials (env vars for Docker) |
-| `~/.kalshi/kalshi_api_key.txt` | Kalshi private key |
-| `~/collector-data/` | All data output (mounted into both containers) |
+| `~/.kalshi/kalshi_api_key.txt` | Kalshi private key (copy via scp) |
+| `~/.kalshi/kalshi_api_key_id` | Kalshi API key ID (created by setup) |
+| `~/.kalshi/synoptic_token` | Synoptic token (created by setup) |
+| `~/collector-data/` | All data output (mounted into containers) |
 
 ```
 ~/collector-data/

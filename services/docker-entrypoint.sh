@@ -1,26 +1,13 @@
 #!/bin/sh
-# Kalshi listener entrypoint: decode Kalshi private key and start the Kalshi listener.
-# Required env vars:
-#   KALSHI_API_KEY_ID        - Kalshi API key ID
-#   KALSHI_PRIVATE_KEY_B64   - base64-encoded PEM private key
-# Optional:
-#   KALSHI_LISTENER_CONFIG   - path to config.yaml (default: /app/services/config.yaml)
+# Entrypoint for Kalshi listener, Synoptic listener, weather bot.
+#
+# Credentials are read from files. Mount ~/.kalshi to /app/credentials and set
+# CREDENTIALS_DIR=/app/credentials (done by manage_services scripts).
+#
+# Optional: KALSHI_LISTENER_CONFIG or SERVICES_CONFIG for config path.
 set -e
 
-KEY_PATH="/tmp/kalshi_key.pem"
 CONFIG="${KALSHI_LISTENER_CONFIG:-${SERVICES_CONFIG:-/app/services/config.yaml}}"
-
-if [ -z "$KALSHI_API_KEY_ID" ] || [ -z "$KALSHI_PRIVATE_KEY_B64" ]; then
-  echo "ERROR: KALSHI_API_KEY_ID and KALSHI_PRIVATE_KEY_B64 must be set" >&2
-  exit 1
-fi
-
-printf '%s' "$KALSHI_PRIVATE_KEY_B64" | base64 -d > "$KEY_PATH"
-chmod 600 "$KEY_PATH"
-
-export KALSHI_PRIVATE_KEY_PATH="$KEY_PATH"
-
-unset KALSHI_PRIVATE_KEY_B64
 
 if [ $# -gt 0 ]; then
   exec "$@"

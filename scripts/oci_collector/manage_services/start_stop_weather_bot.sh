@@ -8,7 +8,7 @@
 #   ./start_stop_weather_bot.sh status  # show container status
 set -euo pipefail
 
-ENV_FILE="${HOME:-/home/ubuntu}/.kalshi/collector.env"
+CREDS_DIR="${HOME:-/home/ubuntu}/.kalshi"
 DATA_DIR="${HOME:-/home/ubuntu}/collector-data"
 IMAGE="kalshi-services:latest"
 CONTAINER="weather-bot"
@@ -33,15 +33,16 @@ case "$cmd" in
     ;;
 
   start)
-    [[ ! -f "$ENV_FILE" ]] && \
-      echo "ERROR: $ENV_FILE not found. Run setup_collector/first_time_vm_setup.sh first." && exit 1
+    [[ ! -d "$CREDS_DIR" ]] && \
+      echo "ERROR: $CREDS_DIR not found. Run setup_collector/first_time_vm_setup.sh first." && exit 1
 
     $DOCKER rm -f "$CONTAINER" 2>/dev/null || true
 
     echo "[start_stop_weather_bot] Starting weather bot..."
     $DOCKER run -d \
       --name "$CONTAINER" \
-      --env-file "$ENV_FILE" \
+      -e CREDENTIALS_DIR=/app/credentials \
+      -v "$CREDS_DIR:/app/credentials:ro" \
       -v "$DATA_DIR:/app/data" \
       --restart unless-stopped \
       "$IMAGE" python -m services.bot.weather_bot

@@ -1,7 +1,8 @@
 """Configuration loading, client factories, and CLI helpers.
 
 Centralized so that every service in the project uses the same config
-resolution, .env loading, and logging setup.
+resolution. Credentials are read from files; paths are in config.yaml
+(credentials section). No .env needed.
 """
 
 from __future__ import annotations
@@ -13,13 +14,29 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
-from dotenv import load_dotenv
-
-# Resolve .env once at import time (idempotent).
-_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(_ENV_PATH)
 
 logger = logging.getLogger(__name__)
+
+
+def _credentials_dir(config: dict) -> Path:
+    """Resolve credentials base directory. CREDENTIALS_DIR env overrides config."""
+    creds_cfg = config.get("credentials", {})
+    dir_path = os.environ.get("CREDENTIALS_DIR") or creds_cfg.get("dir", "~/.kalshi")
+    return Path(os.path.expanduser(dir_path))
+
+
+def _read_credential(config: dict, key: str) -> str:
+    """Read a credential from a file. Returns stripped content."""
+    creds_dir = _credentials_dir(config)
+    creds_cfg = config.get("credentials", {})
+    filename = creds_cfg.get(key, key)
+    path = creds_dir / filename
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Credential file not found: {path}. "
+            f"Create it or set CREDENTIALS_DIR if using Docker."
+        )
+    return path.read_text().strip()
 
 
 # ======================================================================
@@ -45,30 +62,34 @@ def load_config(config_path: Optional[str] = None) -> tuple[dict, Path]:
 # ======================================================================
 
 def make_kalshi_clients(config: dict):
-    """Build ``(KalshiAuth, KalshiRestClient)`` from config + env.
+    """Build ``(KalshiAuth, KalshiRestClient)`` from config.
 
-    Credential resolution order: env var → config key.
+    Credentials are read from files under config credentials.dir.
     """
     from ..kalshi.client import KalshiAuth, KalshiRestClient
 
+    creds_dir = _credentials_dir(config)
+    creds_cfg = config.get("credentials", {})
+    pk_path = creds_dir / creds_cfg.get("kalshi_private_key", "kalshi_api_key.txt")
+    pk_path = pk_path.resolve()
+    if not pk_path.exists():
+        raise FileNotFoundError(
+            f"Kalshi private key not found: {pk_path}. "
+            f"Create it or set CREDENTIALS_DIR if using Docker."
+        )
+
+    api_key_id = _read_credential(config, "kalshi_api_key_id")
     kcfg = config.get("kalshi", {})
-    api_key_id = os.environ.get("KALSHI_API_KEY_ID") or kcfg.get("api_key_id", "")
-    pk_path = os.environ.get("KALSHI_PRIVATE_KEY_PATH") or kcfg.get("private_key_path", "")
-    if pk_path:
-        pk_path = os.path.expanduser(pk_path)
     base_url = kcfg.get("base_url", "https://api.elections.kalshi.com/trade-api/v2")
 
-    auth = KalshiAuth(api_key_id, pk_path)
+    auth = KalshiAuth(api_key_id, str(pk_path))
     rest = KalshiRestClient(base_url, auth)
     return auth, rest
 
 
-def get_synoptic_token() -> str:
-    """Return the Synoptic API token from the environment."""
-    token = os.environ.get("SYNOPTIC_API_TOKEN")
-    if not token:
-        raise ValueError("SYNOPTIC_API_TOKEN must be set in .env")
-    return token
+def get_synoptic_token(config: dict) -> str:
+    """Return the Synoptic API token from the credentials file."""
+    return _read_credential(config, "synoptic_token")
 
 
 def build_synoptic_ws_url(

@@ -1,0 +1,143 @@
+# ============================================================
+# Services Configuration
+# ============================================================
+#
+# Single config file for all services. Each section documents which
+# files consume it. Paths are relative to the project root.
+#
+# Quick reference — which service uses which section:
+#
+#   Section           | Kalshi listener | Synoptic listener | Weather bot
+#   ------------------|-----------------|-------------------|------------
+#   credentials       | ✓               | ✓                 | ✓
+#   kalshi             | ✓               |                   | ✓
+#   event_series       | ✓               | ✓                 | ✓
+#   event_rollover     | ✓               |                   | ✓
+#   storage            | ✓               | ✓                 | ✓
+#   collection         | ✓               |                   |
+#   synoptic           |                 | ✓                 |
+#   bot                |                 |                   | ✓
+#
+# Adding a new city/market:
+#   1. Add the series prefix to `event_series` below.
+#   2. Add a MarketConfig entry in services/markets/registry.py.
+#   3. All services pick it up automatically.
+#
+# ============================================================
+
+# =============================================================================
+# CREDENTIALS (secrets in files, paths in config)
+# =============================================================================
+# Used by: services/core/config.py (make_kalshi_clients, get_synoptic_token)
+#
+# All secrets live in files under credentials.dir. No .env needed.
+# Override dir with CREDENTIALS_DIR env (e.g. /app/credentials in Docker).
+#
+# File layout under credentials.dir:
+#   kalshi_api_key.txt   - Kalshi private key PEM
+#   kalshi_api_key_id    - Kalshi API key ID (one line)
+#   synoptic_token       - Synoptic API token (one line)
+# =============================================================================
+credentials:
+  dir: "~/.kalshi"
+  kalshi_private_key: "kalshi_api_key.txt"
+  kalshi_api_key_id: "kalshi_api_key_id"
+  synoptic_token: "synoptic_token"
+
+# =============================================================================
+# KALSHI API
+# =============================================================================
+# Used by: services/kalshi/listener.py, services/bot/weather_bot.py,
+#          services/core/config.py (make_kalshi_clients)
+# =============================================================================
+kalshi:
+  base_url: "https://api.elections.kalshi.com/trade-api/v2"
+  ws_url:   "wss://api.elections.kalshi.com/trade-api/ws/v2"
+
+# =============================================================================
+# MARKET SELECTION (event_series)
+# =============================================================================
+# Used by: services/kalshi/listener.py, services/synoptic/listener.py,
+#          services/bot/weather_bot.py, services/markets/ticker.py
+#
+# Series prefixes (uppercase). Each service queries Kalshi for open events
+# in these series and picks the active one. Registry maps each prefix to
+# station IDs, timezone, city. Optional `events` key can override with
+# explicit event tickers (see ticker.py).
+# =============================================================================
+event_series:
+  - "KXHIGHCHI"
+  - "KXHIGHNY"
+
+# =============================================================================
+# EVENT ROLLOVER
+# =============================================================================
+# Used by: services/kalshi/listener.py, services/bot/weather_bot.py,
+#          services/markets/ticker.py (event_selection only)
+#
+# NOT used by: services/synoptic/listener.py (stations are fixed per series)
+#
+# Periodic re-discovery of event tickers as markets roll over at local
+# midnight. Replaces cron-based process restarts.
+# =============================================================================
+event_rollover:
+  # "active" = today's market (earliest close_time). "next" = strike_date >=
+  # today in market's local tz — enables pre-trading tomorrow's market.
+  event_selection: "active"
+  # How often to re-query Kalshi for new events (seconds). 0 = disable.
+  rediscover_interval_seconds: 300
+
+# =============================================================================
+# STORAGE
+# =============================================================================
+# Used by: services/kalshi/listener.py, services/synoptic/listener.py,
+#          services/bot/weather_bot.py
+#
+# Parquet output and bot trade logs. data_dir is relative to config file.
+# =============================================================================
+storage:
+  data_dir: "../data"            # Relative to config file; ../data = project root
+  flush_interval_seconds: 300    # Buffer flush to parquet (all services)
+
+# =============================================================================
+# KALSHI LISTENER — Snapshot collection
+# =============================================================================
+# Used by: services/kalshi/listener.py ONLY
+#
+# Controls how often and when Kalshi orderbook/ticker snapshots are written
+# to Parquet. Spike detection triggers immediate snapshots on price moves.
+# =============================================================================
+collection:
+  interval_seconds: 60           # Baseline snapshot interval (seconds)
+  spike_threshold_cents: 3      # Snapshot immediately when price moves ≥ this
+  spike_cooldown_seconds: 2     # Min seconds between spike-triggered snapshots
+  max_orderbook_depth: 5        # OB levels per side per contract; 0 = all
+  baseline_every_n_snapshots: 60  # Full OB baseline frequency; 1 = disable delta
+
+# =============================================================================
+# SYNOPTIC LISTENER — Weather data ingest
+# =============================================================================
+# Used by: services/synoptic/listener.py ONLY
+#
+# Stations are auto-derived from event_series via market registry. Override
+# `stations` only if you need extra stations beyond the registry.
+# =============================================================================
+synoptic:
+  # stations:  # optional override; omit to use event_series → registry
+  #   - KMDW1M
+  #   - KNYC
+  vars:
+    - air_temp
+
+# =============================================================================
+# WEATHER BOT — Paper trading strategy
+# =============================================================================
+# Used by: services/bot/weather_bot.py ONLY
+#
+# Strategy: when N consecutive 1-min ASOS obs ≥ cap_strike, buy NO contracts.
+# =============================================================================
+bot:
+  consecutive_obs: 2             # Consecutive obs above trigger before trade
+  max_price_cents: 95            # Max price to pay for NO contract (Kalshi=100)
+  starting_balance_cents: 100000 # Paper balance ($1,000)
+

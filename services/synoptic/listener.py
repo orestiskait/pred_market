@@ -37,7 +37,7 @@ class SynopticLiveCollector(AsyncService, SynopticWSMixin):
         self.config = config
 
         # Synoptic credentials & URL
-        self._synoptic_token = get_synoptic_token()
+        self._synoptic_token = get_synoptic_token(config)
 
         # Build station list from event_series in config (via market registry)
         # or fall back to explicit synoptic.stations in config.

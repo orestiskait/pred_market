@@ -3,7 +3,6 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 .env
-services/config.yaml
 # Data outputs (download scripts in research/download_data/)
 **/*.parquet
 data/iem_asos_1min/
