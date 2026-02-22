@@ -1,4 +1,8 @@
-"""Unified station + market registry.
+"""Kalshi market registry — station + event-series mapping.
+
+This module is KALSHI-SPECIFIC. Kalshi uses event-series prefixes (e.g. "KXHIGHCHI")
+and tickers like KXHIGHCHI-26FEB22. Other platforms (e.g. Polymarket) use different
+reference systems and ticker formats; they would need their own registry.
 
 Single source of truth for the mapping between:
   - Kalshi event-series prefix  (e.g. "KXHIGHCHI")
@@ -10,9 +14,9 @@ Who uses what:
   - IEM/AWC (iem_asos_1min, awc_metar, iem_daily_climate): icao, iata, city, tz → research.weather.iem_awc_station_registry
 
 Expanding to new cities / markets:
-  1. Add a new entry to MARKET_REGISTRY below.
-  2. That's it — every service (listener, bot) picks up the new market
-     automatically via config.yaml `event_series`.
+  1. Add a new entry to KALSHI_MARKET_REGISTRY below.
+  2. Add the series prefix to config.yaml → event_series.
+  3. Everything else is automatic.
 
 * All timezone strings are IANA (e.g. ``America/Chicago``) so they work
   with ``zoneinfo`` / ``pytz`` and with Pandas ``tz_convert``.
@@ -28,12 +32,12 @@ from dataclasses import dataclass
 # ======================================================================
 
 @dataclass(frozen=True)
-class MarketConfig:
-    """Full configuration for one Kalshi temperature market.
+class KalshiMarketConfig:
+    """Configuration for one Kalshi temperature market.
 
-    Combines station metadata with Kalshi / Synoptic identifiers, making
-    it trivially easy to add new cities:  just add one entry to
-    ``MARKET_REGISTRY``.
+    Kalshi-specific: uses event-series prefix (e.g. "KXHIGHCHI") and Kalshi
+    ticker conventions. Combines station metadata with Kalshi / Synoptic
+    identifiers. Add new cities by adding one entry to ``KALSHI_MARKET_REGISTRY``.
     """
 
     series_prefix: str          # Kalshi event-series prefix (e.g. "KXHIGHCHI")
@@ -49,112 +53,112 @@ class MarketConfig:
 
 
 # ======================================================================
-# Registry
+# Kalshi registry
 # ======================================================================
 
-# Maps Kalshi event-series prefix → MarketConfig.
+# Maps Kalshi event-series prefix → KalshiMarketConfig.
 # --- TO ADD A NEW CITY ---
 # 1. Add one entry here.
 # 2. Add the series prefix to config.yaml → event_series.
 # 3. Everything else is automatic.
 
-MARKET_REGISTRY: dict[str, MarketConfig] = {
-    "KXHIGHCHI": MarketConfig(
+KALSHI_MARKET_REGISTRY: dict[str, KalshiMarketConfig] = {
+    "KXHIGHCHI": KalshiMarketConfig(
         series_prefix="KXHIGHCHI",
         icao="KMDW", iata="MDW", city="Chicago",
         tz="America/Chicago", synoptic_station="KMDW1M",
     ),
-    "KXHIGHNY": MarketConfig(
+    "KXHIGHNY": KalshiMarketConfig(
         series_prefix="KXHIGHNY",
         icao="KNYC", iata="NYC", city="New York",
         tz="America/New_York", synoptic_station="KNYC",
     ),
-    "KXHIGHMIA": MarketConfig(
+    "KXHIGHMIA": KalshiMarketConfig(
         series_prefix="KXHIGHMIA",
         icao="KMIA", iata="MIA", city="Miami",
         tz="America/New_York", synoptic_station="KMIA1M",
     ),
-    "KXHIGHDEN": MarketConfig(
+    "KXHIGHDEN": KalshiMarketConfig(
         series_prefix="KXHIGHDEN",
         icao="KDEN", iata="DEN", city="Denver",
         tz="America/Denver", synoptic_station="KDEN1M",
     ),
-    "KXHIGHAUS": MarketConfig(
+    "KXHIGHAUS": KalshiMarketConfig(
         series_prefix="KXHIGHAUS",
         icao="KAUS", iata="AUS", city="Austin",
         tz="America/Chicago", synoptic_station="KAUS1M",
     ),
-    "KXHIGHHOU": MarketConfig(
+    "KXHIGHHOU": KalshiMarketConfig(
         series_prefix="KXHIGHHOU",
         icao="KHOU", iata="HOU", city="Houston",
         tz="America/Chicago", synoptic_station="KHOU1M",
     ),
-    "KXHIGHPHL": MarketConfig(
+    "KXHIGHPHL": KalshiMarketConfig(
         series_prefix="KXHIGHPHL",
         icao="KPHL", iata="PHL", city="Philadelphia",
         tz="America/New_York", synoptic_station="KPHL1M",
     ),
-    "KXHIGHATL": MarketConfig(
+    "KXHIGHATL": KalshiMarketConfig(
         series_prefix="KXHIGHATL",
         icao="KATL", iata="ATL", city="Atlanta",
         tz="America/New_York", synoptic_station="KATL1M",
     ),
-    "KXHIGHBOS": MarketConfig(
+    "KXHIGHBOS": KalshiMarketConfig(
         series_prefix="KXHIGHBOS",
         icao="KBOS", iata="BOS", city="Boston",
         tz="America/New_York", synoptic_station="KBOS1M",
     ),
-    "KXHIGHDCA": MarketConfig(
+    "KXHIGHDCA": KalshiMarketConfig(
         series_prefix="KXHIGHDCA",
         icao="KDCA", iata="DCA", city="Washington DC",
         tz="America/New_York", synoptic_station="KDCA1M",
     ),
-    "KXHIGHDFW": MarketConfig(
+    "KXHIGHDFW": KalshiMarketConfig(
         series_prefix="KXHIGHDFW",
         icao="KDFW", iata="DFW", city="Dallas-Fort Worth",
         tz="America/Chicago", synoptic_station="KDFW1M",
     ),
-    "KXHIGHLAS": MarketConfig(
+    "KXHIGHLAS": KalshiMarketConfig(
         series_prefix="KXHIGHLAS",
         icao="KLAS", iata="LAS", city="Las Vegas",
         tz="America/Los_Angeles", synoptic_station="KLAS1M",
     ),
-    "KXHIGHLAX": MarketConfig(
+    "KXHIGHLAX": KalshiMarketConfig(
         series_prefix="KXHIGHLAX",
         icao="KLAX", iata="LAX", city="Los Angeles",
         tz="America/Los_Angeles", synoptic_station="KLAX1M",
     ),
-    "KXHIGHMSP": MarketConfig(
+    "KXHIGHMSP": KalshiMarketConfig(
         series_prefix="KXHIGHMSP",
         icao="KMSP", iata="MSP", city="Minneapolis",
         tz="America/Chicago", synoptic_station="KMSP1M",
     ),
-    "KXHIGHMSY": MarketConfig(
+    "KXHIGHMSY": KalshiMarketConfig(
         series_prefix="KXHIGHMSY",
         icao="KMSY", iata="MSY", city="New Orleans",
         tz="America/Chicago", synoptic_station="KMSY1M",
     ),
-    "KXHIGHOKC": MarketConfig(
+    "KXHIGHOKC": KalshiMarketConfig(
         series_prefix="KXHIGHOKC",
         icao="KOKC", iata="OKC", city="Oklahoma City",
         tz="America/Chicago", synoptic_station="KOKC1M",
     ),
-    "KXHIGHPHX": MarketConfig(
+    "KXHIGHPHX": KalshiMarketConfig(
         series_prefix="KXHIGHPHX",
         icao="KPHX", iata="PHX", city="Phoenix",
         tz="America/Phoenix", synoptic_station="KPHX1M",
     ),
-    "KXHIGHSAT": MarketConfig(
+    "KXHIGHSAT": KalshiMarketConfig(
         series_prefix="KXHIGHSAT",
         icao="KSAT", iata="SAT", city="San Antonio",
         tz="America/Chicago", synoptic_station="KSAT1M",
     ),
-    "KXHIGHSEA": MarketConfig(
+    "KXHIGHSEA": KalshiMarketConfig(
         series_prefix="KXHIGHSEA",
         icao="KSEA", iata="SEA", city="Seattle",
         tz="America/Los_Angeles", synoptic_station="KSEA1M",
     ),
-    "KXHIGHSFO": MarketConfig(
+    "KXHIGHSFO": KalshiMarketConfig(
         series_prefix="KXHIGHSFO",
         icao="KSFO", iata="SFO", city="San Francisco",
         tz="America/Los_Angeles", synoptic_station="KSFO1M",
@@ -166,15 +170,15 @@ MARKET_REGISTRY: dict[str, MarketConfig] = {
 # Lookup helpers
 # ======================================================================
 
-def market_for_series(series: str) -> MarketConfig:
-    """Look up a MarketConfig by event-series prefix (e.g. 'KXHIGHCHI')."""
-    if series in MARKET_REGISTRY:
-        return MARKET_REGISTRY[series]
-    raise KeyError(f"No market config for series {series!r} in registry")
+def market_for_series(series: str) -> KalshiMarketConfig:
+    """Look up a KalshiMarketConfig by Kalshi event-series prefix (e.g. 'KXHIGHCHI')."""
+    if series in KALSHI_MARKET_REGISTRY:
+        return KALSHI_MARKET_REGISTRY[series]
+    raise KeyError(f"No Kalshi market config for series {series!r} in registry")
 
 
 def all_synoptic_stations(series_list: list[str]) -> list[str]:
-    """Return Synoptic push station IDs for the given event-series list.
+    """Return Synoptic push station IDs for the given Kalshi event-series list.
 
     Used to build the Synoptic WebSocket subscription URL.
     Synoptic consumers: import synoptic_stations_for_series from
@@ -183,7 +187,7 @@ def all_synoptic_stations(series_list: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
     for series in series_list:
-        mc = MARKET_REGISTRY[series]
+        mc = KALSHI_MARKET_REGISTRY[series]
         if mc.synoptic_station and mc.synoptic_station not in seen:
             seen.add(mc.synoptic_station)
             result.append(mc.synoptic_station)

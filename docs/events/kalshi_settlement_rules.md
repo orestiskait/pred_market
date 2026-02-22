@@ -51,5 +51,5 @@ The IEM CLI fetcher (`iem_daily_climate.py`) retrieves this data. Expect a 6–1
 
 - **Day boundary in code:** `research.weather.iem_awc_station_registry.lst_offset_hours()` — uses Standard Time
 - **Event rollover:** `docs/EVENT_ROLLOVER.md` — market selection uses NWS-aligned timezone
-- **Station mapping:** `services/markets/registry.py` — KXHIGHCHI → KMDW
+- **Station mapping:** `services/markets/kalshi_registry.py` — KXHIGHCHI → KMDW
 - **Official high source:** `docs/events/asos_temperature_resolution.md` — DSM/CLI technical details

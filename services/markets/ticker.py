@@ -19,7 +19,7 @@ import logging
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from services.markets.registry import MarketConfig, MARKET_REGISTRY, market_for_series
+from services.markets.kalshi_registry import KalshiMarketConfig, KALSHI_MARKET_REGISTRY, market_for_series
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +40,10 @@ def _select_event_for_series(
     events: list[dict],
     series: str,
     strategy: str,
-) -> list[str]:
-    """Pick event(s) from the list based on strategy. Returns a list of event_tickers."""
+) -> str | None:
+    """Pick one event from the list based on strategy. Returns event_ticker or None."""
     if not events:
-        return []
+        return None
     mc = market_for_series(series)
     tz = ZoneInfo(mc.tz)
     today_local = datetime.now(tz).date()
@@ -62,19 +62,8 @@ def _select_event_for_series(
             candidates.sort(key=lambda x: (x[1], x[0].get("event_ticker", "")))
             chosen = candidates[0][0]["event_ticker"]
             logger.info("  [next] %s → %s (strike_date >= %s)", series, chosen, today_local)
-            return [chosen]
+            return chosen
         # Fall through to active if no future events
-
-    if strategy == "consecutive":
-        # Return up to 2 active/open events (today and tomorrow) to track simultaneously
-        events.sort(key=lambda e: (
-            e.get("close_time") or "",
-            e.get("strike_date") or "",
-            e.get("event_ticker", ""),
-        ))
-        chosen = [e["event_ticker"] for e in events[:2]]
-        logger.info("  [consecutive] %s → %s", series, chosen)
-        return chosen
 
     # active: earliest close_time (or strike_date, or event_ticker)
     events.sort(key=lambda e: (
@@ -82,7 +71,7 @@ def _select_event_for_series(
         e.get("strike_date") or "",
         e.get("event_ticker", ""),
     ))
-    return [events[0]["event_ticker"]]
+    return events[0]["event_ticker"]
 
 
 def resolve_event_tickers(
@@ -104,13 +93,13 @@ def resolve_event_tickers(
     Timezone awareness
     ------------------
     Different markets settle on different *local* days (NWS standard). The
-    ``MarketConfig.tz`` field ensures correct local-day logic per market.
+    ``KalshiMarketConfig.tz`` field ensures correct local-day logic per market.
     """
     from services.core.config import get_event_series
 
     strategy = (
         event_selection
-        or config.get("event_rollover", {}).get("event_selection", "consecutive")
+        or config.get("event_rollover", {}).get("event_selection", "active")
     )
     tickers: list[str] = []
 
@@ -123,8 +112,8 @@ def resolve_event_tickers(
             continue
         chosen = _select_event_for_series(events, series, strategy)
         if chosen:
-            logger.info("  → %s (from %d open event(s))", chosen, len(events))
-            tickers.extend(chosen)
+            logger.info("  → %s (%d open event(s) found)", chosen, len(events))
+            tickers.append(chosen)
 
     # Allow explicit overrides
     tickers.extend(config.get("events", []))
@@ -174,30 +163,3 @@ def local_date_for_market(series_prefix: str) -> str:
     mc = market_for_series(series_prefix)
     tz = ZoneInfo(mc.tz)
     return datetime.now(tz).strftime("%Y-%m-%d")
-
-
-def nws_observation_period(event_ticker: str, tz_name: str) -> tuple[datetime, datetime]:
-    """Return the exact NWS observation period (start_utc, end_utc) for this event.
-
-    NWS records daily high from midnight LST to midnight LST. Since LST does
-    not observe Daylight Saving Time, during the summer the observation bounds
-    actually map to 1:00 AM to 12:59 AM local time.
-    """
-    from datetime import timedelta, timezone
-    # e.g. KXHIGHCHI-26FEB21 -> '26FEB21' (length 7)
-    suffix = event_ticker.split("-")[-1]
-    target_date = datetime.strptime(suffix[:7], "%y%b%d").date()
-
-    # Find the Standard Time offset for this timezone by checking Jan 1
-    jan1 = datetime(target_date.year, 1, 1, tzinfo=ZoneInfo(tz_name))
-    std_offset = jan1.utcoffset()
-    if std_offset is None:
-        raise ValueError(f"Could not determine standard offset for {tz_name}")
-
-    # LST is effectively a fixed-offset timezone exactly matching the standard offset
-    lst_tz = timezone(std_offset)
-    
-    start_lst = datetime(target_date.year, target_date.month, target_date.day, 0, 0, 0, tzinfo=lst_tz)
-    end_lst = start_lst + timedelta(days=1) - timedelta(microseconds=1)
-
-    return start_lst.astimezone(timezone.utc), end_lst.astimezone(timezone.utc)

@@ -33,7 +33,7 @@ Instead of restarting the process, a background task **re-queries the Kalshi API
 ### Event Selection Strategies
 
 - **`active`**: Pick the event with earliest `close_time`. Best for same-day trading. Matches previous behavior.
-- **`next`**: Pick the event whose `strike_date` is today or the next local calendar day. When Kalshi lists Feb 22 as open on Feb 21, we trade it. Uses each market's NWS-aligned timezone from `MarketConfig.tz`.
+- **`next`**: Pick the event whose `strike_date` is today or the next local calendar day. When Kalshi lists Feb 22 as open on Feb 21, we trade it. Uses each market's NWS-aligned timezone from `KalshiMarketConfig.tz`.
 
 ---
 

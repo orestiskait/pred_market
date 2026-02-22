@@ -18,7 +18,7 @@ services/
 │   └── storage.py           # Parquet I/O (market snapshots, orderbooks, synoptic)
 │
 ├── markets/                 # Market configuration & discovery
-│   ├── registry.py          # MarketConfig (single source of truth)
+│   ├── kalshi_registry.py   # KalshiMarketConfig (single source of truth)
 │   └── ticker.py            # Event-ticker resolution via Kalshi API
 │
 ├── kalshi/                  # Kalshi exchange integration
@@ -43,9 +43,9 @@ services/
 
 Only **two steps** are needed:
 
-1. **Add a `MarketConfig` entry** in `markets/registry.py`:
+1. **Add a `KalshiMarketConfig` entry** in `markets/kalshi_registry.py`:
    ```python
-   "KXHIGHSFO": MarketConfig(
+   "KXHIGHSFO": KalshiMarketConfig(
        series_prefix="KXHIGHSFO",
        icao="KSFO", iata="SFO", city="San Francisco",
        tz="America/Los_Angeles", synoptic_station="KSFO1M",
@@ -65,7 +65,7 @@ automatically pick up the new market.
 
 ## Timezone Handling
 
-Different markets settle on different local days. The `MarketConfig.tz` field
+Different markets settle on different local days. The `KalshiMarketConfig.tz` field
 (IANA timezone string) is the single source of truth for each market's local
 timezone. The `markets/ticker.py` module provides `local_date_for_market()`
 for computing the correct local date when needed.

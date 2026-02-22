@@ -3,7 +3,7 @@
 Used only by: synoptic/listener, weather_bot.
 
 Data source: Synoptic push API (wss://push.synopticdata.com/).
-Station IDs come from MarketConfig.synoptic_station in services.markets.registry
+Station IDs come from KalshiMarketConfig.synoptic_station in services.markets.kalshi_registry
 (e.g. "KMDW1M", "KNYC"). This module provides a clear entry point for
 Synoptic-specific station lookup — distinct from IEM/AWC which use
 research.weather.iem_awc_station_registry.
@@ -11,7 +11,7 @@ research.weather.iem_awc_station_registry.
 
 from __future__ import annotations
 
-from services.markets.registry import all_synoptic_stations
+from services.markets.kalshi_registry import all_synoptic_stations
 
 # Re-export with a name that makes the Synoptic context explicit
 synoptic_stations_for_series = all_synoptic_stations

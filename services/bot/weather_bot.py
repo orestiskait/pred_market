@@ -41,7 +41,7 @@ from services.core.config import (
 from services.core.service import AsyncService
 from services.kalshi.ws import KalshiWSMixin
 from services.synoptic.ws import SynopticWSMixin
-from services.markets.registry import MarketConfig, MARKET_REGISTRY
+from services.markets.kalshi_registry import KalshiMarketConfig, KALSHI_MARKET_REGISTRY
 from services.synoptic.station_registry import synoptic_stations_for_series
 from services.markets.ticker import discover_markets, resolve_event_tickers, nws_observation_period
 
@@ -75,7 +75,7 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
         # Determine which series to target
         all_series = get_event_series(config, "weather_bot")
         if series_filter:
-            self._target_series = [s for s in series_filter if s in all_series or s in MARKET_REGISTRY]
+            self._target_series = [s for s in series_filter if s in all_series or s in KALSHI_MARKET_REGISTRY]
         else:
             self._target_series = all_series
 
@@ -83,12 +83,12 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
             raise ValueError("No event_series configured or matched by --series filter")
 
         # Build market configs for targeted series
-        self._market_configs: dict[str, MarketConfig] = {}
+        self._market_configs: dict[str, KalshiMarketConfig] = {}
         for s in self._target_series:
-            if s in MARKET_REGISTRY:
-                self._market_configs[s] = MARKET_REGISTRY[s]
+            if s in KALSHI_MARKET_REGISTRY:
+                self._market_configs[s] = KALSHI_MARKET_REGISTRY[s]
             else:
-                logger.warning("Series %s not in MARKET_REGISTRY, skipping", s)
+                logger.warning("Series %s not in KALSHI_MARKET_REGISTRY, skipping", s)
 
         # Kalshi
         self.kalshi_auth, self.kalshi_rest = make_kalshi_clients(config)

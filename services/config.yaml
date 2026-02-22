@@ -22,7 +22,7 @@
 # Optional keys: weather_stations (research), events (ticker.py — explicit ticker overrides).
 #
 # Adding a new city/market:
-#   1. Add MarketConfig in services/markets/registry.py.
+#   1. Add KalshiMarketConfig in services/markets/kalshi_registry.py.
 #   2. Add the series prefix to event_series.<consumer> for each consumer that needs it.
 #
 # ============================================================
@@ -60,7 +60,7 @@ kalshi:
 # Each consumer explicitly lists which markets it tracks. Use YAML anchors
 # (&default_series / *default_series) to share a list across consumers.
 #
-# Add new city: 1) Add MarketConfig in services/markets/registry.py
+# Add new city: 1) Add KalshiMarketConfig in services/markets/kalshi_registry.py
 #               2) Add series prefix to the consumer(s) below
 #
 # Consumer keys:

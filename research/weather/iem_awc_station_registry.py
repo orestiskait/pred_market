@@ -3,7 +3,7 @@
 Used only by: iem_asos_1min, awc_metar, iem_daily_climate (download_data).
 
 Derives StationInfo and lookup helpers from the central market registry
-(services.markets.registry). Add new cities there; this module exposes
+(services.markets.kalshi_registry). Add new cities there; this module exposes
 a lightweight view for IEM/AWC fetchers that only need ICAO / IATA / city / tz.
 
 Note: Synoptic uses services.synoptic.station_registry (synoptic_stations_for_series).
@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from services.markets.registry import MARKET_REGISTRY, MarketConfig
+from services.markets.kalshi_registry import KALSHI_MARKET_REGISTRY, KalshiMarketConfig
 
 
 @dataclass(frozen=True)
@@ -28,18 +28,18 @@ class StationInfo:
     tz: str
 
 
-def _station_info(mc: MarketConfig) -> StationInfo:
+def _station_info(mc: KalshiMarketConfig) -> StationInfo:
     return StationInfo(icao=mc.icao, iata=mc.iata, city=mc.city, tz=mc.tz)
 
 
 STATION_REGISTRY: dict[str, StationInfo] = {
-    k: _station_info(v) for k, v in MARKET_REGISTRY.items()
+    k: _station_info(v) for k, v in KALSHI_MARKET_REGISTRY.items()
 }
 
 
 def station_for_icao(icao: str) -> StationInfo:
     """Look up a StationInfo by ICAO code (e.g. 'KMDW')."""
-    for mc in MARKET_REGISTRY.values():
+    for mc in KALSHI_MARKET_REGISTRY.values():
         if mc.icao == icao:
             return _station_info(mc)
     raise KeyError(f"No station with ICAO code {icao!r} in registry")
@@ -50,7 +50,7 @@ def stations_for_series(series_list: list[str]) -> list[StationInfo]:
     seen: set[str] = set()
     result: list[StationInfo] = []
     for series in series_list:
-        mc = MARKET_REGISTRY[series]
+        mc = KALSHI_MARKET_REGISTRY[series]
         if mc.icao not in seen:
             seen.add(mc.icao)
             result.append(_station_info(mc))
