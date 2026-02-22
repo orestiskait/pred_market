@@ -52,14 +52,14 @@ pred_market/
 │   ├── markets/               # Registry, ticker resolution
 │   ├── config.yaml
 │   └── docker-compose.yml
-├── data/                      # All data outputs and download scripts
-│   ├── DATA_SOURCES.txt       # Folder | Source | What it is
-│   ├── download/              # Scripts that fetch data (IEM, AWC)
+├── data/                      # All data outputs (see DATA_SOURCES.txt)
+│   └── DATA_SOURCES.txt       # Folder | Source | What it is
+├── research/
+│   ├── download_data/         # Scripts that fetch data (IEM, AWC)
 │   │   ├── iem_asos_1min.py   # IEM ASOS 1-min
 │   │   ├── awc_metar.py       # AWC METAR
 │   │   ├── iem_daily_climate.py # IEM NWS Daily Climate (CLI)
 │   │   └── run_weather_collection.py
-├── research/
 │   ├── weather/               # Orchestrator (observations) and station registry
 │   └── weather_discrepancy_analysis.py  # ASOS vs official high comparison
 ├── scripts/oci_collector/     # OCI deployment (Kalshi listener, Synoptic listener, bot)
@@ -102,7 +102,7 @@ pred_env/bin/python -m services.synoptic.listener
 pred_env/bin/python -m services.bot.weather_bot
 
 # Historical weather data (ASOS, METAR, daily climate)
-pred_env/bin/python data/download/run_weather_collection.py
+pred_env/bin/python -m research.download_data.run_weather_collection
 ```
 
 ### Data Layout (project root data/)

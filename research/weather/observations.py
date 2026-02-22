@@ -28,9 +28,9 @@ from typing import Any
 import pandas as pd
 import yaml
 
-from data.download.iem_asos_1min import IEMASOS1MinFetcher
-from data.download.iem_daily_climate import IEMDailyClimateFetcher
-from data.download.awc_metar import AWCMETARFetcher
+from research.download_data.iem_asos_1min import IEMASOS1MinFetcher
+from research.download_data.iem_daily_climate import IEMDailyClimateFetcher
+from research.download_data.awc_metar import AWCMETARFetcher
 from research.weather.stations import (
     STATION_REGISTRY,
     StationInfo,

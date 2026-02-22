@@ -132,14 +132,14 @@ cd ~/pred_market/scripts/oci_collector/setup_collector
 
 Setup will prompt for:
 - **KALSHI_API_KEY_ID** — your Kalshi API key ID
-- **Path to Kalshi private key** — e.g. `/home/ubuntu/.kalshi/kalshi_api_key.txt`
+- **Path to Kalshi private key** — e.g. `~/.kalshi/kalshi_api_key.txt`
 - **SYNOPTIC_API_TOKEN** — your Synoptic Push API Token
 
 Or pass them non-interactively:
 
 ```bash
 KALSHI_API_KEY_ID=your-key-id \
-  KALSHI_PRIVATE_KEY_FILE=/home/ubuntu/.kalshi/kalshi_api_key.txt \
+  KALSHI_PRIVATE_KEY_FILE=~/.kalshi/kalshi_api_key.txt \
   SYNOPTIC_API_TOKEN=your-synoptic-token \
   ./first_time_vm_setup.sh
 ```
@@ -302,13 +302,13 @@ To change the frequency, adjust the cron schedule (e.g. `*/30 * * * *` for every
 
 | Path | Purpose |
 |------|---------|
-| `/home/ubuntu/pred_market` | Repo clone |
-| `/home/ubuntu/.kalshi/collector.env` | Credentials (env vars for Docker) |
-| `/home/ubuntu/.kalshi/kalshi_api_key.txt` | Kalshi private key |
-| `/home/ubuntu/collector-data/` | All data output (mounted into both containers) |
+| `~/pred_market` | Repo clone |
+| `~/.kalshi/collector.env` | Credentials (env vars for Docker) |
+| `~/.kalshi/kalshi_api_key.txt` | Kalshi private key |
+| `~/collector-data/` | All data output (mounted into both containers) |
 
 ```
-/home/ubuntu/collector-data/
+~/collector-data/
 ├── market_snapshots/       # Kalshi price/volume snapshots (one parquet per day)
 ├── orderbook_snapshots/    # Kalshi orderbook depth data
 ├── historical/             # Kalshi backfill data

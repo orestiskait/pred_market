@@ -4,7 +4,7 @@ __pycache__/
 .ipynb_checkpoints/
 .env
 services/config.yaml
-# Data outputs (keep data/download/ scripts in git)
+# Data outputs (download scripts in research/download_data/)
 **/*.parquet
 data/iem_asos_1min/
 data/awc_metar/
@@ -13,4 +13,3 @@ data/market_snapshots/
 data/orderbook_snapshots/
 data/synoptic_ws/
 data/weather_bot/
-data/iem_metar_extracted/

@@ -8,6 +8,8 @@ a lightweight view for weather fetchers that only need ICAO / IATA / city / tz.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from services.markets.registry import MARKET_REGISTRY, MarketConfig
 
@@ -51,9 +53,19 @@ def stations_for_series(series_list: list[str]) -> list[StationInfo]:
     return result
 
 
+def lst_offset_hours(tz: str) -> int:
+    """UTC offset in hours for Local Standard Time (NWS climate day).
+
+    Uses a winter date to avoid DST; NWS uses standard time year-round.
+    """
+    dt = datetime(2025, 1, 15, 12, 0, 0, tzinfo=ZoneInfo(tz))
+    return int(dt.utcoffset().total_seconds() / 3600)
+
+
 __all__ = [
     "StationInfo",
     "STATION_REGISTRY",
+    "lst_offset_hours",
     "station_for_icao",
     "stations_for_series",
 ]

@@ -54,6 +54,8 @@ def make_kalshi_clients(config: dict):
     kcfg = config.get("kalshi", {})
     api_key_id = os.environ.get("KALSHI_API_KEY_ID") or kcfg.get("api_key_id", "")
     pk_path = os.environ.get("KALSHI_PRIVATE_KEY_PATH") or kcfg.get("private_key_path", "")
+    if pk_path:
+        pk_path = os.path.expanduser(pk_path)
     base_url = kcfg.get("base_url", "https://api.elections.kalshi.com/trade-api/v2")
 
     auth = KalshiAuth(api_key_id, pk_path)

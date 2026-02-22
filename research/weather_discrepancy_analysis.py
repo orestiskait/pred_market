@@ -24,17 +24,12 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 from research.weather.observations import WeatherObservations
+from research.weather.stations import lst_offset_hours, station_for_icao
 
 # ── Configuration ──────────────────────────────────────────────────────────
 END_DATE   = date(2026, 2, 18)
 NUM_DAYS   = 50
 START_DATE = END_DATE - timedelta(days=NUM_DAYS - 1)
-
-# LST offsets for NWS climate day (local standard time, year-round)
-LST_OFFSETS = {
-    "KNYC": -5,  # EST
-    "KMDW": -6,  # CST
-}
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -83,10 +78,12 @@ def analyze_station(obs: WeatherObservations, icao: str):
     print(f"\n{'='*70}")
     print(f"  ANALYSIS: {icao}")
     print(f"{'='*70}")
-    
-    offset = LST_OFFSETS.get(icao)
-    if offset is None:
-        print(f"Skipping {icao} (no LST offset defined)")
+
+    try:
+        station = station_for_icao(icao)
+        offset = lst_offset_hours(station.tz)
+    except KeyError:
+        print(f"Skipping {icao} (not in station registry)")
         return
 
     # 1. Load Parquet Data

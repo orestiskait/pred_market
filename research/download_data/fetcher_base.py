@@ -33,8 +33,8 @@ class WeatherFetcherBase(ABC):
 
     def __init__(self, data_dir: Path | str | None = None):
         if data_dir is None:
-            # This file is in data/download/; parent.parent = data/
-            data_dir = Path(__file__).resolve().parent.parent
+            # Project root data/ (research/download_data/ -> parent.parent.parent/data)
+            data_dir = Path(__file__).resolve().parent.parent.parent / "data"
         self.data_dir = Path(data_dir) / self.SOURCE_NAME
         self.data_dir.mkdir(parents=True, exist_ok=True)
 

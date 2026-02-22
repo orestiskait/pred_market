@@ -8,8 +8,8 @@
 #   ./start_stop_synoptic_listener.sh status  # show container status
 set -euo pipefail
 
-ENV_FILE="/home/ubuntu/.kalshi/collector.env"
-DATA_DIR="/home/ubuntu/collector-data"
+ENV_FILE="${HOME:-/home/ubuntu}/.kalshi/collector.env"
+DATA_DIR="${HOME:-/home/ubuntu}/collector-data"
 IMAGE="kalshi-services:latest"
 CONTAINER="synoptic-listener"
 

@@ -5,7 +5,7 @@ date range specified below. Uses services/config.yaml for station list.
 
 Usage:
   1. Set START_DATE and END_DATE below.
-  2. Run: python data/download/run_weather_collection.py
+  2. Run: python -m research.download_data.run_weather_collection
 """
 
 import logging

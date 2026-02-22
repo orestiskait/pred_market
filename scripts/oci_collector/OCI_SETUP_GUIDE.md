@@ -66,7 +66,7 @@ cd ~/pred_market/scripts/oci_collector/setup_collector
 - `./start_stop_all_services.sh status` — see if containers are running
 - `./start_stop_all_services.sh logs` — tail logs from all three
 
-**Note:** Cron runs this at 12:01 AM and 1:01 AM ET daily to pick up new event tickers. You usually don’t need to run it manually unless you restarted the VM or changed something.
+**Note:** Event rollover is handled in-process (periodic re-discovery). Cron is skipped by default; run manually when needed (e.g. after VM reboot). You usually don’t need to run it manually unless you restarted the VM or changed something.
 
 ```bash
 cd ~/pred_market/scripts/oci_collector/manage_services
@@ -179,7 +179,7 @@ SSH: `ssh ubuntu@129.158.203.11`
 
 These are created locally, copied to the VM, or generated during setup.
 
-### On the OCI VM (`/home/ubuntu/`)
+### On the OCI VM (`~` = home directory)
 
 | Path | Purpose |
 |------|---------|

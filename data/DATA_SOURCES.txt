@@ -2,15 +2,13 @@ Folder | Source | What it is
 iem_asos_1min | Iowa Environmental Mesonet (IEM) | ASOS 1-minute temperature data (~24h delay)
 awc_metar | Aviation Weather Center (AWC) | METAR observations (hourly + SPECI)
 iem_daily_climate | Iowa Environmental Mesonet (IEM) | NWS Daily Climate Report (CLI) - official high/low for Kalshi settlement
-iem_metar_extracted | Iowa Environmental Mesonet (IEM) | Extracted temps from METAR text (run iem_metar_temp_extractor.py)
 market_snapshots | Kalshi WebSocket | Market snapshots (yes_bid, yes_ask, last_price)
 orderbook_snapshots | Kalshi WebSocket | Orderbook depth
 synoptic_ws | Synoptic WebSocket | Real-time weather observations
 weather_bot | Paper execution | Bot trade log
 
-Download scripts: data/download/
+Download scripts: research/download_data/
   iem_asos_1min.py - IEM ASOS 1-min
   awc_metar.py - AWC METAR
   iem_daily_climate.py - IEM Daily Climate
-  iem_metar_temp_extractor.py - IEM ASOS/METAR temp extraction
   run_weather_collection.py - Run all weather downloads

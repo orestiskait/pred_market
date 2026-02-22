@@ -17,7 +17,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from data.download.fetcher_base import WeatherFetcherBase
+from research.download_data.fetcher_base import WeatherFetcherBase
 from research.weather.stations import StationInfo
 
 logger = logging.getLogger(__name__)

@@ -101,7 +101,7 @@ pred_env/bin/python -m services.bot.weather_bot --series KXHIGHCHI KXHIGHNY
 ### Historical weather data
 
 ```bash
-pred_env/bin/python data/download/run_weather_collection.py
+pred_env/bin/python -m research.download_data.run_weather_collection
 ```
 
 ### Docker
@@ -125,7 +125,6 @@ data/
 ├── iem_daily_climate/        # IEM NWS Daily Climate (CLI)
 ├── weather_bot/              # Paper trade logs
 │   └── paper_trades.csv
-├── download/                 # Scripts that fetch weather data
 └── DATA_SOURCES.txt          # Source and content of each folder
 ```
 
@@ -141,11 +140,12 @@ data/
 
 ### `config.yaml` Sections
 
-| Section | Description |
-|---|---|
-| `kalshi` | API URLs and credentials |
-| `event_series` | Which markets to track (auto-resolves to today's events) |
-| `collection` | Snapshot intervals, spike detection, delta compression |
-| `storage` | Data directory, flush intervals |
-| `synoptic` | Variables to subscribe to (stations auto-derived from registry) |
-| `bot` | Trading strategy parameters |
+| Section | Used by | Description |
+|---|---|---|
+| `kalshi` | Kalshi listener, Weather bot | API URLs and credentials |
+| `event_series` | All three services | Which markets to track (auto-resolves to today's events) |
+| `event_rollover` | Kalshi listener, Weather bot | Periodic re-discovery; event selection strategy |
+| `storage` | All three services | Data directory, flush intervals |
+| `collection` | Kalshi listener only | Snapshot intervals, spike detection, delta compression |
+| `synoptic` | Synoptic listener only | Variables to subscribe to (stations auto-derived from registry) |
+| `bot` | Weather bot only | Trading strategy parameters |
