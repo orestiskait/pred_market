@@ -7,9 +7,21 @@ kalshi_orderbook_snapshots | Kalshi WebSocket | Orderbook depth
 synoptic_weather_observations | Synoptic WebSocket | Real-time weather observations
 weather_bot_paper_trades | Paper execution | Bot trade log (CSV + parquet YYYY-MM-DD.parquet)
 kalshi_historical | Kalshi REST API | Historical candlesticks and trades (backfill)
+hrrr | NOAA HRRR via AWS S3 (noaa-hrrr-bdp-pcs) | HRRR 15-min sub-hourly 3km point forecasts (2m temp) at station coordinates
+rtma_ru | NOAA RTMA-RU via AWS S3 (noaa-rtma-pds) | RTMA Rapid Update 2.5km analysis (2m temp) at station coordinates
+rrfs | NOAA RRFS via AWS S3 (noaa-rrfs-pds) | RRFS 3km hourly point forecasts (2m temp) at station coordinates (prototype, paused Dec 2024)
+nbm | NOAA NBM via AWS S3 (noaa-nbm-grib2-pds) | NBM 2.5km bias-corrected hourly point forecasts (2m temp) at station coordinates
 
 Download scripts: research/download_data/
   iem_asos_1min.py - IEM ASOS 1-min
   awc_metar.py - AWC METAR
   iem_daily_climate.py - IEM Daily Climate
   run_weather_collection.py - Run all weather downloads
+  nwp_base.py - Base class for NWP model point extraction
+  hrrr.py - HRRR 15-min sub-hourly fetcher
+  rtma_ru.py - RTMA Rapid Update analysis fetcher
+  rrfs.py - RRFS hourly forecast fetcher
+  nbm.py - NBM bias-corrected forecast fetcher
+  run_nwp_collection.py - Unified NWP CLI for all models (latest + backfill)
+  run_hrrr_collection.py - HRRR-specific convenience CLI
+  All NWP fetchers require: pip install herbie-data xarray cfgrib eccodes

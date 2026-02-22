@@ -2,10 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install only what pip needs to build cryptography (no venv cruft)
+# Build deps (cryptography) + ecCodes for cfgrib/GRIB2 (HRRR, RRFS, NBM, RTMA-RU)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libffi-dev \
+    libeccodes-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY services/requirements.txt .

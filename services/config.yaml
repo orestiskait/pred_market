@@ -144,6 +144,25 @@ synoptic:
     - air_temp
 
 # =============================================================================
+# NWP MODEL DATA — Research
+# =============================================================================
+# Used by: research/download_data/{hrrr,rtma_ru,rrfs}.py, run_nwp_collection.py
+# Stations are derived from event_series.research via the market registry.
+# Each model has its own section keyed by SOURCE_NAME.
+# =============================================================================
+hrrr:
+  max_forecast_hour: 18   # fxx 0..18 (subhourly: 4 × 15-min steps per fxx)
+
+rtma_ru:
+  max_forecast_hour: 0    # analysis only (fxx=0), no forecasts
+
+rrfs:
+  max_forecast_hour: 18   # hourly output; no sub-hourly product available
+
+nbm:
+  max_forecast_hour: 36   # hourly out to 36h; extended for 01/07/13/19Z cycles
+
+# =============================================================================
 # WEATHER BOT — Paper trading strategy
 # =============================================================================
 # Used by: bot/weather_bot.py ONLY

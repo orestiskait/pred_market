@@ -45,6 +45,8 @@ class KalshiMarketConfig:
     iata: str                   # 3-letter FAA/IATA code
     city: str                   # Human-readable name
     tz: str                     # IANA timezone
+    lat: float                  # Station latitude (decimal degrees, north-positive)
+    lon: float                  # Station longitude (decimal degrees, east-positive)
 
     # Synoptic push station ID for real-time 1-min ASOS data.
     # Typically the ICAO code + "1M" suffix (e.g. "KMDW1M"),
@@ -66,102 +68,122 @@ KALSHI_MARKET_REGISTRY: dict[str, KalshiMarketConfig] = {
     "KXHIGHCHI": KalshiMarketConfig(
         series_prefix="KXHIGHCHI",
         icao="KMDW", iata="MDW", city="Chicago",
-        tz="America/Chicago", synoptic_station="KMDW1M",
+        tz="America/Chicago", lat=41.78417, lon=-87.75528,
+        synoptic_station="KMDW1M",
     ),
     "KXHIGHNY": KalshiMarketConfig(
         series_prefix="KXHIGHNY",
         icao="KNYC", iata="NYC", city="New York",
-        tz="America/New_York", synoptic_station="KNYC",
+        tz="America/New_York", lat=40.7789, lon=-73.9692,
+        synoptic_station="KNYC",
     ),
     "KXHIGHMIA": KalshiMarketConfig(
         series_prefix="KXHIGHMIA",
         icao="KMIA", iata="MIA", city="Miami",
-        tz="America/New_York", synoptic_station="KMIA1M",
+        tz="America/New_York", lat=25.7932, lon=-80.2906,
+        synoptic_station="KMIA1M",
     ),
     "KXHIGHDEN": KalshiMarketConfig(
         series_prefix="KXHIGHDEN",
         icao="KDEN", iata="DEN", city="Denver",
-        tz="America/Denver", synoptic_station="KDEN1M",
+        tz="America/Denver", lat=39.8561, lon=-104.6737,
+        synoptic_station="KDEN1M",
     ),
     "KXHIGHAUS": KalshiMarketConfig(
         series_prefix="KXHIGHAUS",
         icao="KAUS", iata="AUS", city="Austin",
-        tz="America/Chicago", synoptic_station="KAUS1M",
+        tz="America/Chicago", lat=30.1945, lon=-97.6699,
+        synoptic_station="KAUS1M",
     ),
     "KXHIGHHOU": KalshiMarketConfig(
         series_prefix="KXHIGHHOU",
         icao="KHOU", iata="HOU", city="Houston",
-        tz="America/Chicago", synoptic_station="KHOU1M",
+        tz="America/Chicago", lat=29.6454, lon=-95.2789,
+        synoptic_station="KHOU1M",
     ),
     "KXHIGHPHL": KalshiMarketConfig(
         series_prefix="KXHIGHPHL",
         icao="KPHL", iata="PHL", city="Philadelphia",
-        tz="America/New_York", synoptic_station="KPHL1M",
+        tz="America/New_York", lat=39.8721, lon=-75.2411,
+        synoptic_station="KPHL1M",
     ),
     "KXHIGHATL": KalshiMarketConfig(
         series_prefix="KXHIGHATL",
         icao="KATL", iata="ATL", city="Atlanta",
-        tz="America/New_York", synoptic_station="KATL1M",
+        tz="America/New_York", lat=33.6407, lon=-84.4277,
+        synoptic_station="KATL1M",
     ),
     "KXHIGHBOS": KalshiMarketConfig(
         series_prefix="KXHIGHBOS",
         icao="KBOS", iata="BOS", city="Boston",
-        tz="America/New_York", synoptic_station="KBOS1M",
+        tz="America/New_York", lat=42.3606, lon=-71.0106,
+        synoptic_station="KBOS1M",
     ),
     "KXHIGHDCA": KalshiMarketConfig(
         series_prefix="KXHIGHDCA",
         icao="KDCA", iata="DCA", city="Washington DC",
-        tz="America/New_York", synoptic_station="KDCA1M",
+        tz="America/New_York", lat=38.8481, lon=-77.0341,
+        synoptic_station="KDCA1M",
     ),
     "KXHIGHDFW": KalshiMarketConfig(
         series_prefix="KXHIGHDFW",
         icao="KDFW", iata="DFW", city="Dallas-Fort Worth",
-        tz="America/Chicago", synoptic_station="KDFW1M",
+        tz="America/Chicago", lat=32.8968, lon=-97.0380,
+        synoptic_station="KDFW1M",
     ),
     "KXHIGHLAS": KalshiMarketConfig(
         series_prefix="KXHIGHLAS",
         icao="KLAS", iata="LAS", city="Las Vegas",
-        tz="America/Los_Angeles", synoptic_station="KLAS1M",
+        tz="America/Los_Angeles", lat=36.0800, lon=-115.1522,
+        synoptic_station="KLAS1M",
     ),
     "KXHIGHLAX": KalshiMarketConfig(
         series_prefix="KXHIGHLAX",
         icao="KLAX", iata="LAX", city="Los Angeles",
-        tz="America/Los_Angeles", synoptic_station="KLAX1M",
+        tz="America/Los_Angeles", lat=33.9425, lon=-118.4081,
+        synoptic_station="KLAX1M",
     ),
     "KXHIGHMSP": KalshiMarketConfig(
         series_prefix="KXHIGHMSP",
         icao="KMSP", iata="MSP", city="Minneapolis",
-        tz="America/Chicago", synoptic_station="KMSP1M",
+        tz="America/Chicago", lat=44.8810, lon=-93.2218,
+        synoptic_station="KMSP1M",
     ),
     "KXHIGHMSY": KalshiMarketConfig(
         series_prefix="KXHIGHMSY",
         icao="KMSY", iata="MSY", city="New Orleans",
-        tz="America/Chicago", synoptic_station="KMSY1M",
+        tz="America/Chicago", lat=29.9934, lon=-90.2580,
+        synoptic_station="KMSY1M",
     ),
     "KXHIGHOKC": KalshiMarketConfig(
         series_prefix="KXHIGHOKC",
         icao="KOKC", iata="OKC", city="Oklahoma City",
-        tz="America/Chicago", synoptic_station="KOKC1M",
+        tz="America/Chicago", lat=35.3931, lon=-97.6007,
+        synoptic_station="KOKC1M",
     ),
     "KXHIGHPHX": KalshiMarketConfig(
         series_prefix="KXHIGHPHX",
         icao="KPHX", iata="PHX", city="Phoenix",
-        tz="America/Phoenix", synoptic_station="KPHX1M",
+        tz="America/Phoenix", lat=33.4343, lon=-112.0116,
+        synoptic_station="KPHX1M",
     ),
     "KXHIGHSAT": KalshiMarketConfig(
         series_prefix="KXHIGHSAT",
         icao="KSAT", iata="SAT", city="San Antonio",
-        tz="America/Chicago", synoptic_station="KSAT1M",
+        tz="America/Chicago", lat=29.5337, lon=-98.4698,
+        synoptic_station="KSAT1M",
     ),
     "KXHIGHSEA": KalshiMarketConfig(
         series_prefix="KXHIGHSEA",
         icao="KSEA", iata="SEA", city="Seattle",
-        tz="America/Los_Angeles", synoptic_station="KSEA1M",
+        tz="America/Los_Angeles", lat=47.4490, lon=-122.3093,
+        synoptic_station="KSEA1M",
     ),
     "KXHIGHSFO": KalshiMarketConfig(
         series_prefix="KXHIGHSFO",
         icao="KSFO", iata="SFO", city="San Francisco",
-        tz="America/Los_Angeles", synoptic_station="KSFO1M",
+        tz="America/Los_Angeles", lat=37.6197, lon=-122.3750,
+        synoptic_station="KSFO1M",
     ),
 }
 
