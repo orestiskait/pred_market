@@ -108,7 +108,13 @@ class WeatherBot:
 
         # 3. Paper Trading State
         self.paper_balance = STARTING_BALANCE_CENTS
-        self.csv_log = Path(__file__).resolve().parent / "paper_trades.csv"
+        # Write to shared data volume (collector-data/weather_bot) for fetch sync
+        if Path("/app/data").exists():
+            data_dir = Path("/app/data")  # Docker: volume mount
+        else:
+            data_dir = Path(__file__).resolve().parent / "data"  # Local dev
+        self.csv_log = data_dir / "weather_bot" / "paper_trades.csv"
+        self.csv_log.parent.mkdir(parents=True, exist_ok=True)
         self._init_csv()
 
     def _init_csv(self):
@@ -139,8 +145,8 @@ class WeatherBot:
             logger.error("No open events found today.")
             return
 
-        # Sort by earliest close_time to get today's active event
-        events.sort(key=lambda e: e.get("close_time") or e.get("ticker", ""))
+        # Sort by earliest event_ticker to get today's active event
+        events.sort(key=lambda e: e.get("strike_date") or e.get("event_ticker", ""))
         self.active_event_ticker = events[0]["event_ticker"]
         logger.info(f"Targeting active event: {self.active_event_ticker}")
 

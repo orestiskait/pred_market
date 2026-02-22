@@ -24,7 +24,4 @@ runcmd:
   - curl -fsSL https://get.docker.com | sh
   - usermod -aG docker ubuntu
   - systemctl enable --now docker
-  # Open port 388 for LDM upstream connections (iptables)
-  - iptables -I INPUT -p tcp --dport 388 -j ACCEPT
-  - iptables-save > /etc/iptables/rules.v4 || true
   - echo "[cloud-init] Done. SSH in and run setup.sh"

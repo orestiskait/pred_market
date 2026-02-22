@@ -32,7 +32,6 @@ The collector subscribes to event series (e.g. Chicago and New York daily high m
 
 | Source | Resolution | Use Case |
 |--------|------------|----------|
-| **LDM Surface** | Real-time METAR/SPECI (Unidata IDD) | **Lowest latency** (~30s); live surface obs via LDM feed |
 | **ASOS 1-minute** | 1-min temps (Iowa Mesonet) | Highest-resolution public data; approximates official high (≈24h delay) |
 | **METAR** | Hourly + specials (Aviation Weather Center) | Near-real-time temps, wind, visibility |
 | **Daily Climate (CLI)** | Official daily high/low (NWS via IEM) | **Resolution source** — same data Kalshi uses to settle contracts |
@@ -53,19 +52,11 @@ pred_market/
 │   │   ├── storage.py          # Parquet I/O for market & orderbook
 │   │   ├── run_weather.py      # Weather collection (ASOS, METAR, CLI)
 │   │   ├── config.yaml         # Event series, collection params, storage
-│   │   ├── docker-compose.yml  # Both services: Kalshi + LDM
-│   │   ├── ldm/                # Unidata LDM configuration
-│   │   │   ├── Dockerfile      # LDM + Python ingest image
-│   │   │   ├── ldmd.conf       # LDM daemon config (upstream/feedtype)
-│   │   │   ├── pqact.conf      # Pattern-action: pipe METAR → Python
-│   │   │   ├── scour.conf      # Data retention rules
-│   │   │   └── registry.xml    # LDM hostname, queue, logging
+│   │   ├── docker-compose.yml  # Collector services
 │   │   └── weather/            # Weather fetchers
 │   │       ├── asos_1min.py    # ASOS 1-min archive (IEM)
 │   │       ├── metar.py        # METAR API (Aviation Weather)
 │   │       ├── daily_climate.py # Official daily high/low (CLI)
-│   │       ├── ldm_ingest.py   # LDM pqact handler (stdin → parquet)
-│   │       ├── ldm_surface.py  # Reader for LDM-ingested data
 │   │       ├── stations.py     # Kalshi event → station mapping
 │   │       └── observations.py # Orchestrator
 │   └── exploration/            # Analysis
@@ -112,10 +103,6 @@ pred_env/bin/python backfill.py
 
 # Weather data (ASOS, METAR, daily climate)
 pred_env/bin/python run_weather.py
-
-# Real-time weather via LDM (runs as Docker container)
-# See scripts/oci_collector/README.md for LDM setup
-docker compose up -d ldm
 ```
 
 ### Data Layout
@@ -123,7 +110,7 @@ docker compose up -d ldm
 - `data/market_snapshots/` — Market snapshots (yes_bid, yes_ask, last_price, volume, open_interest)
 - `data/orderbook_snapshots/` — Orderbook depth (delta-compressed)
 - `data/historical/` — Candlesticks and trades
-- `data/weather_obs/` — Weather observations (ASOS, METAR, CLI, LDM real-time)
+- `data/weather_obs/` — Weather observations (ASOS, METAR, CLI)
 
 ---
 

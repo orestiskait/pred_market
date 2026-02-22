@@ -65,6 +65,7 @@ REMOTE_DIRS=(
   "orderbook_snapshots"
   "synoptic_ws"
   "historical"
+  "weather_bot"
 )
 
 TOTAL_FILES=0
@@ -84,14 +85,23 @@ for subdir in "${REMOTE_DIRS[@]}"; do
   mkdir -p "$LOCAL_PATH"
   echo "[fetch] Syncing $subdir/ ..."
 
+  # weather_bot has CSV files; others have parquet
+  if [[ "$subdir" == "weather_bot" ]]; then
+    INCLUDE="*.csv"
+    COUNT_PATTERN='\.csv$'
+  else
+    INCLUDE="*.parquet"
+    COUNT_PATTERN='\.parquet$'
+  fi
+
   rsync -avz --progress $DRY_RUN \
     -e "ssh -o ConnectTimeout=10 -o BatchMode=yes" \
-    --include="*.parquet" \
+    --include="$INCLUDE" \
     --exclude="*" \
     "$REMOTE_PATH" "$LOCAL_PATH" 2>&1 | tee /tmp/rsync_out.txt
 
   # Count what was transferred
-  transferred=$(grep -c '^.*\.parquet$' /tmp/rsync_out.txt 2>/dev/null || true)
+  transferred=$(grep -c "$COUNT_PATTERN" /tmp/rsync_out.txt 2>/dev/null || true)
   TOTAL_FILES=$(( TOTAL_FILES + transferred ))
   echo ""
 done
@@ -104,7 +114,7 @@ else
   echo "[fetch] Done."
   echo ""
   echo "Local data:"
-  find "$LOCAL_DATA_DIR" -name "*.parquet" | sort | while read -r f; do
+  find "$LOCAL_DATA_DIR" \( -name "*.parquet" -o -name "*.csv" \) | sort | while read -r f; do
     SIZE=$(du -h "$f" | cut -f1)
     echo "  $SIZE  $(basename "$(dirname "$f")")/$(basename "$f")"
   done

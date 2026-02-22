@@ -1,51 +1,41 @@
-# OCI Deployment: Kalshi Collector + LDM Weather Ingest
+# OCI Deployment: Kalshi Collector
 
-Run the Kalshi market data collector and Unidata LDM weather ingest 24/7 on an OCI ARM instance (Always Free tier eligible).
+Run the Kalshi market data collector 24/7 on an OCI ARM instance (Always Free tier eligible).
 
 ## Overview
 
 | Script | What it does |
 |--------|-------------|
 | `launch.sh` | Creates the OCI VM (A2→A1 shape swap trick), assigns reserved public IP |
-| `cloud-init.yaml` | Runs on first boot: installs Docker, git, fail2ban, opens port 388 |
+| `cloud-init.yaml` | Runs on first boot: installs Docker, git, fail2ban |
 | `setup.sh` | Run on the VM: clones repo, builds Docker image, configures Kalshi credentials |
-| `setup_ldm.sh` | Run on the VM: builds LDM image, configures hostname, creates data dirs |
 | `run_collector.sh` | Start / stop / logs / status for the Kalshi collector container |
 | `update.sh` | Pull latest code, rebuild image, restart collector (skip if already up to date) |
 | `probe.sh` | Probe from local: VM state, container status, recent logs, data freshness |
 
 ## Architecture
 
-The VM runs **two Docker containers** side by side:
+The VM runs Docker containers for data collection:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  OCI VM (A1.Flex, 4 OCPU, 24 GB, ARM64)                        │
 │                                                                  │
 │  ┌──────────────────────┐    ┌──────────────────────────────┐   │
-│  │  kalshi-collector     │    │  ldm-weather                  │   │
-│  │  (WebSocket → parquet)│    │  (LDM → pqact → Python →     │   │
-│  │                       │    │   parquet)                     │   │
+│  │  kalshi-collector     │    │  synoptic-listener            │   │
+│  │  (WebSocket → parquet)│    │  (WebSocket → parquet)        │   │
 │  └───────┬───────────────┘    └──────┬───────────────────────┘   │
 │          │                           │                            │
-│  ┌───────▼──────────────┐            │                            │
-│  │  synoptic-listener   │            │                            │
-│  │  (WebSocket → parquet)│           │                            │
-│  └───────┬──────────────┘            │                            │
-│          │                           │                            │
-│          │                            │                           │
-│          ▼                            ▼                           │
+│          ▼                           ▼                            │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │  ~/collector-data/  (shared volume)                       │   │
 │  │  ├── market_snapshots/     ← Kalshi prices                │   │
 │  │  ├── orderbook_snapshots/  ← Kalshi orderbooks            │   │
 │  │  ├── synoptic_ws/          ← Synoptic Websocket API       │   │
-│  │  ├── weather_obs/                                          │   │
-│  │  │   ├── ldm_surface/      ← LDM real-time METAR/SPECI   │   │
-│  │  │   ├── asos_1min/        ← ASOS 1-min (IEM, ~24h lag)  │   │
-│  │  │   ├── metar/            ← METAR (AWC API)              │   │
-│  │  │   └── daily_climate/    ← Official CLI high/low        │   │
-│  │  └── ldm_logs/             ← LDM daemon logs              │   │
+│  │  └── weather_obs/                                          │   │
+│  │      ├── asos_1min/        ← ASOS 1-min (IEM, ~24h lag)   │   │
+│  │      ├── metar/            ← METAR (AWC API)              │   │
+│  │      └── daily_climate/    ← Official CLI high/low        │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -56,7 +46,6 @@ The VM runs **two Docker containers** side by side:
 2. **SSH key pair** — public key at `~/.ssh/id_ed25519.pub` or `~/.ssh/id_rsa.pub`
 3. **VCN and public subnet** in OCI (the subnet must allow public IPs)
 4. **Kalshi credentials** — API key ID and private key PEM file
-5. **Unidata IDD access** — email `support-idd@unidata.ucar.edu` for data feed access (see [LDM Setup](#7-set-up-ldm-weather-ingest-optional))
 
 ## Quick Start
 
@@ -64,7 +53,7 @@ The VM runs **two Docker containers** side by side:
 
 ```bash
 cd scripts/oci_collector
-chmod +x launch.sh setup.sh setup_ldm.sh run_collector.sh
+chmod +x launch.sh setup.sh run_collector.sh
 ./launch.sh
 ```
 
@@ -156,78 +145,6 @@ KALSHI_API_KEY_ID=your-key-id \
 ls -la ~/collector-data/market_snapshots/
 ```
 
-### 7. Set Up LDM Weather Ingest (optional)
-
-The LDM (Local Data Manager) receives **real-time METAR / SPECI surface observations** from the Unidata IDD relay network. This gives you ~30-second latency weather data for all Kalshi-tracked stations.
-
-#### a) Open port 388 in the OCI security list
-
-The LDM communicates on **TCP port 388**. Add an ingress rule:
-
-1. Go to **OCI Console → Networking → VCN → Subnets → Security Lists**
-2. Add an **Ingress Rule**:
-   - Source CIDR: `0.0.0.0/0`
-   - Protocol: TCP
-   - Destination Port: `388`
-
-> Cloud-init already opens port 388 via iptables on the VM itself. The security list rule is the OCI-level firewall.
-
-#### b) Request upstream data access
-
-Email **support-idd@unidata.ucar.edu** with:
-- **Hostname/IP**: your VM's public IP (e.g. `129.158.203.11`)
-- **Your name and email**
-- **Feedtypes requested**: `IDS|DDPLUS` (US domestic surface observations)
-- **Purpose**: Surface observations for research / weather market analysis
-
-They will add an `ALLOW` entry for your IP on their upstream LDM.
-
-#### c) Run LDM setup
-
-On the VM:
-
-```bash
-cd ~/pred_market/scripts/oci_collector
-./setup_ldm.sh
-```
-
-Or non-interactively:
-
-```bash
-LDM_HOSTNAME=129.158.203.11 ./setup_ldm.sh
-```
-
-#### d) Start the LDM
-
-```bash
-cd ~/pred_market/pred_market_src/collector
-docker compose up -d ldm
-```
-
-Or start **both** services:
-
-```bash
-docker compose up -d
-```
-
-#### e) Verify LDM
-
-```bash
-# Container running?
-docker ps | grep ldm
-
-# LDM logs
-docker logs -f ldm-weather
-
-# Check for incoming data
-ls -la ~/collector-data/weather_obs/ldm_surface/
-
-# LDM statistics (inside container)
-docker exec ldm-weather ldmadmin printmetrics
-```
-
-Data should appear within minutes once the upstream has approved your ALLOW entry.
-
 ## SSH Reference
 
 **Connect:**
@@ -271,7 +188,7 @@ scp -r ubuntu@<PUBLIC_IP>:~/collector-data ./collector_data_backup/
 `fetch_data.sh` syncs the collected parquet files from the VM to `pred_market_src/collector/data/` (the path the analysis notebook reads from). It uses `rsync` — only new/changed files are transferred.
 
 ```bash
-# Sync all data (including LDM weather)
+# Sync all data
 ./fetch_data.sh
 
 # Preview what would be transferred without downloading
@@ -288,8 +205,6 @@ The script auto-detects the VM's public IP via OCI CLI. On success it prints a s
 The Kalshi collector resolves event series prefixes (e.g. `KXHIGHCHI`) to dated tickers (e.g. `KXHIGHCHI-26FEB19`) once at startup. To pick up the next day's events, the collector restarts automatically at **12:01 AM** and **1:01 AM New York time** via cron jobs installed by `setup.sh`.
 
 Two restarts are necessary because NY contracts typically roll over around midnight, and Chicago contracts roll over around 1:00 AM ET (midnight CT).
-
-The LDM container does **not** need daily restarts — it receives data continuously.
 
 The VM timezone is set to `America/New_York` by cloud-init, so the cron schedule adjusts for daylight saving time automatically.
 
@@ -317,18 +232,6 @@ crontab -e
 | `./run_collector.sh stop` | Stop |
 | `./run_collector.sh logs` | Tail logs |
 | `./run_collector.sh status` | Container status |
-
-### LDM Weather
-
-| Command | Action |
-|---------|--------|
-| `docker compose up -d ldm` | Start LDM |
-| `docker compose stop ldm` | Stop LDM |
-| `docker logs -f ldm-weather` | Tail LDM logs |
-| `docker ps \| grep ldm` | Container status |
-| `docker exec ldm-weather ldmadmin printmetrics` | LDM metrics |
-| `docker compose up -d` | Start **both** services |
-| `docker compose down` | Stop **all** services |
 
 ## Probing from Local Machine
 
@@ -393,12 +296,10 @@ To change the frequency, adjust the cron schedule (e.g. `*/30 * * * *` for every
 ├── market_snapshots/       # Kalshi price/volume snapshots (one parquet per day)
 ├── orderbook_snapshots/    # Kalshi orderbook depth data
 ├── historical/             # Kalshi backfill data
-├── weather_obs/
-│   ├── ldm_surface/        # Real-time METAR/SPECI from LDM (~30s latency)
-│   ├── asos_1min/          # ASOS 1-min archive (IEM, ~24h delay)
-│   ├── metar/              # METAR via AWC API
-│   └── daily_climate/      # Official NWS daily climate reports
-└── ldm_logs/               # LDM daemon logs
+└── weather_obs/
+    ├── asos_1min/          # ASOS 1-min archive (IEM, ~24h delay)
+    ├── metar/              # METAR via AWC API
+    └── daily_climate/      # Official NWS daily climate reports
 ```
 
 ## Security
@@ -406,6 +307,4 @@ To change the frequency, adjust the cron schedule (e.g. `*/30 * * * *` for every
 - Cloud-init installs **fail2ban** for SSH brute-force protection.
 - Ensure the subnet's security list allows:
   - **Inbound SSH (port 22)** from your IP
-  - **Inbound TCP port 388** from `0.0.0.0/0` (for LDM upstream connections)
 - Outbound HTTPS is needed for Kalshi API and GitHub.
-- Outbound TCP 388 is needed for LDM upstream (default allows all outbound).
