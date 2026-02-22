@@ -1,8 +1,12 @@
-"""Station registry for weather fetchers.
+"""Station registry for IEM and AWC weather data fetchers.
+
+Used only by: iem_asos_1min, awc_metar, iem_daily_climate (download_data).
 
 Derives StationInfo and lookup helpers from the central market registry
 (services.markets.registry). Add new cities there; this module exposes
-a lightweight view for weather fetchers that only need ICAO / IATA / city / tz.
+a lightweight view for IEM/AWC fetchers that only need ICAO / IATA / city / tz.
+
+Note: Synoptic uses services.synoptic.station_registry (synoptic_stations_for_series).
 """
 
 from __future__ import annotations

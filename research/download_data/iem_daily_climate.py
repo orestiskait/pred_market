@@ -18,7 +18,7 @@ import pandas as pd
 import requests
 
 from research.download_data.fetcher_base import WeatherFetcherBase
-from research.weather.stations import StationInfo
+from research.weather.iem_awc_station_registry import StationInfo
 
 logger = logging.getLogger(__name__)
 

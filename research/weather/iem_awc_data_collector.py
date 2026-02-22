@@ -1,21 +1,27 @@
-"""Orchestrator that coordinates weather data fetchers from download_data.
+"""Orchestrator for IEM and AWC weather data fetchers.
 
-Loads station configuration from config.yaml and provides a single
-`collect_all()` method to fetch ASOS 1-min (IEM), METAR (AWC), and
-daily climate (IEM) for all configured stations.
+Used only by: run_weather_collection, weather_discrepancy_analysis.
+
+Fetches from these data sources:
+  - IEM ASOS 1-min (iem_asos_1min)
+  - AWC METAR (awc_metar)
+  - IEM NWS Daily Climate (iem_daily_climate)
+
+Loads station configuration from config.yaml and provides collect_all() to
+fetch all three sources for configured stations.
 
 Usage:
-    from research.weather.observations import WeatherObservations
+    from research.weather.iem_awc_data_collector import IEMAWCDataCollector
 
-    obs = WeatherObservations.from_config("services/config.yaml")
-    results = obs.collect_all(date(2026, 2, 18))
-    # results["asos_1min"] → pd.DataFrame
-    # results["metar"]     → pd.DataFrame
-    # results["daily_climate"] → pd.DataFrame
+    collector = IEMAWCDataCollector.from_config("services/config.yaml")
+    results = collector.collect_all(date(2026, 2, 18))
+    # results["iem_asos_1min"] → pd.DataFrame
+    # results["awc_metar"]     → pd.DataFrame
+    # results["iem_daily_climate"] → pd.DataFrame
 
 Or target specific stations/sources:
-    obs.fetch_metar("KNYC", date(2026, 2, 18))
-    obs.fetch_asos_1min("KMDW", date(2026, 2, 18))
+    collector.fetch_metar("KNYC", date(2026, 2, 18))
+    collector.fetch_asos_1min("KMDW", date(2026, 2, 18))
 """
 
 from __future__ import annotations
@@ -31,7 +37,7 @@ import yaml
 from research.download_data.iem_asos_1min import IEMASOS1MinFetcher
 from research.download_data.iem_daily_climate import IEMDailyClimateFetcher
 from research.download_data.awc_metar import AWCMETARFetcher
-from research.weather.stations import (
+from research.weather.iem_awc_station_registry import (
     STATION_REGISTRY,
     StationInfo,
     station_for_icao,
@@ -41,8 +47,10 @@ from research.weather.stations import (
 logger = logging.getLogger(__name__)
 
 
-class WeatherObservations:
-    """Unified interface for fetching weather observations.
+class IEMAWCDataCollector:
+    """Unified interface for fetching IEM and AWC weather data.
+
+    Fetches from: IEM ASOS 1-min, AWC METAR, IEM NWS Daily Climate.
 
     Instantiate via from_config() to auto-populate stations from your
     config.yaml, or construct directly with a list of StationInfo objects.
@@ -63,7 +71,7 @@ class WeatherObservations:
         self.climate = IEMDailyClimateFetcher(data_dir=base)
 
     @classmethod
-    def from_config(cls, config_path: str | Path) -> WeatherObservations:
+    def from_config(cls, config_path: str | Path) -> IEMAWCDataCollector:
         """Create from a config.yaml file.
 
         Reads `event_series` and/or `weather_stations` from config to

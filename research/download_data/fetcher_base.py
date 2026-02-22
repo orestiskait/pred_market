@@ -15,7 +15,7 @@ from typing import Any
 
 import pandas as pd
 
-from research.weather.stations import StationInfo
+from research.weather.iem_awc_station_registry import StationInfo
 
 logger = logging.getLogger(__name__)
 

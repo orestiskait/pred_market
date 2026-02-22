@@ -5,6 +5,10 @@ Single source of truth for the mapping between:
   - Weather station identifiers (ICAO, IATA, Synoptic push ID)
   - Timezone and city metadata
 
+Who uses what:
+  - Synoptic (listener, weather_bot): synoptic_station → services.synoptic.station_registry
+  - IEM/AWC (iem_asos_1min, awc_metar, iem_daily_climate): icao, iata, city, tz → research.weather.iem_awc_station_registry
+
 Expanding to new cities / markets:
   1. Add a new entry to MARKET_REGISTRY below.
   2. That's it — every service (listener, bot) picks up the new market
@@ -173,6 +177,8 @@ def all_synoptic_stations(series_list: list[str]) -> list[str]:
     """Return Synoptic push station IDs for the given event-series list.
 
     Used to build the Synoptic WebSocket subscription URL.
+    Synoptic consumers: import synoptic_stations_for_series from
+    services.synoptic.station_registry for a clear, data-source-specific entry point.
     """
     seen: set[str] = set()
     result: list[str] = []

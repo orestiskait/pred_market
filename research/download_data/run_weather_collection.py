@@ -19,7 +19,7 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 from services.tz import utc_today
-from research.weather.observations import WeatherObservations
+from research.weather.iem_awc_data_collector import IEMAWCDataCollector
 
 # ------------------------------------------------------------------------------
 # Date settings
@@ -43,18 +43,18 @@ def main():
     target_start = START_DATE if START_DATE else target_end
 
     config_path = _project_root / "services" / "config.yaml"
-    obs = WeatherObservations.from_config(config_path)
+    collector = IEMAWCDataCollector.from_config(config_path)
 
-    station_codes = [s.city for s in obs.stations]
+    station_codes = [s.city for s in collector.stations]
 
     if target_start < target_end:
         print(f"\nRunning weather collection from {target_start} to {target_end}")
-        print(f"Stations: {', '.join(station_codes)} ({len(obs.stations)} total)")
-        results = obs.collect_date_range(target_start, target_end)
+        print(f"Stations: {', '.join(station_codes)} ({len(collector.stations)} total)")
+        results = collector.collect_date_range(target_start, target_end)
     else:
         print(f"\nRunning weather collection for {target_end}")
-        print(f"Stations: {', '.join(station_codes)} ({len(obs.stations)} total)")
-        results = obs.collect_all(target_end)
+        print(f"Stations: {', '.join(station_codes)} ({len(collector.stations)} total)")
+        results = collector.collect_all(target_end)
 
     print("\nSummary:")
     for source, df in results.items():

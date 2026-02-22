@@ -1,7 +1,7 @@
 """Compare ASOS 1-min and METAR daily max vs NWS official high (CLI).
 
 Workflow:
-  1. Fetch and save data via WeatherObservations (uses download_data fetchers).
+  1. Fetch and save data via IEMAWCDataCollector (iem_asos_1min, awc_metar, iem_daily_climate).
   2. Load saved parquet files.
   3. Compute daily max from ASOS 1-min (IEM) and METAR (AWC) using LST windows.
   4. Compare against CLI (IEM) official highs.
@@ -23,8 +23,8 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from research.weather.observations import WeatherObservations
-from research.weather.stations import lst_offset_hours, station_for_icao
+from research.weather.iem_awc_data_collector import IEMAWCDataCollector
+from research.weather.iem_awc_station_registry import lst_offset_hours, station_for_icao
 
 # ── Configuration ──────────────────────────────────────────────────────────
 END_DATE   = date(2026, 2, 18)
@@ -74,7 +74,7 @@ def compute_daily_stats(df: pd.DataFrame, time_col: str, val_col: str,
     return daily
 
 
-def analyze_station(obs: WeatherObservations, icao: str):
+def analyze_station(collector: IEMAWCDataCollector, icao: str):
     print(f"\n{'='*70}")
     print(f"  ANALYSIS: {icao}")
     print(f"{'='*70}")
@@ -88,9 +88,9 @@ def analyze_station(obs: WeatherObservations, icao: str):
 
     # 1. Load Parquet Data
     print("Loading data from parquet...")
-    asos_df = obs.asos.read_all(start_date=START_DATE, end_date=END_DATE)
-    metar_df = obs.metar.read_all(start_date=START_DATE, end_date=END_DATE)
-    cli_df = obs.climate.read_all(start_date=START_DATE, end_date=END_DATE)
+    asos_df = collector.asos.read_all(start_date=START_DATE, end_date=END_DATE)
+    metar_df = collector.metar.read_all(start_date=START_DATE, end_date=END_DATE)
+    cli_df = collector.climate.read_all(start_date=START_DATE, end_date=END_DATE)
     
     # Filter by station (asos/metar/climate are fetcher attributes)
     if not asos_df.empty:
@@ -182,18 +182,18 @@ def main():
     print("=" * 70)
     
     config_path = _project_root / "services" / "config.yaml"
-    obs = WeatherObservations.from_config(config_path)
+    collector = IEMAWCDataCollector.from_config(config_path)
 
     # 1. FETCH & SAVE (Production Pipeline)
     print("\n[Step 1] Fetching and saving data...")
     # This will loop day-by-day, fetch from APIs, and save to parquet
     # matching the production services logic.
-    obs.collect_date_range(START_DATE, END_DATE)
+    collector.collect_date_range(START_DATE, END_DATE)
     
     # 2. ANALYZE
     print("\n[Step 2] Analyzing saved data...")
-    for station in obs.stations:
-        analyze_station(obs, station.icao)
+    for station in collector.stations:
+        analyze_station(collector, station.icao)
 
 
 if __name__ == "__main__":

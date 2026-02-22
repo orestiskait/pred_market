@@ -40,7 +40,8 @@ from ..core.config import (
 from ..core.service import AsyncService
 from ..kalshi.ws import KalshiWSMixin
 from ..synoptic.ws import SynopticWSMixin
-from ..markets.registry import MarketConfig, MARKET_REGISTRY, all_synoptic_stations
+from ..markets.registry import MarketConfig, MARKET_REGISTRY
+from ..synoptic.station_registry import synoptic_stations_for_series
 from ..markets.ticker import discover_markets, resolve_event_tickers
 
 logger = logging.getLogger("WeatherBot")
@@ -94,7 +95,7 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
 
         # Synoptic — subscribe only to stations we care about
         self._synoptic_token = get_synoptic_token(config)
-        synoptic_stations = all_synoptic_stations(self._target_series)
+        synoptic_stations = synoptic_stations_for_series(self._target_series)
         self.synoptic_ws_url = build_synoptic_ws_url(
             self._synoptic_token, synoptic_stations, ["air_temp"],
         )

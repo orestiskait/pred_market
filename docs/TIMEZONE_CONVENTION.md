@@ -41,7 +41,7 @@ This is handled via `StationInfo.tz` (IANA timezone string like `America/Chicago
 and only used in analysis code — never in storage or transport.
 
 ```python
-from research.weather.stations import STATION_REGISTRY  # derives from services.markets.registry
+from research.weather.iem_awc_station_registry import STATION_REGISTRY  # derives from services.markets.registry
 
 chi = STATION_REGISTRY["KXHIGHCHI"]
 print(chi.tz)  # "America/Chicago"

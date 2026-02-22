@@ -24,7 +24,7 @@ from ..core.config import (
 )
 from ..core.service import AsyncService
 from ..core.storage import ParquetStorage
-from ..markets.registry import all_synoptic_stations
+from .station_registry import synoptic_stations_for_series
 from .ws import SynopticWSMixin
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ class SynopticLiveCollector(AsyncService, SynopticWSMixin):
         stations = scfg.get("stations", None)
         if stations is None:
             # Auto-derive from event_series via the market registry
-            stations = all_synoptic_stations(config.get("event_series", []))
+            stations = synoptic_stations_for_series(config.get("event_series", []))
         variables = scfg.get("vars", ["air_temp"])
 
         self.synoptic_ws_url = build_synoptic_ws_url(
