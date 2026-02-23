@@ -54,6 +54,8 @@ services:
       - collector-net
 
   # ── NWP SNS Listener (real-time weather model data ingest) ────────────────
+  # AWS credentials: read from credentials dir for SQS/SNS only. S3 downloads
+  # (NOAA public buckets) use anonymous access — do NOT pass AWS_* env vars.
   nwp-listener:
     image: kalshi-services:latest
     container_name: nwp-listener
@@ -63,8 +65,9 @@ services:
       - ${SHARED_ENV_FILE:-.env}
     environment:
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      # Explicitly unset so S3 downloads use anonymous access (credentials from files for SQS/SNS only)
+      - AWS_ACCESS_KEY_ID=
+      - AWS_SECRET_ACCESS_KEY=
     volumes:
       - ${DATA_DIR:-../data}:/app/data
     networks:

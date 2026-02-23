@@ -46,8 +46,8 @@ credentials:
   kalshi_private_key: "kalshi_api_key.txt"   # Kalshi listener, weather bot (via make_kalshi_clients)
   kalshi_api_key_id: "kalshi_api_key_id"     # Kalshi listener, weather bot (via make_kalshi_clients)
   synoptic_token: "synoptic_token"            # Synoptic listener (via get_synoptic_token)
-  aws_access_key_id: "aws_access_key_id"      # NWP listener
-  aws_secret_access_key: "aws_secret_access_key" # NWP listener
+  aws_access_key_id: "aws_access_key_id"      # NWP listener (SQS/SNS only; S3 uses anonymous)
+  aws_secret_access_key: "aws_secret_access_key" # NWP listener (SQS/SNS only; S3 uses anonymous)
 
 # =============================================================================
 # KALSHI API
@@ -182,6 +182,9 @@ nwp_listener:
   sqs_queue_prefix: pred-market-nwp
   poll_interval_seconds: 20
   delete_queue_on_shutdown: true
+  # MADIS: S3 polling (NOAA SNS topic does not allow external subscriptions)
+  madis_s3_poll_interval_seconds: 120
+  madis_s3_lookback_minutes: 15
   models:
     hrrr:
       sns_topic_arn: "arn:aws:sns:us-east-1:123901341784:NewHRRRObject"
@@ -195,15 +198,15 @@ nwp_listener:
       sns_topic_arn: "arn:aws:sns:us-east-1:123901341784:NewNBMCOGObject"
       s3_bucket: "noaa-nbm-pds"
       enabled: true
-    # --- MADIS observation sources (same SNS topic, different S3 key patterns) ---
+    # --- MADIS observation sources (disabled: SNS blocked, S3 bucket noaa-madis-pds not found) ---
     madis_metar:
       sns_topic_arn: "arn:aws:sns:us-east-1:123901341784:NewMADISObject"
       s3_bucket: "noaa-madis-pds"
-      enabled: true
+      enabled: false
     madis_omo:
       sns_topic_arn: "arn:aws:sns:us-east-1:123901341784:NewMADISObject"
       s3_bucket: "noaa-madis-pds"
-      enabled: true
+      enabled: false
 
 # =============================================================================
 # WEATHER BOT — Paper trading strategy

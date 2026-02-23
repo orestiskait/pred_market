@@ -10,6 +10,8 @@ set -euo pipefail
 
 CREDS_DIR="${HOME:-/home/ubuntu}/.kalshi"
 DATA_DIR="${HOME:-/home/ubuntu}/collector-data"
+REPO_DIR="${HOME:-/home/ubuntu}/pred_market"
+CONFIG_FILE="${REPO_DIR}/services/config.yaml"
 IMAGE="kalshi-services:latest"
 CONTAINER="nwp-listener"
 
@@ -39,11 +41,15 @@ case "$cmd" in
     $DOCKER rm -f "$CONTAINER" 2>/dev/null || true
 
     echo "[start_stop_nwp_listener] Starting NWP listener..."
+    CONFIG_MOUNT=""
+    [[ -f "$CONFIG_FILE" ]] && CONFIG_MOUNT="-v $CONFIG_FILE:/app/services/config.yaml:ro"
+
     $DOCKER run -d \
       --name "$CONTAINER" \
       -e CREDENTIALS_DIR=/app/credentials \
       -v "$CREDS_DIR:/app/credentials:ro" \
       -v "$DATA_DIR:/app/data" \
+      $CONFIG_MOUNT \
       --restart unless-stopped \
       "$IMAGE" python -m services.weather.sns_listener
 
