@@ -3,9 +3,11 @@
 Polls Aviation Weather Center (aviationweather.gov) and NWS api.weather.gov
 (stations/observations — same data that powers weather.gov/wrh/LowTimeseries).
 No WebSocket available; uses short-interval polling (90–120s) to catch new obs quickly.
+Uses HTTP conditional GET (If-None-Match/ETag) for AWC when supported.
+Sends identifiable User-Agent per API best practices.
 
 Tracks: saved_ts, ob_time_utc (data reference), temp, raw_ob, RMK portion,
-6hr and 24hr min/max temperature. Runs as a concurrent task in the nwp-listener.
+6hr and 24hr min/max temperature. Runs as a concurrent task in synoptic-listener.
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 AWC_METAR_URL = "https://aviationweather.gov/api/data/metar"
 NWS_OBSERVATIONS_URL = "https://api.weather.gov/stations/{station}/observations"
-NWS_USER_AGENT = "PredMarket/1.0 (weather data collection)"
+DEFAULT_USER_AGENT = "WeatherCollectionResearch/1.0 (weather data collection;)"
 
 
 def _c_to_f(celsius: float | None) -> float | None:
@@ -35,21 +37,38 @@ def _c_to_f(celsius: float | None) -> float | None:
     return celsius * 9.0 / 5.0 + 32.0
 
 
-def _fetch_awc_metar(stations: list[str], hours: int = 2) -> list[dict]:
-    """Fetch METAR from AWC API. Returns list of row dicts."""
+def _fetch_awc_metar(
+    stations: list[str],
+    hours: int = 2,
+    *,
+    etag: str | None = None,
+    user_agent: str | None = None,
+) -> tuple[list[dict], str | None]:
+    """Fetch METAR from AWC API. Uses conditional GET (If-None-Match) when etag provided.
+
+    Returns (rows, new_etag). On 304 Not Modified, returns ([], etag) — no body to parse.
+    """
     if not stations:
-        return []
+        return [], None
     params = {"ids": ",".join(stations), "format": "json", "hours": hours}
+    headers = {}
+    if user_agent:
+        headers["User-Agent"] = user_agent
+    if etag:
+        headers["If-None-Match"] = etag
     try:
-        resp = requests.get(AWC_METAR_URL, params=params, timeout=15)
+        resp = requests.get(AWC_METAR_URL, params=params, headers=headers or None, timeout=15)
+        if resp.status_code == 304:
+            logger.debug("AWC METAR 304 Not Modified (ETag unchanged)")
+            return [], etag
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:
         logger.warning("AWC METAR fetch failed: %s", e)
-        return []
+        return [], None
 
     if not data:
-        return []
+        return [], resp.headers.get("ETag")
 
     rows = []
     for obs in data:
@@ -75,13 +94,23 @@ def _fetch_awc_metar(stations: list[str], hours: int = 2) -> list[dict]:
             "raw_ob": raw_ob or None,
             "rmk": parsed.rmk,
         })
-    return rows
+    new_etag = resp.headers.get("ETag")
+    return rows, new_etag
 
 
-def _fetch_nws_observations(station: str, limit: int = 50) -> list[dict]:
-    """Fetch observations from api.weather.gov (powers weather.gov/wrh/LowTimeseries)."""
+def _fetch_nws_observations(
+    station: str,
+    limit: int = 50,
+    *,
+    user_agent: str | None = None,
+) -> list[dict]:
+    """Fetch observations from api.weather.gov (powers weather.gov/wrh/LowTimeseries).
+
+    NWS API does not support ETag/Last-Modified for observations; full response each time.
+    Returns Cache-Control: max-age=292 (≈5 min) — consider aligning poll interval.
+    """
     url = NWS_OBSERVATIONS_URL.format(station=station)
-    headers = {"User-Agent": NWS_USER_AGENT}
+    headers = {"User-Agent": user_agent or DEFAULT_USER_AGENT}
     try:
         resp = requests.get(
             url, params={"limit": limit}, headers=headers, timeout=15
@@ -158,7 +187,10 @@ def _add_rolling_minmax(
     except Exception:
         existing = pd.DataFrame()
 
-    combined = pd.concat([existing, df], ignore_index=True)
+    if existing.empty:
+        combined = df.copy()
+    else:
+        combined = pd.concat([existing, df], ignore_index=True)
     combined = combined.drop_duplicates(
         subset=["ob_time_utc"], keep="last"
     ).sort_values("ob_time_utc")
@@ -195,7 +227,8 @@ class AviationWeatherMetarCollector:
 
         cfg = config.get("aviationweather_metar_collector", {})
         self.stations = cfg.get("stations", ["KMDW"])
-        self.poll_interval = cfg.get("poll_interval_seconds", 90)
+        self.awc_poll_interval = cfg.get("awc_poll_interval_seconds", 90)
+        self.nws_poll_interval = cfg.get("nws_poll_interval_seconds", 300)
         self.nws_stations = cfg.get("nws_stations", None)  # None = same as stations
 
         data_dir = (config_dir / config["storage"]["data_dir"]).resolve()
@@ -203,21 +236,26 @@ class AviationWeatherMetarCollector:
 
         self._last_awc: dict[str, datetime] = {}  # station -> last ob_time
         self._last_nws: dict[str, datetime] = {}
+        self._awc_etag: str | None = None  # for conditional GET
+        self._user_agent = cfg.get("user_agent") or DEFAULT_USER_AGENT
 
         logger.info(
-            "AviationWeather METAR collector: stations=%s, poll=%ds",
-            self.stations, self.poll_interval,
+            "AviationWeather METAR collector: stations=%s, awc_poll=%ds nws_poll=%ds",
+            self.stations, self.awc_poll_interval, self.nws_poll_interval,
         )
 
-    async def _poll_loop(self) -> None:
-        """Main poll loop: fetch AWC and NWS, dedupe, save."""
-        nws_stations = self.nws_stations or self.stations
+    async def _awc_poll_loop(self) -> None:
+        """Poll AWC METAR at awc_poll_interval_seconds."""
         min_dt = datetime.min.replace(tzinfo=timezone.utc)
-
         while self._get_running():
             try:
-                # AWC METAR
-                awc_rows = _fetch_awc_metar(self.stations)
+                awc_rows, new_etag = _fetch_awc_metar(
+                    self.stations,
+                    etag=self._awc_etag,
+                    user_agent=self._user_agent,
+                )
+                if new_etag:
+                    self._awc_etag = new_etag
                 if awc_rows:
                     df = pd.DataFrame(awc_rows)
                     for st in df["station"].unique():
@@ -231,10 +269,21 @@ class AviationWeatherMetarCollector:
                             st_df, self.storage, "awc_metar", st
                         )
                         self.storage.save(st_df, "awc_metar")
+            except Exception:
+                if self._get_running():
+                    logger.exception("AWC poll error")
+            await asyncio.sleep(self.awc_poll_interval)
 
-                # NWS observations (api.weather.gov — powers weather.gov/wrh/LowTimeseries)
+    async def _nws_poll_loop(self) -> None:
+        """Poll NWS observations at nws_poll_interval_seconds."""
+        nws_stations = self.nws_stations or self.stations
+        min_dt = datetime.min.replace(tzinfo=timezone.utc)
+        while self._get_running():
+            try:
                 for station in nws_stations:
-                    nws_rows = _fetch_nws_observations(station)
+                    nws_rows = _fetch_nws_observations(
+                        station, user_agent=self._user_agent
+                    )
                     if not nws_rows:
                         continue
                     df = pd.DataFrame(nws_rows)
@@ -247,9 +296,7 @@ class AviationWeatherMetarCollector:
                         df, self.storage, "nws_observations", station
                     )
                     self.storage.save(df, "nws_observations")
-
             except Exception:
                 if self._get_running():
-                    logger.exception("AviationWeather poll error")
-
-            await asyncio.sleep(self.poll_interval)
+                    logger.exception("NWS poll error")
+            await asyncio.sleep(self.nws_poll_interval)

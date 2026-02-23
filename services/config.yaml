@@ -4,8 +4,12 @@
 #
 # OCI deployment (scripts/oci_collector): which services to start
 # ============================================================
+# Three separate toggles for the synoptic-listener container:
+#   synoptic_container — start the container (runs synoptic + aviationweather when enabled)
+#   synoptic.enabled   — Synoptic API polling/streaming (inside container)
+#   aviationweather_metar_collector.enabled — AWC + NWS METAR (inside container)
 oci:
-  synoptic_enabled: true    # Synoptic streaming; set false to disable
+  synoptic_container: true  # false = do not start synoptic-listener container
 
 # ============================================================
 #
@@ -149,13 +153,23 @@ collection:
 # Used by: synoptic/listener.py ONLY
 # Stations are auto-derived from event_series.synoptic_listener via market
 # registry. Override `stations` only if you need extra stations beyond the registry.
+#
+# enabled — Synoptic API polling/streaming; false = skip (aviationweather can still run)
+# mode: "polling" (default) or "streaming"
+#   polling  — REST API timeseries; works with standard token
+#   streaming — WebSocket push; requires streaming-enabled token from Synoptic
 # =============================================================================
 synoptic:
+  enabled: false           # Synoptic API; true when token works
+  mode: polling
   # stations:  # optional override; omit → uses event_series.synoptic_listener → registry
   #   - KMDW
   #   - KNYC
-  vars:        # Synoptic variables to subscribe to (e.g. air_temp)
+  vars:        # Synoptic variables (air_temp)
     - air_temp
+  # Polling mode only:
+  poll_interval_seconds: 90
+  poll_recent_minutes: 120
 
 # =============================================================================
 # NWP MODEL DATA — Research
@@ -177,19 +191,21 @@ nbm:
 # AVIATION WEATHER METAR COLLECTOR — AWC + NWS api.weather.gov
 # =============================================================================
 # Used by: services/weather/aviationweather_metar_collector (runs in synoptic-listener)
+# enabled — AWC + NWS METAR polling; independent of synoptic.enabled
 #
-# Polls Aviation Weather Center (aviationweather.gov) and NWS api.weather.gov
-# (stations/observations — same data as weather.gov/wrh/LowTimeseries).
-# No WebSocket; uses short-interval polling to catch new obs quickly.
-# Tracks: saved_ts, ob_time_utc, temp, raw_ob, RMK, 6hr/24hr min/max.
+# Polls Aviation Weather Center (aviationweather.gov) and NWS api.weather.gov.
+# AWC: uses conditional GET (If-None-Match/ETag) — 304 skips full parse when unchanged.
+# NWS: no ETag support; full response each time. Cache-Control max-age≈5min.
+# user_agent: identifies who is polling (API best practice; NWS recommends contact info).
 # =============================================================================
 aviationweather_metar_collector:
   enabled: true
   stations:           # AWC METAR stations (ICAO)
     - KMDW
-  nws_stations:       # NWS api.weather.gov stations (e.g. KORD for weather.gov/wrh/LowTimeseries)
+  nws_stations:       # NWS api.weather.gov stations
     - KMDW
-  poll_interval_seconds: 90
+  awc_poll_interval_seconds: 2   # METAR: hourly + SPECI
+  nws_poll_interval_seconds: 61  # NWS Cache-Control max-age≈5min
 
 # =============================================================================
 # NWP LISTENER — Real-time weather model ingest via AWS SNS

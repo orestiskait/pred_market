@@ -1,8 +1,9 @@
-"""Synoptic listener: live WebSocket-based weather data ingest.
+"""Synoptic listener: weather observation ingest (streaming or polling).
 
-Streams real-time weather observations from the Synoptic push API
-and periodically flushes to Parquet. Also runs the aviationweather METAR
-collector (AWC + NWS api.weather.gov) when enabled.
+Streaming: WebSocket push from Synoptic (requires streaming-enabled token).
+Polling: REST API timeseries (default; works with standard token).
+
+Also runs the aviationweather METAR collector (AWC + NWS api.weather.gov) when enabled.
 
 Usage:
     python -m services.synoptic.listener
@@ -33,26 +34,41 @@ logger = logging.getLogger(__name__)
 
 
 class SynopticLiveCollector(AsyncService, SynopticWSMixin):
-    """Streams Synoptic WebSocket data and periodically flushes to parquet."""
+    """Ingests Synoptic ASOS 1-min data via streaming (WebSocket) or polling (REST)."""
 
     def __init__(self, config: dict, config_dir: Path):
         self.config = config
 
-        # Synoptic credentials & URL
-        self._synoptic_token = get_synoptic_token(config)
-
-        # Build station list from event_series in config (via market registry)
-        # or fall back to explicit synoptic.stations in config.
         scfg = config.get("synoptic", {})
-        stations = scfg.get("stations", None)
-        if stations is None:
-            # Auto-derive from event_series.synoptic_listener via the market registry
-            stations = synoptic_stations_for_series(get_event_series(config, "synoptic_listener"))
-        variables = scfg.get("vars", ["air_temp"])
+        self._synoptic_enabled = scfg.get("enabled", True)
 
-        self.synoptic_ws_url = build_synoptic_ws_url(
-            self._synoptic_token, stations, variables,
-        )
+        # Synoptic credentials and setup (only when enabled)
+        self._synoptic_token = None
+        self._stations = []
+        self._synoptic_mode = "polling"
+        self._poll_interval = 90
+        self._poll_recent_minutes = 120
+        self.synoptic_ws_url = ""
+
+        if self._synoptic_enabled:
+            self._synoptic_token = get_synoptic_token(config)
+            stations = scfg.get("stations", None)
+            if stations is None:
+                stations = synoptic_stations_for_series(get_event_series(config, "synoptic_listener"))
+            variables = scfg.get("vars", ["air_temp"])
+            self._stations = stations
+            self._synoptic_mode = scfg.get("mode", "polling")
+            self._poll_interval = scfg.get("poll_interval_seconds", 90)
+            self._poll_recent_minutes = scfg.get("poll_recent_minutes", 120)
+            self.synoptic_ws_url = build_synoptic_ws_url(
+                self._synoptic_token, stations, variables,
+            )
+            logger.info(
+                "Synoptic mode=%s (stations=%s)",
+                self._synoptic_mode, self._stations,
+            )
+        else:
+            logger.info("Synoptic disabled; running aviationweather METAR only")
 
         # Storage
         data_dir = (config_dir / config["storage"]["data_dir"]).resolve()
@@ -62,6 +78,7 @@ class SynopticLiveCollector(AsyncService, SynopticWSMixin):
         # State
         self._running = False
         self._buf: list[dict] = []
+        self._last_synoptic_ob: dict[str, object] = {}  # stid -> last ob_timestamp (for polling dedup)
 
         # Aviationweather METAR collector (AWC + NWS api.weather.gov)
         self._aviationweather_collector = None
@@ -94,7 +111,7 @@ class SynopticLiveCollector(AsyncService, SynopticWSMixin):
             self._buf.clear()
 
     async def _snapshot_loop(self):
-        """Periodic buffer flush."""
+        """Periodic buffer flush (streaming mode)."""
         last_flush = time.monotonic()
         while self._running:
             await asyncio.sleep(1)
@@ -104,19 +121,61 @@ class SynopticLiveCollector(AsyncService, SynopticWSMixin):
                 self._flush()
                 last_flush = time.monotonic()
 
+    async def _synoptic_poll_loop(self):
+        """Poll Synoptic REST API and write new observations."""
+        from services.synoptic.poll import fetch_synoptic_recent
+
+        while self._running:
+            try:
+                rows = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: fetch_synoptic_recent(
+                        self._stations,
+                        self._synoptic_token,
+                        recent_minutes=self._poll_recent_minutes,
+                    ),
+                )
+                if rows:
+                    # Dedupe: only new obs since last poll
+                    new_rows = []
+                    for r in rows:
+                        stid = r["stid"]
+                        ob_ts = r["ob_timestamp"]
+                        last = self._last_synoptic_ob.get(stid)
+                        if last is None or ob_ts > last:
+                            self._last_synoptic_ob[stid] = ob_ts
+                            new_rows.append(r)
+                    if new_rows:
+                        self.storage.write_synoptic_ws(new_rows)
+                        logger.info(
+                            "Synoptic poll: saved %d new obs (stations=%s)",
+                            len(new_rows), list({r["stid"] for r in new_rows}),
+                        )
+            except Exception:
+                if self._running:
+                    logger.exception("Synoptic poll error")
+            await asyncio.sleep(self._poll_interval)
+
     # ------------------------------------------------------------------ #
     # AsyncService overrides                                               #
     # ------------------------------------------------------------------ #
 
     def _get_tasks(self) -> list:
-        tasks = [self.synoptic_ws_loop(), self._snapshot_loop()]
+        tasks = []
+        if self._synoptic_enabled:
+            if self._synoptic_mode == "streaming":
+                tasks.extend([self.synoptic_ws_loop(), self._snapshot_loop()])
+            else:
+                tasks.append(self._synoptic_poll_loop())
         if self._aviationweather_collector is not None:
-            tasks.append(self._aviationweather_collector._poll_loop())
+            tasks.append(self._aviationweather_collector._awc_poll_loop())
+            tasks.append(self._aviationweather_collector._nws_poll_loop())
         return tasks
 
     def _on_shutdown(self):
-        self._flush()
-        logger.info("Synoptic buffers flushed.")
+        if self._synoptic_enabled and self._synoptic_mode == "streaming":
+            self._flush()
+            logger.info("Synoptic buffers flushed.")
 
 
 # ------------------------------------------------------------------ #

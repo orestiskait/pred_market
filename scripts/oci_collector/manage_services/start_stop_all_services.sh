@@ -2,7 +2,7 @@
 # Start Kalshi listener, Synoptic listener, NWP listener, and weather bot containers.
 # Assumes setup_collector/first_time_vm_setup.sh has already been run.
 #
-# Config: services/config.yaml oci.synoptic_enabled — if false, Synoptic listener is skipped.
+# Config: services/config.yaml oci.synoptic_container — if false, synoptic-listener container is skipped.
 #
 # Usage:
 #   ./start_stop_all_services.sh          # start (or restart) all services
@@ -21,19 +21,21 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CONFIG="${REPO_DIR}/services/config.yaml"
 
-# Read oci.synoptic_enabled from config (default: true)
-SYNOPTIC_ENABLED=true
+# Read oci.synoptic_container from config (default: true); fallback to synoptic_enabled
+SYNOPTIC_CONTAINER=true
 if [[ -f "$CONFIG" ]]; then
   val=$(python3 -c "
 import yaml
 try:
     with open('$CONFIG') as f:
         cfg = yaml.safe_load(f)
-    print(str(cfg.get('oci', {}).get('synoptic_enabled', True)).lower())
+    oci = cfg.get('oci', {})
+    v = oci.get('synoptic_container', oci.get('synoptic_enabled', True))
+    print(str(v).lower())
 except Exception:
     print('true')
 " 2>/dev/null || echo "true")
-  [[ "$val" == "false" ]] && SYNOPTIC_ENABLED=false
+  [[ "$val" == "false" ]] && SYNOPTIC_CONTAINER=false
 fi
 
 cmd="${1:-start}"
@@ -49,7 +51,7 @@ case "$cmd" in
   logs)
     echo "Kalshi Listener logs:"
     "$SCRIPT_DIR/start_stop_kalshi_listener.sh" logs &
-    [[ "$SYNOPTIC_ENABLED" == "true" ]] && { echo "Synoptic Listener logs:"; "$SCRIPT_DIR/start_stop_synoptic_listener.sh" logs & }
+    [[ "$SYNOPTIC_CONTAINER" == "true" ]] && { echo "Synoptic Listener logs:"; "$SCRIPT_DIR/start_stop_synoptic_listener.sh" logs & }
     echo "NWP Listener logs:"
     "$SCRIPT_DIR/start_stop_nwp_listener.sh" logs &
     echo "Weather Bot logs:"
@@ -59,7 +61,7 @@ case "$cmd" in
 
   status)
     "$SCRIPT_DIR/start_stop_kalshi_listener.sh" status
-    [[ "$SYNOPTIC_ENABLED" == "true" ]] && "$SCRIPT_DIR/start_stop_synoptic_listener.sh" status
+    [[ "$SYNOPTIC_CONTAINER" == "true" ]] && "$SCRIPT_DIR/start_stop_synoptic_listener.sh" status
     "$SCRIPT_DIR/start_stop_nwp_listener.sh" status
     "$SCRIPT_DIR/start_stop_weather_bot.sh" status
     ;;
@@ -67,10 +69,10 @@ case "$cmd" in
   start)
     "$SCRIPT_DIR/start_stop_kalshi_listener.sh" start
     echo "---"
-    if [[ "$SYNOPTIC_ENABLED" == "true" ]]; then
+    if [[ "$SYNOPTIC_CONTAINER" == "true" ]]; then
       "$SCRIPT_DIR/start_stop_synoptic_listener.sh" start
     else
-      echo "[start_all] Synoptic listener disabled (oci.synoptic_enabled: false)"
+      echo "[start_all] Synoptic listener container disabled (oci.synoptic_container: false)"
       "$SCRIPT_DIR/start_stop_synoptic_listener.sh" stop 2>/dev/null || true
     fi
     echo "---"
