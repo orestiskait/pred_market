@@ -10,7 +10,6 @@ No authentication required.
 from __future__ import annotations
 
 import logging
-import re
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -19,6 +18,7 @@ import requests
 
 from research.download_data.fetcher_base import WeatherFetcherBase
 from research.weather.iem_awc_station_registry import StationInfo
+from services.weather.metar_parser import MetarParser
 
 logger = logging.getLogger(__name__)
 
@@ -29,17 +29,7 @@ MAX_HOURS_BACK = 360
 def _c_to_f(celsius: float | None) -> float | None:
     if celsius is None:
         return None
-    return round(celsius * 9.0 / 5.0 + 32.0, 1)
-
-
-def _parse_high_accuracy_temp(raw_ob: str) -> float | None:
-    if not raw_ob:
-        return None
-    m = re.search(r'\bT([01])(\d{3})', raw_ob)
-    if m:
-        sign = 1 if m.group(1) == '0' else -1
-        return sign * int(m.group(2)) / 10.0
-    return None
+    return celsius * 9.0 / 5.0 + 32.0
 
 
 class AWCMETARFetcher(WeatherFetcherBase):
@@ -95,14 +85,9 @@ class AWCMETARFetcher(WeatherFetcherBase):
                 continue
 
             raw_ob = obs.get("rawOb", "")
-
-            parsed_high_acc_c = _parse_high_accuracy_temp(raw_ob)
-            if parsed_high_acc_c is not None:
-                temp_c = parsed_high_acc_c
-                temp_high_accuracy = True
-            else:
-                temp_c = obs.get("temp")
-                temp_high_accuracy = False
+            parsed = MetarParser.parse(raw_ob)
+            temp_c = parsed.temp_c if parsed.temp_high_accuracy else obs.get("temp")
+            temp_high_accuracy = parsed.temp_high_accuracy
 
             row = {
                 "station": station.icao,
@@ -136,14 +121,9 @@ class AWCMETARFetcher(WeatherFetcherBase):
         obs = data[0]
         report_time = pd.to_datetime(obs.get("reportTime"), utc=True)
         raw_ob = obs.get("rawOb", "")
-
-        parsed_high_acc_c = _parse_high_accuracy_temp(raw_ob)
-        if parsed_high_acc_c is not None:
-            temp_c = parsed_high_acc_c
-            temp_high_accuracy = True
-        else:
-            temp_c = obs.get("temp")
-            temp_high_accuracy = False
+        parsed = MetarParser.parse(raw_ob)
+        temp_c = parsed.temp_c if parsed.temp_high_accuracy else obs.get("temp")
+        temp_high_accuracy = parsed.temp_high_accuracy
 
         row = {
             "station": station.icao,

@@ -69,7 +69,7 @@ KALSHI_MARKET_REGISTRY: dict[str, KalshiMarketConfig] = {
         series_prefix="KXHIGHCHI",
         icao="KMDW", iata="MDW", city="Chicago",
         tz="America/Chicago", lat=41.78417, lon=-87.75528,
-        synoptic_station="KMDW1M",
+        synoptic_station="KMDW",
     ),
     "KXHIGHNY": KalshiMarketConfig(
         series_prefix="KXHIGHNY",

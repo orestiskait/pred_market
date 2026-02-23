@@ -28,7 +28,6 @@ from __future__ import annotations
 import gzip
 import io
 import logging
-import re
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,15 +36,13 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from services.weather.metar_parser import MetarParser
 from services.weather.station_registry import NWPStation
 
 logger = logging.getLogger(__name__)
 
 BUCKET = "noaa-madis-pds"
 REGION = "us-east-1"
-
-# T-group regex: T followed by 8 digits (temp sign+3dig, dewpoint sign+3dig)
-_TGROUP_RE = re.compile(r"\bT(\d{4})(\d{4})\b")
 
 
 def _celsius_to_fahrenheit(c: float) -> float:
@@ -54,27 +51,6 @@ def _celsius_to_fahrenheit(c: float) -> float:
 
 def _kelvin_to_celsius(k: float) -> float:
     return k - 273.15
-
-
-def _parse_tgroup(metar: str) -> tuple[float | None, float | None]:
-    """Parse T-group from raw METAR string for tenth-degree precision.
-
-    Returns (temp_c, dewpoint_c) or (None, None) if no T-group found.
-    """
-    m = _TGROUP_RE.search(metar)
-    if not m:
-        return None, None
-
-    raw_t, raw_d = m.group(1), m.group(2)
-
-    # First digit: 0 = positive, 1 = negative
-    t_sign = -1 if raw_t[0] == "1" else 1
-    d_sign = -1 if raw_d[0] == "1" else 1
-
-    temp_c = t_sign * int(raw_t[1:]) / 10.0
-    dew_c = d_sign * int(raw_d[1:]) / 10.0
-
-    return temp_c, dew_c
 
 
 class MADISMETARFetcher:
@@ -306,9 +282,9 @@ class MADISMETARFetcher:
                 else:
                     temp_c = np.nan
 
-                row["temp_c"] = round(temp_c, 2) if not np.isnan(temp_c) else np.nan
-                row["temp_f"] = round(_celsius_to_fahrenheit(temp_c), 1) if not np.isnan(temp_c) else np.nan
-                row["temp_k"] = round(temp_c + 273.15, 2) if not np.isnan(temp_c) else np.nan
+                row["temp_c"] = float(temp_c) if not np.isnan(temp_c) else np.nan
+                row["temp_f"] = _celsius_to_fahrenheit(temp_c) if not np.isnan(temp_c) else np.nan
+                row["temp_k"] = temp_c + 273.15 if not np.isnan(temp_c) else np.nan
 
             # Dewpoint
             if dew_var is not None:
@@ -320,8 +296,8 @@ class MADISMETARFetcher:
                 else:
                     dew_c = np.nan
 
-                row["dewpoint_c"] = round(dew_c, 2) if not np.isnan(dew_c) else np.nan
-                row["dewpoint_f"] = round(_celsius_to_fahrenheit(dew_c), 1) if not np.isnan(dew_c) else np.nan
+                row["dewpoint_c"] = float(dew_c) if not np.isnan(dew_c) else np.nan
+                row["dewpoint_f"] = _celsius_to_fahrenheit(dew_c) if not np.isnan(dew_c) else np.nan
 
             # Raw METAR + T-group parsing
             if metar_var is not None:
@@ -341,14 +317,14 @@ class MADISMETARFetcher:
                     row["raw_metar"] = raw_str if raw_str else None
 
                     if raw_str:
-                        tg_temp, tg_dew = _parse_tgroup(raw_str)
-                        row["tgroup_temp_c"] = round(tg_temp, 1) if tg_temp is not None else None
-                        row["tgroup_dewpoint_c"] = round(tg_dew, 1) if tg_dew is not None else None
+                        tg_temp, tg_dew = MetarParser.parse_tgroup(raw_str)
+                        row["tgroup_temp_c"] = tg_temp
+                        row["tgroup_dewpoint_c"] = tg_dew
                         # If T-group available, use it as primary (higher precision)
                         if tg_temp is not None:
-                            row["temp_c"] = round(tg_temp, 2)
-                            row["temp_f"] = round(_celsius_to_fahrenheit(tg_temp), 1)
-                            row["temp_k"] = round(tg_temp + 273.15, 2)
+                            row["temp_c"] = tg_temp
+                            row["temp_f"] = _celsius_to_fahrenheit(tg_temp)
+                            row["temp_k"] = tg_temp + 273.15
                 except Exception:
                     pass
 

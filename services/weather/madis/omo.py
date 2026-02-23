@@ -245,14 +245,14 @@ class MADISOMOFetcher:
                 elif temp_val > 100:
                     # Kelvin
                     temp_c = _kelvin_to_celsius(temp_val)
-                    row["temp_c"] = round(temp_c, 2)
-                    row["temp_f"] = round(_celsius_to_fahrenheit(temp_c), 1)
-                    row["temp_k"] = round(temp_val, 2)
+                    row["temp_c"] = temp_c
+                    row["temp_f"] = _celsius_to_fahrenheit(temp_c)
+                    row["temp_k"] = temp_val
                 else:
                     # Celsius
-                    row["temp_c"] = round(temp_val, 2)
-                    row["temp_f"] = round(_celsius_to_fahrenheit(temp_val), 1)
-                    row["temp_k"] = round(temp_val + 273.15, 2)
+                    row["temp_c"] = temp_val
+                    row["temp_f"] = _celsius_to_fahrenheit(temp_val)
+                    row["temp_k"] = temp_val + 273.15
 
             rows.append(row)
 

@@ -246,8 +246,8 @@ class NWPPointFetcher:
                     "cycle_utc": cycle_ts,
                     "forecast_minutes": forecast_minutes,
                     "valid_utc": valid_ts,
-                    f"{col_prefix}_k": round(val_k, 2),
-                    f"{col_prefix}_f": round(kelvin_to_fahrenheit(val_k), 1),
+                    f"{col_prefix}_k": val_k,
+                    f"{col_prefix}_f": kelvin_to_fahrenheit(val_k),
                     "grid_lat": glat,
                     "grid_lon": glon,
                 })

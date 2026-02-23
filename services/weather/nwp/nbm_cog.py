@@ -162,8 +162,8 @@ class NBMCOGFetcher:
                 "cycle_utc": cycle_ts,
                 "forecast_minutes": forecast_minutes,
                 "valid_utc": valid_ts,
-                "tmp_2m_k": round(temp_c + 273.15, 2),
-                "tmp_2m_f": round(temp_f, 1),
+                "tmp_2m_k": temp_c + 273.15,
+                "tmp_2m_f": temp_f,
                 "grid_lat": round(grid_lat, 4),
                 "grid_lon": round(grid_lon, 4),
             })

@@ -1,7 +1,8 @@
 """Synoptic listener: live WebSocket-based weather data ingest.
 
 Streams real-time weather observations from the Synoptic push API
-and periodically flushes to Parquet.
+and periodically flushes to Parquet. Also runs the aviationweather METAR
+collector (AWC + NWS api.weather.gov) when enabled.
 
 Usage:
     python -m services.synoptic.listener
@@ -62,6 +63,17 @@ class SynopticLiveCollector(AsyncService, SynopticWSMixin):
         self._running = False
         self._buf: list[dict] = []
 
+        # Aviationweather METAR collector (AWC + NWS api.weather.gov)
+        self._aviationweather_collector = None
+        awc_cfg = config.get("aviationweather_metar_collector", {})
+        if awc_cfg.get("enabled", False):
+            from services.weather.aviationweather_metar_collector import (
+                AviationWeatherMetarCollector,
+            )
+            self._aviationweather_collector = AviationWeatherMetarCollector(
+                config, config_dir, get_running=lambda: self._running
+            )
+
     # ------------------------------------------------------------------ #
     # SynopticWSMixin hook                                                 #
     # ------------------------------------------------------------------ #
@@ -97,7 +109,10 @@ class SynopticLiveCollector(AsyncService, SynopticWSMixin):
     # ------------------------------------------------------------------ #
 
     def _get_tasks(self) -> list:
-        return [self.synoptic_ws_loop(), self._snapshot_loop()]
+        tasks = [self.synoptic_ws_loop(), self._snapshot_loop()]
+        if self._aviationweather_collector is not None:
+            tasks.append(self._aviationweather_collector._poll_loop())
+        return tasks
 
     def _on_shutdown(self):
         self._flush()
