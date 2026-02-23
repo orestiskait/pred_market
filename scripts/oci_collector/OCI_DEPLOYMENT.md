@@ -1,6 +1,6 @@
-# OCI Deployment: Kalshi listener, Synoptic listener, weather bot
+# OCI Deployment: Kalshi listener, Synoptic listener, NWP listener, weather bot
 
-Run Kalshi listener, Synoptic listener, and weather bot 24/7 on an OCI ARM instance (Always Free tier eligible).
+Run Kalshi listener, Synoptic listener (incl. aviationweather METAR), NWP listener, and weather bot 24/7 on an OCI ARM instance (Always Free tier eligible).
 
 **→ See [OCI_SETUP_GUIDE.md](OCI_SETUP_GUIDE.md) for when to use each script, one-off vs regular, and credentials.**
 
@@ -34,21 +34,27 @@ The VM runs Docker containers for data collection:
 ┌─────────────────────────────────────────────────────────────────┐
 │  OCI VM (A1.Flex, 4 OCPU, 24 GB, ARM64)                        │
 │                                                                  │
-│  ┌──────────────────────┐    ┌──────────────────────────────┐   │
-│  │  kalshi-listener      │    │  synoptic-listener            │   │
-│  │  (WebSocket → parquet)│    │  (WebSocket → parquet)        │   │
-│  └───────┬───────────────┘    └──────┬───────────────────────┘   │
-│          │                           │                            │
-│          ▼                           ▼                            │
+│  ┌──────────────────────┐  ┌──────────────────────────────┐       │
+│  │  kalshi-listener      │  │  synoptic-listener          │       │
+│  │  (WebSocket→parquet)  │  │  (Synoptic + aviationweather │       │
+│  └───────┬──────────────┘  │   METAR → parquet)           │       │
+│          │                 └──────┬───────────────────────┘       │
+│  ┌───────┴──────────────┐  ┌──────┴───────────────────────┐      │
+│  │  nwp-listener        │  │  weather-bot                 │      │
+│  │  (SNS/SQS→parquet)   │  │  (paper trading)             │      │
+│  └───────┬──────────────┘  └──────┬───────────────────────┘      │
+│          │                        │                              │
+│          ▼                        ▼                              │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │  ~/collector-data/  (shared volume)                       │   │
-│  │  ├── kalshi_market_snapshots/     ← Kalshi prices         │   │
-│  │  ├── kalshi_orderbook_snapshots/  ← Kalshi orderbooks     │   │
+│  │  ~/collector-data/  (shared volume)                        │   │
+│  │  ├── kalshi_market_snapshots/     ← Kalshi prices          │   │
+│  │  ├── kalshi_orderbook_snapshots/  ← Kalshi orderbooks      │   │
 │  │  ├── synoptic_weather_observations/ ← Synoptic WebSocket │   │
-│  │  ├── iem_asos_1min/       ← IEM ASOS 1-min (~24h lag)     │   │
-│  │  ├── awc_metar/           ← AWC METAR                     │   │
-│  │  ├── iem_daily_climate/   ← IEM NWS Daily Climate (CLI)   │   │
-│  │  ├── kalshi_historical/  ← Kalshi backfill (candlesticks, trades) │
+│  │  ├── aviationweather_metar/  ← AWC + NWS METAR (synoptic) │   │
+│  │  ├── nwp_realtime/            ← HRRR, RRFS, NBM           │   │
+│  │  ├── iem_asos_1min/       ← IEM ASOS 1-min (~24h lag)      │   │
+│  │  ├── iem_daily_climate/   ← IEM NWS Daily Climate (CLI)    │   │
+│  │  ├── kalshi_historical/  ← Kalshi backfill               │   │
 │  │  └── weather_bot_paper_trades/ ← Paper trade logs         │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
@@ -60,6 +66,7 @@ The VM runs Docker containers for data collection:
 2. **SSH key pair** — public key at `~/.ssh/id_ed25519.pub` or `~/.ssh/id_rsa.pub`
 3. **VCN and public subnet** in OCI (the subnet must allow public IPs)
 4. **Kalshi credentials** — API key ID and private key PEM file
+5. **AWS credentials** (optional, for NWP listener) — Access Key ID and Secret for SQS/SNS
 
 ## Quick Start
 
@@ -145,7 +152,7 @@ KALSHI_API_KEY_ID=your-key-id \
   ./first_time_vm_setup.sh
 ```
 
-### 5. Start Kalshi listener, Synoptic listener, and weather bot
+### 5. Start all services (Kalshi, Synoptic+aviationweather, NWP, weather bot)
 
 ```bash
 cd ~/pred_market/scripts/oci_collector/manage_services
@@ -156,8 +163,11 @@ Or run individually:
 ```bash
 ./start_stop_kalshi_listener.sh start
 ./start_stop_synoptic_listener.sh start
+./start_stop_nwp_listener.sh start
 ./start_stop_weather_bot.sh start
 ```
+
+**NWP listener** requires AWS credentials in `~/.kalshi/aws_access_key_id` and `~/.kalshi/aws_secret_access_key`. Run `first_time_vm_setup.sh` with `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` env vars, or create the files manually.
 
 ### 6. Verify services
 
@@ -241,12 +251,13 @@ Legacy cron (optional): `first_time_vm_setup.sh` skips cron by default. To resto
 
 | Command | Action |
 |---------|--------|
-| `./start_stop_all_services.sh` or `./start_stop_all_services.sh start` | Start / restart all three |
+| `./start_stop_all_services.sh` or `./start_stop_all_services.sh start` | Start / restart all four |
 | `./start_stop_all_services.sh stop` | Stop all |
 | `./start_stop_all_services.sh logs` | Tail logs from all |
 | `./start_stop_all_services.sh status` | Container status |
 | `./start_stop_kalshi_listener.sh start` | Kalshi listener only |
-| `./start_stop_synoptic_listener.sh start` | Synoptic listener only |
+| `./start_stop_synoptic_listener.sh start` | Synoptic+aviationweather only |
+| `./start_stop_nwp_listener.sh start` | NWP listener only |
 | `./start_stop_weather_bot.sh start` | Weather bot only |
 
 ## Probing from Local Machine
@@ -262,7 +273,7 @@ Reports: VM lifecycle state, public IP, container status, last 15 log lines, and
 
 ## Updating Code
 
-`maintenance/update_code_and_restart_services.sh` pulls the latest code from GitHub, rebuilds the Docker image, and restarts Kalshi listener, Synoptic listener, and weather bot. It skips everything if the VM is already on the latest commit.
+`maintenance/update_code_and_restart_services.sh` pulls the latest code from GitHub, rebuilds the Docker image, and restarts all services (Kalshi, Synoptic+aviationweather, NWP, weather bot). It skips everything if the VM is already on the latest commit.
 
 ### One-off update (from your local machine)
 
@@ -307,6 +318,8 @@ To change the frequency, adjust the cron schedule (e.g. `*/30 * * * *` for every
 | `~/.kalshi/kalshi_api_key.txt` | Kalshi private key (copy via scp) |
 | `~/.kalshi/kalshi_api_key_id` | Kalshi API key ID (created by setup) |
 | `~/.kalshi/synoptic_token` | Synoptic token (created by setup) |
+| `~/.kalshi/aws_access_key_id` | AWS Access Key (for NWP; optional) |
+| `~/.kalshi/aws_secret_access_key` | AWS Secret Key (for NWP; optional) |
 | `~/collector-data/` | All data output (mounted into containers) |
 
 ```
@@ -317,7 +330,8 @@ To change the frequency, adjust the cron schedule (e.g. `*/30 * * * *` for every
 ├── kalshi_historical/             # Kalshi backfill (candlesticks, trades)
 ├── weather_bot_paper_trades/     # Paper trade logs
 ├── iem_asos_1min/                # ASOS 1-min archive (IEM, ~24h delay)
-├── awc_metar/                    # METAR via AWC API
+├── aviationweather_metar/        # AWC + NWS METAR (synoptic-listener)
+├── nwp_realtime/                 # HRRR, RRFS, NBM (nwp-listener)
 └── iem_daily_climate/            # Official NWS daily climate reports
 ```
 

@@ -65,6 +65,28 @@ echo "[setup] Image built: $IMAGE"
 mkdir -p "$CREDS_DIR"
 chmod 700 "$CREDS_DIR"
 
+# AWS credentials for NWP listener (SQS/SNS; S3 uses anonymous). Optional — NWP will fail without them.
+AWS_ACCESS_FILE="$CREDS_DIR/aws_access_key_id"
+AWS_SECRET_FILE="$CREDS_DIR/aws_secret_access_key"
+if [[ -z "${AWS_ACCESS_KEY_ID:-}" ]] && [[ -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
+  if [[ -f "$AWS_ACCESS_FILE" ]] && [[ -f "$AWS_SECRET_FILE" ]]; then
+    echo "[setup] AWS credentials already exist in $CREDS_DIR — skipping."
+  else
+    echo "[setup] NWP listener needs AWS credentials (SQS/SNS). Create these files manually:"
+    echo "        $AWS_ACCESS_FILE"
+    echo "        $AWS_SECRET_FILE"
+    echo "        Or set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY env vars and re-run."
+  fi
+else
+  if [[ -n "${AWS_ACCESS_KEY_ID:-}" ]] && [[ -n "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
+    printf '%s' "$AWS_ACCESS_KEY_ID" > "$AWS_ACCESS_FILE" && chmod 600 "$AWS_ACCESS_FILE"
+    printf '%s' "$AWS_SECRET_ACCESS_KEY" > "$AWS_SECRET_FILE" && chmod 600 "$AWS_SECRET_FILE"
+    echo "[setup] AWS credentials saved to $CREDS_DIR"
+  else
+    echo "[setup] Provide both AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY to enable NWP listener."
+  fi
+fi
+
 # Kalshi private key: use KALSHI_PRIVATE_KEY_FILE or default ~/.kalshi/kalshi_api_key.txt
 KALSHI_KEY_SRC="${KALSHI_PRIVATE_KEY_FILE:-$CREDS_DIR/kalshi_api_key.txt}"
 KALSHI_KEY_DST="$CREDS_DIR/kalshi_api_key.txt"
@@ -122,6 +144,6 @@ else
 fi
 
 echo ""
-echo "[setup] Done. Run Kalshi listener, Synoptic listener, and weather bot with:"
+echo "[setup] Done. Run all services (Kalshi, Synoptic+aviationweather, NWP, weather bot) with:"
 echo "  cd $OCI_ROOT/manage_services && ./start_stop_all_services.sh"
-echo "  Or individually: ./start_stop_kalshi_listener.sh ./start_stop_synoptic_listener.sh ./start_stop_weather_bot.sh"
+echo "  Or individually: ./start_stop_kalshi_listener.sh ./start_stop_synoptic_listener.sh ./start_stop_nwp_listener.sh ./start_stop_weather_bot.sh"

@@ -64,6 +64,7 @@ REMOTE_DIRS=(
   "kalshi_market_snapshots"
   "kalshi_orderbook_snapshots"
   "synoptic_weather_observations"
+  "aviationweather_metar"
   "kalshi_historical"
   "weather_bot_paper_trades"
   "nwp_realtime"

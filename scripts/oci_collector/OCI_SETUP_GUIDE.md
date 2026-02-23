@@ -56,7 +56,7 @@ cd ~/pred_market/scripts/oci_collector/setup_collector
 
 #### `manage_services/start_stop_all_services.sh`
 
-**When:** You want to start, stop, check status, or tail logs for **all three** services (Kalshi listener, Synoptic listener, weather bot).
+**When:** You want to start, stop, check status, or tail logs for **all four** services (Kalshi listener, Synoptic listener incl. aviationweather METAR, NWP listener, weather bot).
 
 **Where:** Run **on the VM**.
 
@@ -77,6 +77,7 @@ cd ~/pred_market/scripts/oci_collector/manage_services
 
 #### `manage_services/start_stop_kalshi_listener.sh`  
 #### `manage_services/start_stop_synoptic_listener.sh`  
+#### `manage_services/start_stop_nwp_listener.sh`  
 #### `manage_services/start_stop_weather_bot.sh`
 
 **When:** You want to control **one** service (start, stop, logs, status).
@@ -186,6 +187,8 @@ These are created locally, copied to the VM, or generated during setup.
 | `~/.kalshi/kalshi_api_key.txt` | Kalshi API private key (PEM). Copy from local before running `first_time_vm_setup.sh`. |
 | `~/.kalshi/kalshi_api_key_id` | Kalshi API key ID. Created by `first_time_vm_setup.sh`. |
 | `~/.kalshi/synoptic_token` | Synoptic API token. Created by `first_time_vm_setup.sh`. |
+| `~/.kalshi/aws_access_key_id` | AWS Access Key. For NWP listener (optional). |
+| `~/.kalshi/aws_secret_access_key` | AWS Secret Key. For NWP listener (optional). |
 | `~/collector-data/` | Parquet output. Created by setup. Mounted into containers. |
 
 ### On your local machine

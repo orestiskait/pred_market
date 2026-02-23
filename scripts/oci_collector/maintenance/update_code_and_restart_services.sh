@@ -1,5 +1,6 @@
 #!/bin/bash
-# Pull latest code from GitHub, rebuild the Docker image, and restart Kalshi listener, Synoptic listener, and weather bot.
+# Pull latest code from GitHub, rebuild the Docker image, and restart all services:
+# Kalshi listener, Synoptic listener (incl. aviationweather METAR), NWP listener, weather bot.
 # Safe to re-run at any time — services are only down for the rebuild+restart window.
 #
 # Usage (on the VM):
@@ -48,8 +49,8 @@ echo ""
 echo "[update] Rebuilding Docker image..."
 $DOCKER build -f "$REPO_DIR/services/Dockerfile" -t "$IMAGE" "$REPO_DIR"
 
-# ── Restart Kalshi listener, Synoptic listener, weather bot ──────────────────
-echo "[update] Restarting Kalshi listener, Synoptic listener, and weather bot..."
+# ── Restart all services (Kalshi, Synoptic+aviationweather, NWP, weather bot) ─
+echo "[update] Restarting all services..."
 "$START_ALL_SCRIPT" start
 
 echo ""
