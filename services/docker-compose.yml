@@ -1,5 +1,5 @@
 # =============================================================================
-# Docker Compose — Kalshi listener, Synoptic listener, weather bot
+# Docker Compose — Kalshi listener, Synoptic listener, weather bot, NWP listener
 # =============================================================================
 # Runs three services:
 #
@@ -48,6 +48,23 @@ services:
     command: python -m services.bot.weather_bot
     env_file:
       - ${SHARED_ENV_FILE:-.env}
+    volumes:
+      - ${DATA_DIR:-../data}:/app/data
+    networks:
+      - collector-net
+
+  # ── NWP SNS Listener (real-time weather model data ingest) ────────────────
+  nwp-listener:
+    image: kalshi-services:latest
+    container_name: nwp-listener
+    restart: unless-stopped
+    command: python -m services.weather.sns_listener
+    env_file:
+      - ${SHARED_ENV_FILE:-.env}
+    environment:
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
     volumes:
       - ${DATA_DIR:-../data}:/app/data
     networks:

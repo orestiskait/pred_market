@@ -37,6 +37,8 @@
 #   kalshi_api_key.txt   - Kalshi private key PEM
 #   kalshi_api_key_id    - Kalshi API key ID (one line)
 #   synoptic_token       - Synoptic API token (one line)
+#   aws_access_key_id    - AWS Access Key ID (one line)
+#   aws_secret_access_key - AWS Secret Access Key (one line)
 # =============================================================================
 credentials:
   # Used by: config.py (make_kalshi_clients, get_synoptic_token)
@@ -44,6 +46,8 @@ credentials:
   kalshi_private_key: "kalshi_api_key.txt"   # Kalshi listener, weather bot (via make_kalshi_clients)
   kalshi_api_key_id: "kalshi_api_key_id"     # Kalshi listener, weather bot (via make_kalshi_clients)
   synoptic_token: "synoptic_token"            # Synoptic listener (via get_synoptic_token)
+  aws_access_key_id: "aws_access_key_id"      # NWP listener
+  aws_secret_access_key: "aws_secret_access_key" # NWP listener
 
 # =============================================================================
 # KALSHI API
@@ -84,6 +88,8 @@ event_series:
   synoptic_listener:
     - "KXHIGHCHI"
   weather_bot:
+    - "KXHIGHCHI"
+  nwp_listener:
     - "KXHIGHCHI"
   research:
     - "KXHIGHCHI"
@@ -161,6 +167,46 @@ rrfs:
 
 nbm:
   max_forecast_hour: 36   # hourly out to 36h; extended for 01/07/13/19Z cycles
+
+# =============================================================================
+# NWP LISTENER — Real-time weather model ingest via AWS SNS
+# =============================================================================
+# Used by: services/weather/sns_listener.py ONLY
+#
+# Subscribes to NOAA AWS SNS topics for new model data. Receives S3 events
+# via SQS long-polling, downloads point data for configured stations, and
+# saves with latency tracking.
+#
+# Stations are derived from event_series.nwp_listener via the market registry.
+# Adding a new city: just add its series prefix to event_series.nwp_listener.
+# =============================================================================
+nwp_listener:
+  aws_region: us-east-1
+  sqs_queue_prefix: pred-market-nwp
+  poll_interval_seconds: 20
+  delete_queue_on_shutdown: true
+  models:
+    hrrr:
+      sns_topic_arn: "arn:aws:sns:us-east-1:123901341784:NewHRRRObject"
+      s3_bucket: "noaa-hrrr-bdp-pds"
+      enabled: true
+    rrfs:
+      sns_topic_arn: "arn:aws:sns:us-east-1:709902155096:NewRRFSObject"
+      s3_bucket: "noaa-rrfs-pds"
+      enabled: true
+    nbm:
+      sns_topic_arn: "arn:aws:sns:us-east-1:123901341784:NewNBMCOGObject"
+      s3_bucket: "noaa-nbm-pds"
+      enabled: true
+    # --- MADIS observation sources (same SNS topic, different S3 key patterns) ---
+    madis_metar:
+      sns_topic_arn: "arn:aws:sns:us-east-1:123901341784:NewMADISObject"
+      s3_bucket: "noaa-madis-pds"
+      enabled: true
+    madis_omo:
+      sns_topic_arn: "arn:aws:sns:us-east-1:123901341784:NewMADISObject"
+      s3_bucket: "noaa-madis-pds"
+      enabled: true
 
 # =============================================================================
 # WEATHER BOT — Paper trading strategy

@@ -226,3 +226,15 @@ def synoptic_station_for_icao(icao: str) -> str | None:
         if mc.icao == icao:
             return mc.synoptic_station or None
     return None
+
+
+def series_for_icao(icao: str) -> str | None:
+    """Return Kalshi event-series prefix for the given ICAO (e.g. KMDW -> KXHIGHCHI).
+
+    Used to filter market snapshots by station. Returns None if no series
+    is configured for that ICAO.
+    """
+    for mc in KALSHI_MARKET_REGISTRY.values():
+        if mc.icao == icao:
+            return mc.series_prefix
+    return None

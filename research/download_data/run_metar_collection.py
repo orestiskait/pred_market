@@ -1,7 +1,8 @@
-"""Pull METAR (hourly + SPECI) for all days that have both IEM and Synoptic ASOS data.
+"""Pull METAR for all days that have both IEM and Synoptic ASOS data.
 
 Uses the same overlap dates as the ASOS vs CLI plateau comparison. Fetches from
-AWC API and saves to awc_metar/ (KMDW_YYYY-MM-DD.parquet).
+AWC API and saves to awc_metar/ (KMDW_YYYY-MM-DD.parquet). Differentiates T-group
+(0.1°C) vs body (integer °C) via temp_high_accuracy.
 
 Usage:
     python -m research.download_data.run_metar_collection --station KMDW
@@ -28,7 +29,7 @@ from research.weather.iem_awc_station_registry import station_for_icao
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Pull METAR/SPECI for overlap days (IEM + Synoptic + CLI)",
+        description="Pull METAR for overlap days (IEM + Synoptic + CLI)",
     )
     parser.add_argument("--config", default=None, help="Path to config.yaml")
     parser.add_argument(
@@ -73,7 +74,7 @@ def main():
     stn = station_for_icao(args.station)
     fetcher = AWCMETARFetcher(data_dir=data_dir)
 
-    print(f"METAR/SPECI collection for {args.station} ({stn.iata})")
+    print(f"METAR collection for {args.station} ({stn.iata})")
     print(f"  Overlap days (IEM ∩ Synoptic ∩ CLI): {len(overlap)}")
     print(f"  Range: {overlap[0]} → {overlap[-1]}")
     print(f"  Output: {fetcher.data_dir}/")

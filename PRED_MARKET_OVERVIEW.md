@@ -44,10 +44,16 @@ Station mapping (e.g. `KXHIGHCHI` → KMDW, `KXHIGHNY` → KNYC) is configured i
 
 ```
 pred_market/
-├── services/                  # Kalshi listener, Synoptic listener, bot
+├── services/                  # Kalshi, Synoptic, Bot, Weather (NWP/MADIS)
 │   ├── kalshi/listener.py     # Live Kalshi WebSocket listener
 │   ├── synoptic/listener.py   # Synoptic weather WebSocket listener
 │   ├── bot/weather_bot.py     # Paper-trading weather arbitrage bot
+│   ├── weather/               # Weather data infrastructure
+│   │   ├── nwp/               # HRRR, RRFS, NBM, RTMA-RU fetchers
+│   │   ├── madis/             # MADIS METAR and OMO NetCDF fetchers
+│   │   ├── sns_listener.py    # Real-time NWP + MADIS ingest via AWS SNS
+│   │   ├── station_registry.py # NWP/MADIS station registry
+│   │   └── storage.py         # Real-time parquet storage with latency tracking
 │   ├── core/                  # Config, service, storage
 │   ├── markets/               # Registry, ticker resolution
 │   ├── config.yaml
@@ -55,14 +61,14 @@ pred_market/
 ├── data/                      # All data outputs (see DATA_SOURCES.txt)
 │   └── DATA_SOURCES.txt       # Folder | Source | What it is
 ├── research/
-│   ├── download_data/         # Scripts that fetch data (IEM, AWC)
+│   ├── download_data/         # Scripts that fetch data (IEM, AWC, NWP runners)
 │   │   ├── iem_asos_1min.py   # IEM ASOS 1-min
 │   │   ├── awc_metar.py       # AWC METAR
 │   │   ├── iem_daily_climate.py # IEM NWS Daily Climate (CLI)
-│   │   └── run_weather_collection.py
+│   │   └── run_nwp_collection.py # Multi-model NWP runner
 │   ├── weather/               # Orchestrator (observations) and station registry
 │   └── weather_discrepancy_analysis.py  # ASOS vs official high comparison
-├── scripts/oci_collector/     # OCI deployment (Kalshi listener, Synoptic listener, bot)
+├── scripts/oci_collector/     # OCI deployment (all services)
 └── pred_env/                  # Python virtual environment
 ```
 
@@ -99,11 +105,17 @@ pred_env/bin/python -m services.kalshi.listener
 # Live Synoptic listener
 pred_env/bin/python -m services.synoptic.listener
 
+# Weather SNS listener (real-time NWP + MADIS ingest via AWS SNS)
+pred_env/bin/python -m services.weather.sns_listener
+
 # Weather arbitrage bot
 pred_env/bin/python -m services.bot.weather_bot
 
 # Historical weather data (ASOS, METAR, daily climate)
 pred_env/bin/python -m research.download_data.run_weather_collection
+
+# Historical NWP data (HRRR, RRFS, NBM, RTMA-RU)
+pred_env/bin/python -m research.download_data.run_nwp_collection
 ```
 
 ### Data Layout (project root data/)
@@ -111,6 +123,8 @@ pred_env/bin/python -m research.download_data.run_weather_collection
 - `data/kalshi_market_snapshots/` — Kalshi market snapshots
 - `data/kalshi_orderbook_snapshots/` — Orderbook depth
 - `data/synoptic_weather_observations/` — Synoptic real-time weather
+- `data/nwp_realtime/<model>/` — Real-time NWP gridded forecasts
+- `data/madis_realtime/<source>/` — Real-time MADIS observations (METAR/OMO)
 - `data/iem_asos_1min/` — IEM ASOS 1-min temperature
 - `data/awc_metar/` — AWC METAR observations
 - `data/iem_daily_climate/` — IEM NWS Daily Climate (CLI)

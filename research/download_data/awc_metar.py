@@ -2,9 +2,9 @@
 
 Data source: https://aviationweather.gov/api/data/metar
 
-Fetches decoded METAR reports (roughly hourly routine + SPECI when conditions
-change). Provides temp/dewpoint, wind, visibility, ceiling, and 6-hour/24-hour
-extremes when embedded in reports. No authentication required.
+Fetches decoded METAR reports (hourly routine + specials). Provides temp/dewpoint.
+Differentiates T-group (0.1°C precision) vs body (integer °C) via temp_high_accuracy.
+No authentication required.
 """
 
 from __future__ import annotations
@@ -36,16 +36,6 @@ def _parse_high_accuracy_temp(raw_ob: str) -> float | None:
     if not raw_ob:
         return None
     m = re.search(r'\bT([01])(\d{3})', raw_ob)
-    if m:
-        sign = 1 if m.group(1) == '0' else -1
-        return sign * int(m.group(2)) / 10.0
-    return None
-
-
-def _parse_6hr_max_temp(raw_ob: str) -> float | None:
-    if not raw_ob:
-        return None
-    m = re.search(r'\b1([01])(\d{3})\b', raw_ob)
     if m:
         sign = 1 if m.group(1) == '0' else -1
         return sign * int(m.group(2)) / 10.0
@@ -109,36 +99,19 @@ class AWCMETARFetcher(WeatherFetcherBase):
             parsed_high_acc_c = _parse_high_accuracy_temp(raw_ob)
             if parsed_high_acc_c is not None:
                 temp_c = parsed_high_acc_c
+                temp_high_accuracy = True
             else:
                 temp_c = obs.get("temp")
-
-            parsed_max_6hr_c = _parse_6hr_max_temp(raw_ob)
-            if parsed_max_6hr_c is not None:
-                max_6hr_c = parsed_max_6hr_c
-            else:
-                max_6hr_c = obs.get("maxT")
+                temp_high_accuracy = False
 
             row = {
                 "station": station.icao,
-                "station_iata": station.iata,
-                "city": station.city,
-                "timezone": station.tz,
                 "valid_utc": report_time,
-                "valid_local": report_time.tz_convert(station.tz).tz_localize(None),
-                "metar_type": obs.get("metarType", ""),
+                "temp_high_accuracy": temp_high_accuracy,
                 "temp_c": temp_c,
-                "dewp_c": obs.get("dewp"),
                 "temp_f": _c_to_f(temp_c),
+                "dewp_c": obs.get("dewp"),
                 "dewp_f": _c_to_f(obs.get("dewp")),
-                "max_temp_6hr_c": max_6hr_c,
-                "min_temp_6hr_c": obs.get("minT"),
-                "max_temp_6hr_f": _c_to_f(max_6hr_c),
-                "min_temp_6hr_f": _c_to_f(obs.get("minT")),
-                "max_temp_24hr_c": obs.get("maxT24"),
-                "min_temp_24hr_c": obs.get("minT24"),
-                "max_temp_24hr_f": _c_to_f(obs.get("maxT24")),
-                "min_temp_24hr_f": _c_to_f(obs.get("minT24")),
-                "raw_ob": raw_ob,
             }
             rows.append(row)
 
@@ -165,24 +138,20 @@ class AWCMETARFetcher(WeatherFetcherBase):
         raw_ob = obs.get("rawOb", "")
 
         parsed_high_acc_c = _parse_high_accuracy_temp(raw_ob)
-        temp_c = parsed_high_acc_c if parsed_high_acc_c is not None else obs.get("temp")
-        parsed_max_6hr_c = _parse_6hr_max_temp(raw_ob)
-        max_6hr_c = parsed_max_6hr_c if parsed_max_6hr_c is not None else obs.get("maxT")
+        if parsed_high_acc_c is not None:
+            temp_c = parsed_high_acc_c
+            temp_high_accuracy = True
+        else:
+            temp_c = obs.get("temp")
+            temp_high_accuracy = False
 
         row = {
             "station": station.icao,
-            "station_iata": station.iata,
-            "city": station.city,
-            "timezone": station.tz,
             "valid_utc": report_time,
-            "valid_local": report_time.tz_convert(station.tz).tz_localize(None),
-            "metar_type": obs.get("metarType", ""),
+            "temp_high_accuracy": temp_high_accuracy,
             "temp_c": temp_c,
             "temp_f": _c_to_f(temp_c),
             "dewp_c": obs.get("dewp"),
             "dewp_f": _c_to_f(obs.get("dewp")),
-            "max_temp_6hr_c": max_6hr_c,
-            "max_temp_6hr_f": _c_to_f(max_6hr_c),
-            "raw_ob": raw_ob,
         }
         return pd.DataFrame([row])

@@ -18,31 +18,15 @@ if str(_project_root) not in sys.path:
 
 from services.core.config import get_event_series
 from services.tz import utc_today
-from research.download_data.nwp_base import NWPPointFetcher
-from research.weather.hrrr_station_registry import (
-    hrrr_station_for_icao,
-    hrrr_stations_for_series,
-    HRRRStation,
+from services.weather.nwp.base import NWPPointFetcher
+from services.weather.nwp import _load_models, MODEL_REGISTRY
+from services.weather.station_registry import (
+    nwp_station_for_icao,
+    nwp_stations_for_series,
+    NWPStation,
 )
 
 logger = logging.getLogger(__name__)
-
-MODEL_REGISTRY: dict[str, type[NWPPointFetcher]] = {}
-
-
-def _load_models() -> None:
-    """Lazy-import fetcher classes to populate MODEL_REGISTRY."""
-    if MODEL_REGISTRY:
-        return
-    from research.download_data.hrrr import HRRRFetcher
-    from research.download_data.rtma_ru import RTMARUFetcher
-    from research.download_data.rrfs import RRFSFetcher
-    from research.download_data.nbm import NBMFetcher
-
-    MODEL_REGISTRY["hrrr"] = HRRRFetcher
-    MODEL_REGISTRY["rtma_ru"] = RTMARUFetcher
-    MODEL_REGISTRY["rrfs"] = RRFSFetcher
-    MODEL_REGISTRY["nbm"] = NBMFetcher
 
 
 # ------------------------------------------------------------------------------
@@ -59,15 +43,15 @@ CONFIG_PATH = _project_root / "services" / "config.yaml"
 # ------------------------------------------------------------------------------
 
 
-def _resolve_stations(station_overrides: list[str], config_path: Path) -> list[HRRRStation]:
+def _resolve_stations(station_overrides: list[str], config_path: Path) -> list[NWPStation]:
     if station_overrides:
-        return [hrrr_station_for_icao(icao) for icao in station_overrides]
+        return [nwp_station_for_icao(icao) for icao in station_overrides]
 
     import yaml
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
     series = get_event_series(cfg, "research")
-    stations = hrrr_stations_for_series(series)
+    stations = nwp_stations_for_series(series)
 
     if not stations:
         logger.error("No research stations configured in config.yaml")
@@ -77,7 +61,7 @@ def _resolve_stations(station_overrides: list[str], config_path: Path) -> list[H
 
 def run_latest(
     fetcher: NWPPointFetcher,
-    stations: list[HRRRStation],
+    stations: list[NWPStation],
     max_fxx: int | None = None,
 ) -> None:
     fxx_range = range(0, max_fxx + 1) if max_fxx is not None else None
@@ -98,7 +82,7 @@ def run_latest(
 
 def run_backfill(
     fetcher: NWPPointFetcher,
-    stations: list[HRRRStation],
+    stations: list[NWPStation],
     start: date,
     end: date,
     cycles: list[int] | None = None,

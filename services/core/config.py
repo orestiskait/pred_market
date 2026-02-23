@@ -112,6 +112,14 @@ def get_synoptic_token(config: dict) -> str:
     return _read_credential(config, "synoptic_token")
 
 
+def get_aws_credentials(config: dict) -> tuple[str, str]:
+    """Return (aws_access_key_id, aws_secret_access_key) from credentials."""
+    return (
+        _read_credential(config, "aws_access_key_id"),
+        _read_credential(config, "aws_secret_access_key"),
+    )
+
+
 def build_synoptic_ws_url(
     token: str,
     stations: list[str],

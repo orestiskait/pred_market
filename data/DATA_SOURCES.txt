@@ -7,10 +7,12 @@ kalshi_orderbook_snapshots | Kalshi WebSocket | Orderbook depth
 synoptic_weather_observations | Synoptic WebSocket + REST | ASOS 1-min (live + backfill). source: live|backfill; live wins on dedup.
 weather_bot_paper_trades | Paper execution | Bot trade log (CSV + parquet YYYY-MM-DD.parquet)
 kalshi_historical | Kalshi REST API | Historical candlesticks and trades (backfill)
-hrrr | NOAA HRRR via AWS S3 (noaa-hrrr-bdp-pcs) | HRRR 15-min sub-hourly 3km point forecasts (2m temp) at station coordinates
-rtma_ru | NOAA RTMA-RU via AWS S3 (noaa-rtma-pds) | RTMA Rapid Update 2.5km analysis (2m temp) at station coordinates
-rrfs | NOAA RRFS via AWS S3 (noaa-rrfs-pds) | RRFS 3km hourly point forecasts (2m temp) at station coordinates (prototype, paused Dec 2024)
-nbm | NOAA NBM via AWS S3 (noaa-nbm-grib2-pds) | NBM 2.5km bias-corrected hourly point forecasts (2m temp) at station coordinates
+nwp_realtime/hrrr | NOAA HRRR (AWS S3) | HRRR 15-min sub-hourly point forecasts (live ingest + latency tracking)
+nwp_realtime/rtma_ru | NOAA RTMA-RU (AWS S3) | RTMA Rapid Update 2.5km analysis (live ingest + latency tracking)
+nwp_realtime/rrfs | NOAA RRFS (AWS S3) | RRFS 3km hourly point forecasts (live ingest + latency tracking)
+nwp_realtime/nbm | NOAA NBM COG (AWS S3) | NBM 2.5km bias-corrected hourly point forecasts (live ingest + latency tracking)
+madis_realtime/madis_metar | NOAA MADIS (AWS S3) | Decoded METAR with high-precision T-groups (temp/dew 0.1C)
+madis_realtime/madis_omo | NOAA MADIS (AWS S3) | One-Minute ASOS (OMO) high-frequency sensor snapshots
 
 Download scripts: research/download_data/
   iem_asos_1min.py - IEM ASOS 1-min
@@ -20,11 +22,12 @@ Download scripts: research/download_data/
   run_metar_collection.py - METAR/SPECI for overlap days (IEM + Synoptic + CLI)
   iem_daily_climate.py - IEM Daily Climate
   run_weather_collection.py - Run all weather downloads
-  nwp_base.py - Base class for NWP model point extraction
-  hrrr.py - HRRR 15-min sub-hourly fetcher
-  rtma_ru.py - RTMA Rapid Update analysis fetcher
-  rrfs.py - RRFS hourly forecast fetcher
-  nbm.py - NBM bias-corrected forecast fetcher
-  run_nwp_collection.py - Unified NWP script for all models (latest + backfill)
-  run_hrrr_collection.py - HRRR-specific convenience script
-  All NWP fetchers require: pip install herbie-data xarray cfgrib eccodes
+  run_nwp_collection.py - Unified NWP backfill script for all models (HRRR, NBM, RRFS, RTMA-RU)
+  run_hrrr_collection.py - HRRR-specific backfill script
+
+Real-time services: services/
+  weather/sns_listener.py - Live ingest for all NWP and MADIS data via AWS SNS
+  weather/nwp/          - Shared fetcher logic for HRRR, RRFS, NBM, RTMA-RU
+  weather/madis/        - Shared fetcher logic for MADIS METAR and OMO NetCDF data
+
+Dependencies: pip install boto3 herbie-data xarray cfgrib eccodes rasterio netCDF4
