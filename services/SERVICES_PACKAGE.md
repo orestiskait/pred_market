@@ -123,8 +123,7 @@ data/
 ├── iem_asos_1min/            # IEM ASOS 1-min temperature
 ├── awc_metar/                # AWC METAR observations
 ├── iem_daily_climate/        # IEM NWS Daily Climate (CLI)
-├── weather_bot_paper_trades/ # Paper trade logs
-│   └── paper_trades.csv
+├── weather_bot_paper_trades/ # Paper trade logs (parquet)
 └── DATA_SOURCES.txt          # Source and content of each folder
 ```
 

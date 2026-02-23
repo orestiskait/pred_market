@@ -13,6 +13,3 @@ Data source: NOAA NBM COG via AWS S3 (s3://noaa-nbm-pds), us-east-1, public, no 
 from __future__ import annotations
 
 from services.weather.nwp.nbm_cog import NBMCOGFetcher
-
-# Alias for backward compatibility; NBM now uses COG
-NBMFetcher = NBMCOGFetcher

@@ -28,9 +28,9 @@ def _load_models() -> None:
     from services.weather.nwp.hrrr import HRRRFetcher
     from services.weather.nwp.rtma_ru import RTMARUFetcher
     from services.weather.nwp.rrfs import RRFSFetcher
-    from services.weather.nwp.nbm import NBMFetcher
+    from services.weather.nwp.nbm import NBMCOGFetcher
 
     MODEL_REGISTRY["hrrr"] = HRRRFetcher
     MODEL_REGISTRY["rtma_ru"] = RTMARUFetcher
     MODEL_REGISTRY["rrfs"] = RRFSFetcher
-    MODEL_REGISTRY["nbm"] = NBMFetcher
+    MODEL_REGISTRY["nbm"] = NBMCOGFetcher

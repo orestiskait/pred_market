@@ -21,7 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CONFIG="${REPO_DIR}/services/config.yaml"
 
-# Read oci.synoptic_container from config (default: true); fallback to synoptic_enabled
+# Read oci.synoptic_container from config (default: true)
 SYNOPTIC_CONTAINER=true
 if [[ -f "$CONFIG" ]]; then
   val=$(python3 -c "
@@ -29,8 +29,7 @@ import yaml
 try:
     with open('$CONFIG') as f:
         cfg = yaml.safe_load(f)
-    oci = cfg.get('oci', {})
-    v = oci.get('synoptic_container', oci.get('synoptic_enabled', True))
+    v = cfg.get('oci', {}).get('synoptic_container', True)
     print(str(v).lower())
 except Exception:
     print('true')

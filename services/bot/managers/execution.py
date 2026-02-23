@@ -25,7 +25,6 @@ PAPER / LIVE EQUIVALENCE:
 
 from __future__ import annotations
 
-import csv
 import logging
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -53,7 +52,7 @@ class ExecutionManager:
         self.event_bus.subscribe(OrderbookUpdateEvent, self.on_orderbook_update)
         self.event_bus.subscribe(MarketDiscoveryEvent, self.on_market_discovery)
 
-        # Paper trade persistence: CSV (legacy) + Parquet (primary)
+        # Paper trade persistence: Parquet
         if Path("/app/data").exists():
             data_dir = Path("/app/data")
         else:
@@ -62,46 +61,11 @@ class ExecutionManager:
         self._data_dir = data_dir
         self._parquet_storage = ParquetStorage(str(data_dir))
 
-        self.csv_log = data_dir / "weather_bot_paper_trades" / "paper_trades.csv"
-        self.csv_log.parent.mkdir(parents=True, exist_ok=True)
-        self._init_csv()
-
         logger.info("ExecutionManager initialized (paper_mode is per-strategy)")
-
-    # ------------------------------------------------------------------
-    # CSV logging
-    # ------------------------------------------------------------------
-
-    def _init_csv(self):
-        if not self.csv_log.exists():
-            with open(self.csv_log, "w", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    "execution_timestamp_utc",
-                    "strategy_id",
-                    "event_ticker",
-                    "series",
-                    "station",
-                    "market_ticker",
-                    "side",
-                    "contracts_filled",
-                    "avg_fill_price_cents",
-                    "total_cost_cents",
-                    "strategy_event_spent_cents",
-                ])
 
     def _log_trade(self, intent: OrderIntent, filled: int, avg_price: float, total_cost: int):
         key = (intent.strategy_id, intent.event_ticker)
         now = datetime.now(timezone.utc)
-        with open(self.csv_log, "a", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                now.isoformat(), intent.strategy_id, intent.event_ticker,
-                intent.series, intent.station, intent.market_ticker,
-                intent.side, filled, round(avg_price, 2), total_cost,
-                self._spent[key],
-            ])
-
         row = {
             "execution_ts": now,
             "strategy_id": intent.strategy_id,

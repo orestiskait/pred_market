@@ -23,7 +23,7 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 from services.weather.nwp.hrrr import HRRRFetcher
-from services.weather.nwp.nbm import NBMFetcher
+from services.weather.nwp.nbm import NBMCOGFetcher
 from services.weather.nwp.rrfs import RRFSFetcher
 from services.weather.station_registry import nwp_station_for_icao
 
@@ -56,7 +56,7 @@ def main() -> None:
 
     # NBM: f02 only, fetch from start-1d
     print("--- NBM (f02, 2h prior) ---")
-    nbm = NBMFetcher.from_config(CONFIG_PATH)
+    nbm = NBMCOGFetcher.from_config(CONFIG_PATH)
     nbm_start = start_date - timedelta(days=1)
     df_nbm = nbm.fetch_date_range(
         nbm_start, end_date, stations,
