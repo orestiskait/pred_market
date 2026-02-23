@@ -22,6 +22,7 @@ case "$cmd" in
   stop)
     "$SCRIPT_DIR/start_stop_kalshi_listener.sh" stop
     "$SCRIPT_DIR/start_stop_synoptic_listener.sh" stop
+    "$SCRIPT_DIR/start_stop_nwp_listener.sh" stop
     "$SCRIPT_DIR/start_stop_weather_bot.sh" stop
     ;;
 
@@ -30,6 +31,8 @@ case "$cmd" in
     "$SCRIPT_DIR/start_stop_kalshi_listener.sh" logs &
     echo "Synoptic Listener logs:"
     "$SCRIPT_DIR/start_stop_synoptic_listener.sh" logs &
+    echo "NWP Listener logs:"
+    "$SCRIPT_DIR/start_stop_nwp_listener.sh" logs &
     echo "Weather Bot logs:"
     "$SCRIPT_DIR/start_stop_weather_bot.sh" logs &
     wait
@@ -38,6 +41,7 @@ case "$cmd" in
   status)
     "$SCRIPT_DIR/start_stop_kalshi_listener.sh" status
     "$SCRIPT_DIR/start_stop_synoptic_listener.sh" status
+    "$SCRIPT_DIR/start_stop_nwp_listener.sh" status
     "$SCRIPT_DIR/start_stop_weather_bot.sh" status
     ;;
 
@@ -45,6 +49,8 @@ case "$cmd" in
     "$SCRIPT_DIR/start_stop_kalshi_listener.sh" start
     echo "---"
     "$SCRIPT_DIR/start_stop_synoptic_listener.sh" start
+    echo "---"
+    "$SCRIPT_DIR/start_stop_nwp_listener.sh" start
     echo "---"
     "$SCRIPT_DIR/start_stop_weather_bot.sh" start
     echo ""
