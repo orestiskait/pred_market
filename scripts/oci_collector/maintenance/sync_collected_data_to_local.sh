@@ -66,6 +66,8 @@ REMOTE_DIRS=(
   "synoptic_weather_observations"
   "kalshi_historical"
   "weather_bot_paper_trades"
+  "nwp_realtime"
+  "madis_realtime"
 )
 
 TOTAL_FILES=0
