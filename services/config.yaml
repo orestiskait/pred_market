@@ -2,6 +2,13 @@
 # Services Configuration
 # ============================================================
 #
+# OCI deployment (scripts/oci_collector): which services to start
+# ============================================================
+oci:
+  synoptic_enabled: false   # Synoptic streaming not allowed for token; set true when enabled
+
+# ============================================================
+#
 # Single config file for all services. Each parameter documents which
 # consumer(s) use it. Paths are relative to the project root.
 #
