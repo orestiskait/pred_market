@@ -55,12 +55,13 @@ HRRR_PATTERN = re.compile(
     r"hrrr\.(\d{8})/conus/hrrr\.t(\d{2})z\.wrf(?:subhf|sfcf)(\d{2,3})\.grib2$"
 )
 
-# RRFS: rrfs_a/rrfs_a.YYYYMMDD/HH/control/conus/rrfs.tCCz.conus.f[FH].grib2
-# RRFS sub-hourly:  ...rrfs.tCCz.conus.f[FH].subh.grib2
+# RRFS: rrfs_a/rrfs.YYYYMMDD/HH/.../rrfs.tCCz.prslev.3km.f[FH].conus.grib2
+# Actual formats: prslev.3km, natlev.3km, prslev.2p5km; optional .subh; domain at end
 RRFS_PATTERN = re.compile(
-    r"rrfs\.t(\d{2})z\.conus\.(?:prob\.)?f(\d{2,3})(?:\.subh)?\.grib2$"
+    r"rrfs\.t(\d{2})z\.(?:prslev|natlev)\.(?:3km|2p5km)\.(?:prob\.)?(?:subh\.)?"
+    r"f(\d{2,3})\.(?:conus|na|ak|hi|pr)\.grib2$"
 )
-RRFS_DATE_PATTERN = re.compile(r"rrfs_a\.(\d{8})")
+RRFS_DATE_PATTERN = re.compile(r"rrfs\.(\d{8})")
 
 # NBM COG: blendv4.3/conus/YYYY/MM/DD/HH00/temp/blendv4.3_conus_temp_RUN_VALID.tif
 NBM_COG_PATTERN = re.compile(
