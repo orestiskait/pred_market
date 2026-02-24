@@ -51,7 +51,7 @@ pred_market/
 │   ├── weather/               # Weather data infrastructure
 │   │   ├── nwp/               # HRRR, RRFS, NBM, RTMA-RU fetchers
 │   │   ├── madis/             # MADIS METAR and OMO NetCDF fetchers
-│   │   ├── sns_listener.py    # Real-time NWP + MADIS ingest via AWS SNS
+│   │   ├── nwp_listener.py    # Real-time NWP + MADIS ingest via AWS SNS
 │   │   ├── station_registry.py # NWP/MADIS station registry
 │   │   └── storage.py         # Real-time parquet storage with latency tracking
 │   ├── core/                  # Config, service, storage
@@ -105,8 +105,8 @@ pred_env/bin/python -m services.kalshi.listener
 # Live Synoptic listener
 pred_env/bin/python -m services.synoptic.listener
 
-# Weather SNS listener (real-time NWP + MADIS ingest via AWS SNS)
-pred_env/bin/python -m services.weather.sns_listener
+# NWP + MADIS listener (real-time weather model ingest via AWS SNS)
+pred_env/bin/python -m services.weather.nwp_listener
 
 # Weather arbitrage bot
 pred_env/bin/python -m services.bot.weather_bot

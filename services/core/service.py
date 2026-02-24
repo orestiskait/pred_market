@@ -13,6 +13,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
+import time
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,24 @@ class AsyncService:
 
     def _on_shutdown(self) -> None:
         """Called after all tasks finish — override for cleanup."""
+
+    def _flush(self) -> None:
+        """Override to flush buffered data; called by ``_periodic_flush``."""
+
+    async def _periodic_flush(self, interval: float) -> None:
+        """Run ``self._flush()`` every *interval* seconds while running.
+
+        Reusable loop — avoids duplicating the same flush-timer pattern
+        across multiple listener subclasses.
+        """
+        last = time.monotonic()
+        while self._running:
+            await asyncio.sleep(1)
+            if not self._running:
+                break
+            if time.monotonic() - last >= interval:
+                self._flush()
+                last = time.monotonic()
 
     async def run(self) -> None:
         """Main entry point — runs until SIGINT / SIGTERM."""
@@ -48,3 +68,31 @@ class AsyncService:
         """Signal-safe shutdown trigger."""
         logger.info("Shutdown signal received")
         self._running = False
+
+
+class MetarCollectorMixin:
+    """Mixin that adds METAR collector tasks to a listener service.
+
+    Eliminates duplicated aviationweather collector setup in synoptic
+    and wethr listeners.  Call ``_init_metar_collector`` from __init__
+    and ``_metar_collector_tasks`` from ``_get_tasks``.
+    """
+
+    _metar_collector = None
+
+    def _init_metar_collector(self, config: dict, config_dir: Path) -> None:
+        awc_cfg = config.get("aviationweather_metar_collector", {})
+        if awc_cfg.get("enabled", False):
+            from services.weather.metar_collector import MetarCollector
+
+            self._metar_collector = MetarCollector(
+                config, config_dir, get_running=lambda: self._running
+            )
+
+    def _metar_collector_tasks(self) -> list:
+        if self._metar_collector is None:
+            return []
+        return [
+            self._metar_collector._awc_poll_loop(),
+            self._metar_collector._nws_poll_loop(),
+        ]

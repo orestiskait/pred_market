@@ -28,7 +28,7 @@ Download scripts: research/download_data/
   run_hrrr_collection.py - HRRR-specific backfill script
 
 Real-time services: services/
-  weather/sns_listener.py - Live ingest for NWP and MADIS via AWS SNS
+  weather/nwp_listener.py - Live ingest for NWP and MADIS via AWS SNS
   synoptic/listener.py - Synoptic WebSocket + aviationweather_metar (AWC + NWS) polling
   weather/nwp/          - Shared fetcher logic for HRRR, RRFS, NBM, RTMA-RU
   weather/madis/        - Shared fetcher logic for MADIS METAR and OMO NetCDF data

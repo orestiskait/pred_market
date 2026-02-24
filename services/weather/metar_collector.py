@@ -1,4 +1,4 @@
-"""Aviation Weather METAR collector: AWC API + NWS api.weather.gov.
+"""METAR collector: AWC API + NWS api.weather.gov.
 
 Polls Aviation Weather Center (aviationweather.gov) and NWS api.weather.gov
 (stations/observations — same data that powers weather.gov/wrh/LowTimeseries).
@@ -7,7 +7,7 @@ Uses HTTP conditional GET (If-None-Match/ETag) for AWC when supported.
 Sends identifiable User-Agent per API best practices.
 
 Tracks: saved_ts, ob_time_utc (data reference), temp, raw_ob, RMK portion,
-6hr and 24hr min/max temperature. Runs as a concurrent task in synoptic-listener.
+6hr and 24hr min/max temperature. Runs as a concurrent task inside any listener.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from services.weather.aviationweather_storage import AviationWeatherMetarStorage
+from services.weather.metar_storage import MetarStorage
 from services.weather.metar_parser import MetarParser
 
 logger = logging.getLogger(__name__)
@@ -171,7 +171,7 @@ def _compute_rolling_minmax(
 
 def _add_rolling_minmax(
     df: pd.DataFrame,
-    storage: AviationWeatherMetarStorage,
+    storage: MetarStorage,
     source: str,
     station: str,
 ) -> pd.DataFrame:
@@ -217,7 +217,7 @@ def _add_rolling_minmax(
     return df
 
 
-class AviationWeatherMetarCollector:
+class MetarCollector:
     """Polls AWC and NWS APIs, saves with latency tracking and rolling min/max."""
 
     def __init__(self, config: dict, config_dir: Path, get_running: callable):
@@ -229,10 +229,10 @@ class AviationWeatherMetarCollector:
         self.stations = cfg.get("stations", ["KMDW"])
         self.awc_poll_interval = cfg.get("awc_poll_interval_seconds", 90)
         self.nws_poll_interval = cfg.get("nws_poll_interval_seconds", 300)
-        self.nws_stations = cfg.get("nws_stations", None)  # None = same as stations
+        self.nws_stations = cfg.get("nws_stations", None)
 
         data_dir = (config_dir / config["storage"]["data_dir"]).resolve()
-        self.storage = AviationWeatherMetarStorage(data_dir)
+        self.storage = MetarStorage(data_dir)
 
         self._last_awc: dict[str, datetime] = {}  # station -> last ob_time
         self._last_nws: dict[str, datetime] = {}

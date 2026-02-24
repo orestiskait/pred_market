@@ -1,4 +1,4 @@
-"""Weather SNS Listener: real-time NWP + MADIS data ingest.
+"""NWP + MADIS listener: real-time weather model & observation ingest.
 
 NWP (HRRR, RRFS, NBM): via AWS SNS → SQS notifications.
 MADIS (METAR, OMO): via S3 polling (NOAA SNS topic does not allow external
@@ -12,8 +12,8 @@ When new data is available:
   5. Saves to Parquet with latency tracking metadata
 
 Usage:
-    python -m services.weather.sns_listener
-    python -m services.weather.sns_listener --config path/to/config.yaml
+    python -m services.weather.nwp_listener
+    python -m services.weather.nwp_listener --config path/to/config.yaml
 
 Requires: boto3, netCDF4. AWS credentials (from config) are used ONLY for
 SQS/SNS (queue creation, subscriptions, polling). S3 downloads use anonymous
@@ -786,7 +786,7 @@ class NWPSNSListener(AsyncService):
 
 def main():
     parser = standard_argparser(
-        "Weather SNS listener (real-time NWP + MADIS ingest via AWS SNS)"
+        "NWP + MADIS listener (real-time weather model ingest)"
     )
     args = parser.parse_args()
 

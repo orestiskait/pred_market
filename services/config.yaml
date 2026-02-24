@@ -10,6 +10,7 @@
 #   aviationweather_metar_collector.enabled — AWC + NWS METAR (inside container)
 oci:
   synoptic_container: true  # false = do not start synoptic-listener container
+  wethr_container: true     # false = do not start wethr-listener container
 
 # ============================================================
 #
@@ -18,17 +19,18 @@ oci:
 #
 # Quick reference — which service uses which section:
 #
-#   Section           | Kalshi listener | Synoptic listener | Weather bot | NWP listener | Research scripts
-#   ------------------|-----------------|-------------------|-------------|--------------|------------------
-#   credentials       | ✓               | ✓                 | ✓           |
-#   kalshi             | ✓               |                   | ✓           |
-#   event_series       | kalshi_listener | synoptic_listener | weather_bot | research
-#   event_rollover     | ✓               |                   | ✓           |
-#   storage            | ✓               | ✓                 | ✓           | iem_awc_data_collector, run_weather_collection, weather_discrepancy_analysis
-#   collection         | ✓               |                   |             |
-#   synoptic           |                 | ✓                 |             |              |
-#   aviationweather_metar_collector |   | ✓                 |             |              |
-#   bot                |                 |                   | ✓           |
+#   Section           | Kalshi listener | Synoptic listener | Wethr listener | Weather bot | NWP listener | Research scripts
+#   ------------------|-----------------|-------------------|----------------|-------------|--------------|------------------
+#   credentials       | ✓               | ✓                 | ✓              | ✓           |
+#   kalshi             | ✓               |                   |                | ✓           |
+#   event_series       | kalshi_listener | synoptic_listener | wethr_listener | weather_bot | research
+#   event_rollover     | ✓               |                   |                | ✓           |
+#   storage            | ✓               | ✓                 | ✓              | ✓           | iem_awc_data_collector, run_weather_collection, weather_discrepancy_analysis
+#   collection         | ✓               |                   |                |             |
+#   synoptic           |                 | ✓                 |                |             |              |
+#   wethr_push         |                 |                   | ✓              | ✓           |              |
+#   aviationweather_metar_collector |   | ✓                 | ✓              |             |              |
+#   bot                |                 |                   |                | ✓           |
 #
 # event_series is keyed by consumer (kalshi_listener, synoptic_listener, weather_bot, research).
 # Optional keys: weather_stations (research), events (ticker.py — explicit ticker overrides).
@@ -58,6 +60,7 @@ credentials:
   kalshi_private_key: "kalshi_api_key.txt"   # Kalshi listener, weather bot (via make_kalshi_clients)
   kalshi_api_key_id: "kalshi_api_key_id"     # Kalshi listener, weather bot (via make_kalshi_clients)
   synoptic_token: "synoptic_token"            # Synoptic listener (via get_synoptic_token)
+  wethr_api_key: "wethr_api_key"              # Wethr Push listener, weather bot (via _read_credential)
   aws_access_key_id: "aws_access_key_id"      # NWP listener (SQS/SNS only; S3 uses anonymous)
   aws_secret_access_key: "aws_secret_access_key" # NWP listener (SQS/SNS only; S3 uses anonymous)
 
@@ -98,6 +101,8 @@ event_series:
 
   kalshi_listener: *default_series
   synoptic_listener:
+    - "KXHIGHCHI"
+  wethr_listener:
     - "KXHIGHCHI"
   weather_bot:
     - "KXHIGHCHI"
@@ -172,6 +177,25 @@ synoptic:
   poll_recent_minutes: 120
 
 # =============================================================================
+# WETHR.NET PUSH API — Real-time SSE weather ingest
+# =============================================================================
+# Used by: services/wethr/listener.py, bot/weather_bot.py
+#
+# Streams real-time observations, DSM/CLI releases, and temperature extreme
+# alerts from wethr.net Push API via Server-Sent Events (SSE).
+#
+# enabled — Wethr Push API SSE connection; false = skip
+# stations — override station list; omit → uses event_series.wethr_listener → registry
+#
+# Data stored in: data/wethr_push/<event_type>/<ICAO>_YYYY-MM-DD.parquet
+# Event types: observations, dsm, cli, new_high, new_low
+# =============================================================================
+wethr_push:
+  enabled: true
+  # stations:  # optional override; omit → uses event_series.wethr_listener → registry
+  #   - KMDW
+
+# =============================================================================
 # NWP MODEL DATA — Research
 # =============================================================================
 # Used by: research/download_data/{hrrr,rtma_ru,rrfs}.py, run_nwp_collection.py
@@ -210,7 +234,7 @@ aviationweather_metar_collector:
 # =============================================================================
 # NWP LISTENER — Real-time weather model ingest via AWS SNS
 # =============================================================================
-# Used by: services/weather/sns_listener.py ONLY
+# Used by: services/weather/nwp_listener.py ONLY
 #
 # Subscribes to NOAA AWS SNS topics for new model data. Receives S3 events
 # via SQS long-polling, downloads point data for configured stations, and

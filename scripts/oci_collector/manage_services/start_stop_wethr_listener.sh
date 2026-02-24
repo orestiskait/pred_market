@@ -1,19 +1,17 @@
 #!/bin/bash
-# NWP SNS listener: start / stop / logs / status for the real-time model ingest container.
+# Wethr.net Push API listener: start / stop / logs / status.
 #
 # Usage:
-#   ./start_stop_nwp_listener.sh start   # start NWP listener
-#   ./start_stop_nwp_listener.sh stop    # stop NWP listener
-#   ./start_stop_nwp_listener.sh logs    # tail NWP listener logs
-#   ./start_stop_nwp_listener.sh status  # show container status
+#   ./start_stop_wethr_listener.sh start   # start Wethr listener
+#   ./start_stop_wethr_listener.sh stop    # stop Wethr listener
+#   ./start_stop_wethr_listener.sh logs    # tail Wethr listener logs
+#   ./start_stop_wethr_listener.sh status  # show container status
 set -euo pipefail
 
 CREDS_DIR="${HOME:-/home/ubuntu}/.kalshi"
 DATA_DIR="${HOME:-/home/ubuntu}/collector-data"
-REPO_DIR="${HOME:-/home/ubuntu}/pred_market"
-CONFIG_FILE="${REPO_DIR}/services/config.yaml"
 IMAGE="kalshi-services:latest"
-CONTAINER="nwp-listener"
+CONTAINER="wethr-listener"
 
 DOCKER="docker"
 $DOCKER info &>/dev/null 2>&1 || DOCKER="sudo docker"
@@ -22,8 +20,8 @@ cmd="${1:-start}"
 
 case "$cmd" in
   stop)
-    echo "[start_stop_nwp_listener] Stopping NWP listener..."
-    $DOCKER stop "$CONTAINER" 2>/dev/null || echo "(nwp-listener not running)"
+    echo "[start_stop_wethr_listener] Stopping Wethr listener..."
+    $DOCKER stop "$CONTAINER" 2>/dev/null || echo "(wethr-listener not running)"
     ;;
 
   logs)
@@ -40,20 +38,16 @@ case "$cmd" in
 
     $DOCKER rm -f "$CONTAINER" 2>/dev/null || true
 
-    echo "[start_stop_nwp_listener] Starting NWP listener..."
-    CONFIG_MOUNT=""
-    [[ -f "$CONFIG_FILE" ]] && CONFIG_MOUNT="-v $CONFIG_FILE:/app/services/config.yaml:ro"
-
+    echo "[start_stop_wethr_listener] Starting Wethr listener..."
     $DOCKER run -d \
       --name "$CONTAINER" \
       -e CREDENTIALS_DIR=/app/credentials \
       -v "$CREDS_DIR:/app/credentials:ro" \
       -v "$DATA_DIR:/app/data" \
-      $CONFIG_MOUNT \
       --restart unless-stopped \
-      "$IMAGE" python -m services.weather.nwp_listener
+      "$IMAGE" python -m services.wethr.listener
 
-    echo "[start_stop_nwp_listener] NWP listener running."
+    echo "[start_stop_wethr_listener] Wethr listener running."
     sleep 2
     $DOCKER logs "$CONTAINER" --tail 10
     ;;

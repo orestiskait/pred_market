@@ -60,7 +60,7 @@ services:
     image: kalshi-services:latest
     container_name: nwp-listener
     restart: unless-stopped
-    command: python -m services.weather.sns_listener
+    command: python -m services.weather.nwp_listener
     env_file:
       - ${SHARED_ENV_FILE:-.env}
     environment:

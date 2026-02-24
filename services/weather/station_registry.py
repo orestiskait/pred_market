@@ -4,7 +4,7 @@ Derives NWPStation (with lat/lon coordinates) from the central market registry
 (services.markets.kalshi_registry). Add new cities there; this module exposes
 a coordinate-aware view for all NWP fetchers.
 
-Used by: services/weather/nwp/ (all fetcher classes), services/weather/sns_listener.py
+Used by: services/weather/nwp/ (all fetcher classes), services/weather/nwp_listener.py
 """
 
 from __future__ import annotations

@@ -29,19 +29,17 @@ from services.core.config import (
     load_config,
     get_event_series,
     make_kalshi_clients,
-    get_synoptic_token,
-    build_synoptic_ws_url,
+    _read_credential,
     configure_logging,
     standard_argparser,
 )
 from services.core.service import AsyncService
 from services.kalshi.ws import KalshiWSMixin
-from services.synoptic.ws import SynopticWSMixin
+from services.wethr.sse import WethrSSEMixin
 from services.markets.kalshi_registry import KalshiMarketConfig, KALSHI_MARKET_REGISTRY
-from services.synoptic.station_registry import synoptic_stations_for_series
+from services.wethr.station_registry import wethr_stations_for_series
 from services.markets.ticker import discover_markets, resolve_event_tickers
 
-# Event Driven Architecture
 from services.bot.events import EventBus, WeatherObservationEvent, OrderbookUpdateEvent, MarketDiscoveryEvent
 from services.bot.managers.execution import ExecutionManager
 from services.bot.managers.strategy_manager import StrategyManager
@@ -59,11 +57,12 @@ def _collect_strategy_targets(config: dict) -> list[str]:
     return sorted(targets)
 
 
-class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
+class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
     """Feed Manager / Bot Host for paper-trading weather bot.
 
     Responsible ONLY for:
-      - WebSocket lifecycle management (Kalshi + Synoptic)
+      - WebSocket lifecycle management (Kalshi)
+      - SSE connection to Wethr.net Push API (real-time observations)
       - Parsing raw messages into typed Events
       - Publishing events to the EventBus
       - Periodic market re-discovery
@@ -105,12 +104,9 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
         self.kalshi_ws_url = config["kalshi"]["ws_url"]
         self._kalshi_channels = ["orderbook_delta"]
 
-        # Synoptic — subscribe only to stations we care about
-        self._synoptic_token = get_synoptic_token(config)
-        synoptic_stations = synoptic_stations_for_series(self._target_series)
-        self.synoptic_ws_url = build_synoptic_ws_url(
-            self._synoptic_token, synoptic_stations, ["air_temp"],
-        )
+        # Wethr.net Push API — replaces Synoptic for real-time observations
+        self.wethr_api_key = _read_credential(config, "wethr_api_key")
+        self.wethr_stations = wethr_stations_for_series(self._target_series)
 
         # Event rollover
         rollover = config.get("event_rollover", {})
@@ -130,6 +126,7 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
         logger.info("WEATHER BOT STARTUP")
         logger.info("=" * 60)
         logger.info("Target series (%d): %s", len(self._target_series), self._target_series)
+        logger.info("Wethr stations: %s", self.wethr_stations)
         logger.info("-" * 60)
         logger.info("Strategies (%d):", len(self.strategy_manager.strategies))
         for sid, strat in self.strategy_manager.strategies.items():
@@ -171,14 +168,23 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
         self._kalshi_subscribe_tickers = self.market_tickers
 
     # -------------------------------------------------------------------------
-    # SynopticWSMixin hook
+    # WethrSSEMixin hook — real-time observations
     # -------------------------------------------------------------------------
 
-    def on_synoptic_observation(self, row: dict):
-        """Parse raw Synoptic message → WeatherObservationEvent."""
-        station = row["stid"]
-        temp = row["value"]
-        ob_time_str = row["ob_timestamp"]
+    def on_wethr_observation(self, data: dict, received_ts: datetime):
+        """Parse Wethr.net observation → WeatherObservationEvent."""
+        station = data.get("station_code", "")
+        temp_f = data.get("temperature_fahrenheit")
+        ob_time_str = data.get("observation_time_utc", "")
+
+        if data.get("suspect_temperature"):
+            logger.warning(
+                "Suspect temperature at %s — skipping", station,
+            )
+            return
+
+        if temp_f is None:
+            return
 
         try:
             ob_time = datetime.fromisoformat(ob_time_str.replace("Z", "+00:00"))
@@ -186,11 +192,11 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
             logger.warning("Could not parse timestamp: %s", ob_time_str)
             return
 
-        logger.info("🌡️ [%s] %.1f°F at %s", station, temp, ob_time_str)
+        logger.info("[%s] %.1f°F at %s", station, temp_f, ob_time_str)
 
         self.event_bus.publish(WeatherObservationEvent(
             station=station,
-            temp=temp,
+            temp=temp_f,
             ob_time=ob_time,
         ))
 
@@ -252,7 +258,7 @@ class WeatherBot(AsyncService, KalshiWSMixin, SynopticWSMixin):
     # -------------------------------------------------------------------------
 
     def _get_tasks(self) -> list:
-        tasks = [self.kalshi_ws_loop(), self.synoptic_ws_loop()]
+        tasks = [self.kalshi_ws_loop(), self.wethr_sse_loop()]
         if self.rediscover_interval > 0:
             tasks.append(self._rediscover_loop())
         return tasks
