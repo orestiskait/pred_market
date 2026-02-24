@@ -1,112 +1,68 @@
-# ============================================================
+# =============================================================================
 # Services Configuration
-# ============================================================
+# =============================================================================
 #
-# OCI deployment (scripts/oci_collector): which services to start
-# ============================================================
-# Three separate toggles for the synoptic-listener container:
-#   synoptic_container — start the container (runs synoptic + aviationweather when enabled)
-#   synoptic.enabled   — Synoptic API polling/streaming (inside container)
-#   aviationweather_metar_collector.enabled — AWC + NWS METAR (inside container)
+# Two containers:
+#   kalshi-listener  — Kalshi WebSocket market data snapshots
+#   weather-bot      — Paper trading + wethr real-time ingest + NWP model data
+#
+# OCI deployment: toggle each container on/off without touching code.
+# =============================================================================
 oci:
-  synoptic_container: true  # false = do not start synoptic-listener container
-  wethr_container: true     # false = do not start wethr-listener container
-
-# ============================================================
-#
-# Single config file for all services. Each parameter documents which
-# consumer(s) use it. Paths are relative to the project root.
-#
-# Quick reference — which service uses which section:
-#
-#   Section           | Kalshi listener | Synoptic listener | Wethr listener | Weather bot | NWP listener | Research scripts
-#   ------------------|-----------------|-------------------|----------------|-------------|--------------|------------------
-#   credentials       | ✓               | ✓                 | ✓              | ✓           |
-#   kalshi             | ✓               |                   |                | ✓           |
-#   event_series       | kalshi_listener | synoptic_listener | wethr_listener | weather_bot | research
-#   event_rollover     | ✓               |                   |                | ✓           |
-#   storage            | ✓               | ✓                 | ✓              | ✓           | iem_awc_data_collector, run_weather_collection, weather_discrepancy_analysis
-#   collection         | ✓               |                   |                |             |
-#   synoptic           |                 | ✓                 |                |             |              |
-#   wethr_push         |                 |                   | ✓              | ✓           |              |
-#   aviationweather_metar_collector |   | ✓                 | ✓              |             |              |
-#   bot                |                 |                   |                | ✓           |
-#
-# event_series is keyed by consumer (kalshi_listener, synoptic_listener, weather_bot, research).
-# Optional keys: weather_stations (research), events (ticker.py — explicit ticker overrides).
-#
-# Adding a new city/market:
-#   1. Add KalshiMarketConfig in services/markets/kalshi_registry.py.
-#   2. Add the series prefix to event_series.<consumer> for each consumer that needs it.
-#
-# ============================================================
+  kalshi_listener: true
+  weather_bot: true
 
 # =============================================================================
-# CREDENTIALS (secrets in files, paths in config)
+# CREDENTIALS
 # =============================================================================
-# All secrets live in files under credentials.dir. No .env needed.
+# All secrets live in files under credentials.dir.
 # Override dir with CREDENTIALS_DIR env (e.g. /app/credentials in Docker).
 #
 # File layout under credentials.dir:
-#   kalshi_api_key.txt   - Kalshi private key PEM
-#   kalshi_api_key_id    - Kalshi API key ID (one line)
-#   synoptic_token       - Synoptic API token (one line)
-#   aws_access_key_id    - AWS Access Key ID (one line)
-#   aws_secret_access_key - AWS Secret Access Key (one line)
+#   kalshi_api_key.txt    - Kalshi private key PEM
+#   kalshi_api_key_id     - Kalshi API key ID
+#   wethr_api_key         - Wethr.net Push API key
+#   aws_access_key_id     - AWS Access Key ID (SQS/SNS for NWP; S3 is anonymous)
+#   aws_secret_access_key - AWS Secret Access Key (SQS/SNS for NWP)
 # =============================================================================
 credentials:
-  # Used by: config.py (make_kalshi_clients, get_synoptic_token)
-  dir: "~/.kalshi"                    # Base dir for credential files; CREDENTIALS_DIR env overrides
-  kalshi_private_key: "kalshi_api_key.txt"   # Kalshi listener, weather bot (via make_kalshi_clients)
-  kalshi_api_key_id: "kalshi_api_key_id"     # Kalshi listener, weather bot (via make_kalshi_clients)
-  synoptic_token: "synoptic_token"            # Synoptic listener (via get_synoptic_token)
-  wethr_api_key: "wethr_api_key"              # Wethr Push listener, weather bot (via _read_credential)
-  aws_access_key_id: "aws_access_key_id"      # NWP listener (SQS/SNS only; S3 uses anonymous)
-  aws_secret_access_key: "aws_secret_access_key" # NWP listener (SQS/SNS only; S3 uses anonymous)
+  dir: "~/.kalshi"
+  kalshi_private_key: "kalshi_api_key.txt"
+  kalshi_api_key_id: "kalshi_api_key_id"
+  wethr_api_key: "wethr_api_key"
+  aws_access_key_id: "aws_access_key_id"
+  aws_secret_access_key: "aws_secret_access_key"
 
 # =============================================================================
 # KALSHI API
 # =============================================================================
-# Used by: kalshi/listener.py, bot/weather_bot.py, config.py (make_kalshi_clients)
-# =============================================================================
 kalshi:
-  base_url: "https://api.elections.kalshi.com/trade-api/v2"   # config.py → KalshiRestClient
-  ws_url:   "wss://api.elections.kalshi.com/trade-api/ws/v2"  # kalshi/listener, weather_bot (WebSocket)
+  base_url: "https://api.elections.kalshi.com/trade-api/v2"
+  ws_url:   "wss://api.elections.kalshi.com/trade-api/ws/v2"
 
 # =============================================================================
 # EVENT SERIES — BY CONSUMER
 # =============================================================================
-# Each consumer explicitly lists which markets it tracks. Use YAML anchors
-# (&default_series / *default_series) to share a list across consumers.
+# kalshi_listener — orderbook/ticker snapshots (kalshi/listener.py)
+# weather_bot     — wethr ingest, NWP ingest, paper trading (bot/weather_bot.py)
+# research        — offline analysis scripts
 #
-# Add new city: 1) Add KalshiMarketConfig in services/markets/kalshi_registry.py
-#               2) Add series prefix to the consumer(s) below
-#
-# Consumer keys:
-#   kalshi_listener  — orderbook/ticker snapshots (kalshi/listener.py)
-#   synoptic_listener — Synoptic push weather ingest (synoptic/listener.py)
-#   weather_bot      — paper trading (bot/weather_bot.py)
-#   research         — iem_awc_data_collector, run_weather_collection,
-#                      weather_discrepancy_analysis
+# Adding a new city:
+#   1. Add KalshiMarketConfig in services/markets/kalshi_registry.py
+#   2. Add the series prefix to the consumer(s) below
 # =============================================================================
 event_series:
   default: &default_series
     - "KXHIGHCHI"
     - "KXHIGHNY"
-    - "KXHIGHLAX"   # Los Angeles
-    - "KXHIGHMIA"   # Miami
-    - "KXHIGHDCA"   # Washington DC
-    - "KXHIGHATL"   # Atlanta
-    - "KXHIGHAUS"   # Austin
+    - "KXHIGHLAX"
+    - "KXHIGHMIA"
+    - "KXHIGHDCA"
+    - "KXHIGHATL"
+    - "KXHIGHAUS"
 
   kalshi_listener: *default_series
-  synoptic_listener:
-    - "KXHIGHCHI"
-  wethr_listener:
-    - "KXHIGHCHI"
   weather_bot:
-    - "KXHIGHCHI"
-  nwp_listener:
     - "KXHIGHCHI"
   research:
     - "KXHIGHCHI"
@@ -114,190 +70,102 @@ event_series:
 # =============================================================================
 # EVENT ROLLOVER
 # =============================================================================
-# Periodic re-discovery of event tickers as markets roll over at local
-# midnight. Replaces cron-based process restarts.
-# NOT used by: synoptic/listener (stations are fixed per series)
+# Periodic re-discovery of active event tickers as markets roll at local midnight.
+# event_selection: "active" = earliest close_time; "next" = earliest strike_date >= today
 # =============================================================================
 event_rollover:
-  # Used by: ticker.py, kalshi/listener, weather_bot
-  # "active" = earliest close_time. "next" = earliest strike_date >= today
-  # (local tz); excludes past events; picks tomorrow when today has closed.
   event_selection: "active"
-  # Used by: kalshi/listener, weather_bot — re-query Kalshi for new events (sec). 0 = disable.
   rediscover_interval_seconds: 300
 
 # =============================================================================
 # STORAGE
 # =============================================================================
-# Parquet output and bot trade logs. data_dir is relative to config file.
-# =============================================================================
 storage:
-  # Used by: kalshi/listener, synoptic/listener, weather_bot, research/weather/iem_awc_data_collector,
-  #          run_weather_collection, weather_discrepancy_analysis
-  data_dir: "../data"            # Relative to config file; ../data = project root
-  # Used by: kalshi/listener, synoptic/listener, weather_bot
-  flush_interval_seconds: 300    # Buffer flush to parquet (all services)
+  data_dir: "../data"           # Relative to config file; resolves to project root data/
+  flush_interval_seconds: 300
 
 # =============================================================================
 # KALSHI LISTENER — Snapshot collection
 # =============================================================================
 # Used by: kalshi/listener.py ONLY
-# Controls how often and when Kalshi orderbook/ticker snapshots are written
-# to Parquet. Spike detection triggers immediate snapshots on price moves.
 # =============================================================================
 collection:
-  interval_seconds: 60           # kalshi/listener — baseline snapshot interval (seconds)
-  spike_threshold_cents: 3      # kalshi/listener — snapshot when price moves ≥ this
-  spike_cooldown_seconds: 2     # kalshi/listener — min sec between spike-triggered snapshots
-  max_orderbook_depth: 5        # kalshi/listener — OB levels per side per contract; 0 = all
-  baseline_every_n_snapshots: 60  # kalshi/listener — full OB baseline frequency; 1 = disable delta
-
-# =============================================================================
-# SYNOPTIC LISTENER — Weather data ingest
-# =============================================================================
-# Used by: synoptic/listener.py ONLY
-# Stations are auto-derived from event_series.synoptic_listener via market
-# registry. Override `stations` only if you need extra stations beyond the registry.
-#
-# enabled — Synoptic API polling/streaming; false = skip (aviationweather can still run)
-# mode: "polling" (default) or "streaming"
-#   polling  — REST API timeseries; works with standard token
-#   streaming — WebSocket push; requires streaming-enabled token from Synoptic
-# =============================================================================
-synoptic:
-  enabled: false           # Synoptic API; true when token works
-  mode: polling
-  # stations:  # optional override; omit → uses event_series.synoptic_listener → registry
-  #   - KMDW
-  #   - KNYC
-  vars:        # Synoptic variables (air_temp)
-    - air_temp
-  # Polling mode only:
-  poll_interval_seconds: 90
-  poll_recent_minutes: 120
+  interval_seconds: 60
+  spike_threshold_cents: 3
+  spike_cooldown_seconds: 2
+  max_orderbook_depth: 5
+  baseline_every_n_snapshots: 60
 
 # =============================================================================
 # WETHR.NET PUSH API — Real-time SSE weather ingest
 # =============================================================================
-# Used by: services/wethr/listener.py, bot/weather_bot.py
+# Used by: bot/weather_bot.py (trading signals + storage)
 #
 # Streams real-time observations, DSM/CLI releases, and temperature extreme
-# alerts from wethr.net Push API via Server-Sent Events (SSE).
+# alerts via Server-Sent Events. All event types are stored to parquet:
+#   data/wethr_push/<event_type>/<ICAO>_YYYY-MM-DD.parquet
 #
-# enabled — Wethr Push API SSE connection; false = skip
-# stations — override station list; omit → uses event_series.wethr_listener → registry
-#
-# Data stored in: data/wethr_push/<event_type>/<ICAO>_YYYY-MM-DD.parquet
-# Event types: observations, dsm, cli, new_high, new_low
+# Stations are derived from event_series.weather_bot via the market registry.
 # =============================================================================
-wethr_push:
+wethr:
   enabled: true
-  # stations:  # optional override; omit → uses event_series.wethr_listener → registry
+  # stations:  # optional override; omit → uses event_series.weather_bot → registry
   #   - KMDW
 
 # =============================================================================
-# NWP MODEL DATA — Research
+# NWP MODEL DATA — Real-time HRRR, RRFS, NBM ingest via AWS SNS
 # =============================================================================
-# Used by: research/download_data/{hrrr,rtma_ru,rrfs}.py, run_nwp_collection.py
-# Stations are derived from event_series.research via the market registry.
-# Each model has its own section keyed by SOURCE_NAME.
-# =============================================================================
-hrrr:
-  max_forecast_hour: 18   # fxx 0..18 (subhourly: 4 × 15-min steps per fxx)
-
-rrfs:
-  max_forecast_hour: 18   # hourly output; no sub-hourly product available
-
-nbm:
-  max_forecast_hour: 24   # hourly out to 24h; extended for 01/07/13/19Z cycles
-
-# =============================================================================
-# AVIATION WEATHER METAR COLLECTOR — AWC + NWS api.weather.gov
-# =============================================================================
-# Used by: services/weather/aviationweather_metar_collector (runs in synoptic-listener)
-# enabled — AWC + NWS METAR polling; independent of synoptic.enabled
+# Used by: bot/weather_bot.py (NWPSNSListener component)
 #
-# Polls Aviation Weather Center (aviationweather.gov) and NWS api.weather.gov.
-# AWC: uses conditional GET (If-None-Match/ETag) — 304 skips full parse when unchanged.
-# NWS: no ETag support; full response each time. Cache-Control max-age≈5min.
-# user_agent: identifies who is polling (API best practice; NWS recommends contact info).
-# =============================================================================
-aviationweather_metar_collector:
-  enabled: true
-  stations:           # AWC METAR stations (ICAO)
-    - KMDW
-  nws_stations:       # NWS api.weather.gov stations
-    - KMDW
-  awc_poll_interval_seconds: 2   # METAR: hourly + SPECI
-  nws_poll_interval_seconds: 61  # NWS Cache-Control max-age≈5min
-
-# =============================================================================
-# NWP LISTENER — Real-time weather model ingest via AWS SNS
-# =============================================================================
-# Used by: services/weather/nwp_listener.py ONLY
+# Subscribes to NOAA AWS SNS topics for new model output. Receives S3 object
+# notifications via SQS long-polling, extracts point data at station coordinates,
+# and saves to parquet with latency metadata.
 #
-# Subscribes to NOAA AWS SNS topics for new model data. Receives S3 events
-# via SQS long-polling, downloads point data for configured stations, and
-# saves with latency tracking.
+# AWS credentials (from credentials dir) are used ONLY for SQS/SNS (queue
+# creation, subscriptions, polling). S3 downloads use anonymous access.
 #
-# Stations are derived from event_series.nwp_listener via the market registry.
-# Adding a new city: just add its series prefix to event_series.nwp_listener.
+# Stations are derived from event_series.weather_bot via the market registry.
 # =============================================================================
-nwp_listener:
+nwp:
   aws_region: us-east-1
   sqs_queue_prefix: pred-market-nwp
   poll_interval_seconds: 20
   delete_queue_on_shutdown: true
-  # MADIS: S3 polling (NOAA SNS topic does not allow external subscriptions)
-  madis_s3_poll_interval_seconds: 120
-  madis_s3_lookback_minutes: 15
   models:
     hrrr:
       sns_topic_arn: "arn:aws:sns:us-east-1:123901341784:NewHRRRObject"
       s3_bucket: "noaa-hrrr-bdp-pds"
       enabled: true
+      max_forecast_hour: 18
     rrfs:
       sns_topic_arn: "arn:aws:sns:us-east-1:709902155096:NewRRFSObject"
       s3_bucket: "noaa-rrfs-pds"
       enabled: true
+      max_forecast_hour: 18
     nbm:
       sns_topic_arn: "arn:aws:sns:us-east-1:123901341784:NewNBMCOGObject"
       s3_bucket: "noaa-nbm-pds"
       enabled: true
-    # --- MADIS observation sources (disabled: SNS blocked, S3 bucket noaa-madis-pds not found) ---
-    madis_metar:
-      sns_topic_arn: "arn:aws:sns:us-east-1:123901341784:NewMADISObject"
-      s3_bucket: "noaa-madis-pds"
-      enabled: false
-    madis_omo:
-      sns_topic_arn: "arn:aws:sns:us-east-1:123901341784:NewMADISObject"
-      s3_bucket: "noaa-madis-pds"
-      enabled: false
+      max_forecast_hour: 24
 
 # =============================================================================
 # WEATHER BOT — Paper trading strategy
 # =============================================================================
 # Used by: bot/weather_bot.py ONLY
 #
-# All risk/execution settings live in each strategy's params block:
-#
 #   paper_mode          true = simulated fills, false = real Kalshi orders
 #   consecutive_obs     ASOS obs ≥ cap_strike needed before buying NO
 #   max_price_cents     max price (in cents) the sweep will pay
-#   max_spend_per_event max $ to spend per event ticker (e.g. KXHIGHCHI-26FEB22)
-#                       tracked per (strategy_id, event_ticker) — resets
-#                       automatically when the event rolls to the next day.
-#                       0 or omitted = uncapped.
+#   max_spend_per_event max $ to spend per event ticker; 0 or omitted = uncapped
 # =============================================================================
 bot:
   strategies:
     - id: "chicago_fast_ladder"
       class_name: "LadderStrategy"
-      targets: 
+      targets:
         - "KXHIGHCHI"
       params:
         paper_mode: true
         consecutive_obs: 2
         max_price_cents: 95
         max_spend_per_event: 1000
-

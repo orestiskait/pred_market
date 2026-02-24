@@ -65,7 +65,7 @@ class WethrPushCollector(AsyncService, WethrSSEMixin, MetarCollectorMixin):
     def __init__(self, config: dict, config_dir: Path):
         self.config = config
 
-        wcfg = config.get("wethr_push", {})
+        wcfg = config.get("wethr", {})
         self._wethr_enabled = wcfg.get("enabled", True)
 
         self.wethr_api_key = ""
@@ -76,7 +76,7 @@ class WethrPushCollector(AsyncService, WethrSSEMixin, MetarCollectorMixin):
             stations = wcfg.get("stations", None)
             if stations is None:
                 stations = wethr_stations_for_series(
-                    get_event_series(config, "wethr_listener")
+                    get_event_series(config, "weather_bot")
                 )
             self.wethr_stations = stations
             logger.info("Wethr Push API stations: %s", self.wethr_stations)

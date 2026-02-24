@@ -434,7 +434,7 @@ class NWPSNSListener(AsyncService):
         self.config_dir = config_dir
 
         # Stations from config
-        series = get_event_series(config, "nwp_listener")
+        series = get_event_series(config, "weather_bot")
         self.stations = nwp_stations_for_series(series)
         logger.info(
             "NWP listener stations: %s",
@@ -446,8 +446,8 @@ class NWPSNSListener(AsyncService):
         self.nwp_storage = NWPRealtimeStorage(data_dir)
         self.madis_storage = MADISRealtimeStorage(data_dir)
 
-        # NWP listener config
-        nwp_cfg = config.get("nwp_listener", {})
+        # NWP config
+        nwp_cfg = config.get("nwp", {})
         self.aws_region = nwp_cfg.get("aws_region", "us-east-1")
         # Credentials used ONLY for SQS/SNS (queue creation, subscriptions, polling).
         # S3 downloads (NOAA public buckets) use anonymous access — no credentials.
@@ -458,7 +458,7 @@ class NWPSNSListener(AsyncService):
         self.madis_s3_poll_interval = nwp_cfg.get("madis_s3_poll_interval_seconds", 120)
         self.madis_s3_lookback_minutes = nwp_cfg.get("madis_s3_lookback_minutes", 15)
 
-        # Parse model configs (NWP + MADIS share the same config structure)
+        # Parse enabled model configs from nwp.models
         self.model_configs: dict[str, ModelSNSConfig] = {}
         for model_name, model_cfg in nwp_cfg.get("models", {}).items():
             mc = ModelSNSConfig(
@@ -500,7 +500,7 @@ class NWPSNSListener(AsyncService):
             if model_name in MODEL_REGISTRY:
                 fetcher_cls = MODEL_REGISTRY[model_name]
                 data_dir = (self.config_dir / self.config["storage"]["data_dir"]).resolve()
-                model_cfg = self.config.get(model_name, {})
+                model_cfg = self.config.get("nwp", {}).get("models", {}).get(model_name, {})
                 max_fxx = model_cfg.get(
                     "max_forecast_hour", fetcher_cls.DEFAULT_MAX_FXX
                 )

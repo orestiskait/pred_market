@@ -60,7 +60,7 @@ def load_config(config_path: Optional[str] = None) -> tuple[dict, Path]:
 def get_event_series(config: dict, consumer: str) -> list:
     """Return event series list for a given consumer.
 
-    Consumers: kalshi_listener, synoptic_listener, weather_bot, research.
+    Consumers: kalshi_listener, weather_bot, research.
 
     Returns config["event_series"][consumer] or config["event_series"]["default"] if missing.
     """
