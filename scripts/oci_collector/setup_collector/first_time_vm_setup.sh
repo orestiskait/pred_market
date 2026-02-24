@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run on the OCI VM to set up or update Kalshi listener, Synoptic listener, and weather bot.
+# Run on the OCI VM to set up or update Kalshi listener and weather bot.
 # Safe to re-run — pulls latest code and rebuilds the image each time.
 #
 # Usage:
@@ -7,7 +7,7 @@
 #   GITHUB_TOKEN=xxx ./first_time_vm_setup.sh         # private repo
 #   KALSHI_API_KEY_ID=xxx \
 #     KALSHI_PRIVATE_KEY_FILE=~/.kalshi/kalshi_api_key.txt \
-#     SYNOPTIC_API_TOKEN=xxx \
+#     WETHR_API_KEY=xxx \
 #     ./first_time_vm_setup.sh                        # non-interactive credential setup
 set -euo pipefail
 
@@ -15,7 +15,7 @@ REPO_URL="https://github.com/orestiskait/pred_market.git"
 REPO_DIR="/home/ubuntu/pred_market"
 CREDS_DIR="/home/ubuntu/.kalshi"
 KEY_ID_FILE="$CREDS_DIR/kalshi_api_key_id"
-SYNOPTIC_FILE="$CREDS_DIR/synoptic_token"
+WETHR_FILE="$CREDS_DIR/wethr_api_key"
 DATA_DIR="/home/ubuntu/collector-data"
 IMAGE="kalshi-services:latest"
 CONTAINER="kalshi-listener"
@@ -100,9 +100,9 @@ if [[ "$KALSHI_KEY_SRC" != "$KALSHI_KEY_DST" ]]; then
   chmod 600 "$KALSHI_KEY_DST"
 fi
 
-if [[ -f "$KEY_ID_FILE" ]] && [[ -f "$SYNOPTIC_FILE" ]]; then
+if [[ -f "$KEY_ID_FILE" ]] && [[ -f "$WETHR_FILE" ]]; then
   echo "[setup] Credentials already exist in $CREDS_DIR — skipping."
-  echo "        Delete kalshi_api_key_id and synoptic_token to reset."
+  echo "        Delete kalshi_api_key_id and wethr_api_key to reset."
 else
   echo "[setup] Configuring credentials (files in $CREDS_DIR)..."
 
@@ -112,11 +112,11 @@ else
   printf '%s' "$KALSHI_API_KEY_ID" > "$KEY_ID_FILE"
   chmod 600 "$KEY_ID_FILE"
 
-  if [[ -z "${SYNOPTIC_API_TOKEN:-}" ]]; then
-    read -rp "  SYNOPTIC_API_TOKEN: " SYNOPTIC_API_TOKEN
+  if [[ -z "${WETHR_API_KEY:-}" ]]; then
+    read -rp "  WETHR_API_KEY (Wethr.net Push API): " WETHR_API_KEY
   fi
-  printf '%s' "$SYNOPTIC_API_TOKEN" > "$SYNOPTIC_FILE"
-  chmod 600 "$SYNOPTIC_FILE"
+  printf '%s' "$WETHR_API_KEY" > "$WETHR_FILE"
+  chmod 600 "$WETHR_FILE"
 
   echo "[setup] Credentials saved to $CREDS_DIR"
 fi
@@ -144,6 +144,6 @@ else
 fi
 
 echo ""
-echo "[setup] Done. Run all services (Kalshi, Synoptic+aviationweather, NWP, weather bot) with:"
+echo "[setup] Done. Run all services (Kalshi listener, weather bot) with:"
 echo "  cd $OCI_ROOT/manage_services && ./start_stop_all_services.sh"
-echo "  Or individually: ./start_stop_kalshi_listener.sh ./start_stop_synoptic_listener.sh ./start_stop_nwp_listener.sh ./start_stop_weather_bot.sh"
+echo "  Or individually: ./start_stop_kalshi_listener.sh ./start_stop_weather_bot.sh"

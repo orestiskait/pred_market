@@ -1,6 +1,6 @@
 #!/bin/bash
 # Pull latest code from GitHub, rebuild the Docker image, and restart all services:
-# Kalshi listener, Synoptic listener (incl. aviationweather METAR), NWP listener, weather bot.
+# Kalshi listener and weather bot.
 # Safe to re-run at any time — services are only down for the rebuild+restart window.
 #
 # Usage (on the VM):
@@ -16,7 +16,7 @@ set -euo pipefail
 REPO_DIR="/home/ubuntu/pred_market"
 OCI_ROOT="/home/ubuntu/pred_market/scripts/oci_collector"
 START_ALL_SCRIPT="$OCI_ROOT/manage_services/start_stop_all_services.sh"
-IMAGE="kalshi-services:latest"  # Shared image for Kalshi listener, Synoptic listener, bot
+IMAGE="kalshi-services:latest"  # Shared image for Kalshi listener and weather bot
 
 DOCKER="docker"
 $DOCKER info &>/dev/null 2>&1 || DOCKER="sudo docker"
@@ -49,7 +49,7 @@ echo ""
 echo "[update] Rebuilding Docker image..."
 $DOCKER build -f "$REPO_DIR/services/Dockerfile" -t "$IMAGE" "$REPO_DIR"
 
-# ── Restart all services (Kalshi, Synoptic+aviationweather, NWP, weather bot) ─
+# ── Restart all services (Kalshi listener, weather bot) ─
 echo "[update] Restarting all services..."
 "$START_ALL_SCRIPT" start
 

@@ -13,8 +13,9 @@ nwp_realtime/rrfs | NOAA RRFS (AWS S3) | RRFS 3km hourly point forecasts (live i
 nwp_realtime/nbm | NOAA NBM COG (AWS S3) | NBM 2.5km bias-corrected hourly point forecasts (live ingest + latency tracking)
 madis_realtime/madis_metar | NOAA MADIS (AWS S3) | Decoded METAR with high-precision T-groups (temp/dew 0.1C)
 madis_realtime/madis_omo | NOAA MADIS (AWS S3) | One-Minute ASOS (OMO) high-frequency sensor snapshots
-aviationweather_metar/awc_metar | Aviation Weather Center API | METAR (hourly + SPECI). saved_ts, ob_time_utc, temp, raw_ob, RMK, 6hr/24hr min/max. Polled by synoptic-listener.
-aviationweather_metar/nws_observations | NWS api.weather.gov | Same data as weather.gov/wrh/LowTimeseries. saved_ts, ob_time_utc, temp, 6hr/24hr min/max. Polled by synoptic-listener.
+aviationweather_metar/awc_metar | Aviation Weather Center API | METAR (hourly + SPECI). saved_ts, ob_time_utc, temp, raw_ob, RMK, 6hr/24hr min/max. Polled by weather-bot.
+aviationweather_metar/nws_observations | NWS api.weather.gov | Same data as weather.gov/wrh/LowTimeseries. saved_ts, ob_time_utc, temp, 6hr/24hr min/max. Polled by weather-bot.
+wethr_push/observations | Wethr.net Push API | Real-time SSE observations (obs, DSM, CLI, new_high, new_low). Written by weather-bot.
 
 Download scripts: research/download_data/
   iem_asos_1min.py - IEM ASOS 1-min
@@ -28,9 +29,10 @@ Download scripts: research/download_data/
   run_hrrr_collection.py - HRRR-specific backfill script
 
 Real-time services: services/
-  weather/nwp_listener.py - Live ingest for NWP and MADIS via AWS SNS
-  synoptic/listener.py - Synoptic WebSocket + aviationweather_metar (AWC + NWS) polling
-  weather/nwp/          - Shared fetcher logic for HRRR, RRFS, NBM, RTMA-RU
-  weather/madis/        - Shared fetcher logic for MADIS METAR and OMO NetCDF data
+  bot/weather_bot.py     - Paper trading + Wethr.net Push API + aviationweather METAR + NWP/MADIS ingest
+  weather/nwp_listener.py - Live ingest for NWP and MADIS via AWS SNS (composed in weather_bot)
+  wethr/listener.py      - Wethr.net Push API SSE (composed in weather_bot)
+  weather/nwp/           - Shared fetcher logic for HRRR, RRFS, NBM, RTMA-RU
+  weather/madis/         - Shared fetcher logic for MADIS METAR and OMO NetCDF data
 
 Dependencies: pip install boto3 herbie-data xarray cfgrib eccodes rasterio netCDF4

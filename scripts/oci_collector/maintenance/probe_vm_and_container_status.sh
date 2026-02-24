@@ -1,5 +1,5 @@
 #!/bin/bash
-# Probe the OCI VM running Kalshi listener, Synoptic listener, and weather bot.
+# Probe the OCI VM running Kalshi listener and weather bot.
 # Run from your local machine (requires OCI CLI + SSH access).
 #
 # Usage:
@@ -75,7 +75,7 @@ fi
 echo ""
 echo "── Recent logs (last 15 lines) ──"
 ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" \
-  'echo "Kalshi Listener:" && docker logs --tail 15 kalshi-listener && echo "---" && echo "Synoptic Listener:" && docker logs --tail 15 synoptic-listener && echo "---" && echo "NWP Listener:" && docker logs --tail 15 nwp-listener && echo "---" && echo "Weather Bot:" && docker logs --tail 15 weather-bot' 2>/dev/null || echo "[probe] Could not fetch logs"
+  'echo "Kalshi Listener:" && docker logs --tail 15 kalshi-listener && echo "---" && echo "Weather Bot:" && docker logs --tail 15 weather-bot' 2>/dev/null || echo "[probe] Could not fetch logs"
 
 echo ""
 echo "── Data recency ──"
@@ -83,7 +83,7 @@ echo "── Data recency ──"
 ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" 'bash -s' << 'RECENCY'
 STALE_MIN=15
 DATA_DIR=~/collector-data
-NEWEST=$(find "$DATA_DIR/kalshi_market_snapshots" "$DATA_DIR/kalshi_orderbook_snapshots" "$DATA_DIR/synoptic_weather_observations" "$DATA_DIR/aviationweather_metar" "$DATA_DIR/nwp_realtime" "$DATA_DIR/madis_realtime" -name "*.parquet" 2>/dev/null \
+NEWEST=$(find "$DATA_DIR/kalshi_market_snapshots" "$DATA_DIR/kalshi_orderbook_snapshots" "$DATA_DIR/aviationweather_metar" "$DATA_DIR/wethr_push" "$DATA_DIR/nwp_realtime" "$DATA_DIR/madis_realtime" -name "*.parquet" 2>/dev/null \
   | xargs -r stat -c "%Y %n" 2>/dev/null | sort -nr | head -1)
 if [[ -z "$NEWEST" ]]; then
   echo "No parquet files yet"
@@ -96,7 +96,7 @@ else
   SHORT=${FILE#${DATA_DIR}/}
   if [[ $AGE_MIN -gt $STALE_MIN ]]; then
     echo "Last write: ${AGE_MIN} min ago ($SHORT)"
-    echo "Status: STALE (>${STALE_MIN} min — check Kalshi/Synoptic listeners)"
+    echo "Status: STALE (>${STALE_MIN} min — check Kalshi listener / weather bot)"
   else
     echo "Last write: ${AGE_MIN} min ago ($SHORT)"
     echo "Status: OK"
@@ -108,9 +108,9 @@ RECENCY
 echo ""
 echo "── Data freshness ──"
 ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" \
-  'ls -la ~/collector-data/kalshi_market_snapshots/ ~/collector-data/kalshi_orderbook_snapshots/ ~/collector-data/synoptic_weather_observations/ ~/collector-data/aviationweather_metar/ ~/collector-data/nwp_realtime/ ~/collector-data/madis_realtime/ 2>/dev/null || echo "No data dirs yet"' 2>/dev/null
+  'ls -la ~/collector-data/kalshi_market_snapshots/ ~/collector-data/kalshi_orderbook_snapshots/ ~/collector-data/aviationweather_metar/ ~/collector-data/wethr_push/ ~/collector-data/nwp_realtime/ ~/collector-data/madis_realtime/ 2>/dev/null || echo "No data dirs yet"' 2>/dev/null
 
 echo ""
 echo "────────────────────────────────────────"
-echo "[probe] OK — VM running, all services (Kalshi, Synoptic+aviationweather, NWP, weather bot) reachable"
+echo "[probe] OK — VM running, Kalshi listener and weather bot reachable"
 echo "────────────────────────────────────────"

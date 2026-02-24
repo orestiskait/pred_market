@@ -1,6 +1,6 @@
 # OCI Collector — Setup Guide & Script Reference
 
-Complete guide for deploying and operating the Kalshi/Synoptic collector on Oracle Cloud. Use this doc to understand **when** to run each script and **how often**.
+Complete guide for deploying and operating the Kalshi collector and weather bot on Oracle Cloud. Use this doc to understand **when** to run each script and **how often**.
 
 ---
 
@@ -40,7 +40,7 @@ cd scripts/oci_collector/provision_vm
 
 **Where:** Run **on the VM** (after `ssh ubuntu@<PUBLIC_IP>`).
 
-**What it does:** Clones the repo (if needed), builds the Docker image, prompts for Kalshi + Synoptic credentials, writes them to `~/.kalshi/` (kalshi_api_key_id, synoptic_token). Cron jobs are skipped by default (in-process periodic re-discovery handles event rollover).
+**What it does:** Clones the repo (if needed), builds the Docker image, prompts for Kalshi + Wethr credentials, writes them to `~/.kalshi/` (kalshi_api_key_id, wethr_api_key). Cron jobs are skipped by default (in-process periodic re-discovery handles event rollover).
 
 **Prerequisite:** Copy your Kalshi private key to the VM first:  
 `scp ~/.kalshi/kalshi_api_key.txt ubuntu@<PUBLIC_IP>:~/.kalshi/`
@@ -56,7 +56,7 @@ cd ~/pred_market/scripts/oci_collector/setup_collector
 
 #### `manage_services/start_stop_all_services.sh`
 
-**When:** You want to start, stop, check status, or tail logs for **all four** services (Kalshi listener, Synoptic listener incl. aviationweather METAR, NWP listener, weather bot).
+**When:** You want to start, stop, check status, or tail logs for **both** services (Kalshi listener, weather bot).
 
 **Where:** Run **on the VM**.
 
@@ -64,7 +64,7 @@ cd ~/pred_market/scripts/oci_collector/setup_collector
 - `./start_stop_all_services.sh` or `./start_stop_all_services.sh start` — start everything (e.g. right after setup, or after a reboot)
 - `./start_stop_all_services.sh stop` — stop everything
 - `./start_stop_all_services.sh status` — see if containers are running
-- `./start_stop_all_services.sh logs` — tail logs from all three
+- `./start_stop_all_services.sh logs` — tail logs from both
 
 **Note:** Event rollover is handled in-process (periodic re-discovery). Cron is skipped by default; run manually when needed (e.g. after VM reboot). You usually don’t need to run it manually unless you restarted the VM or changed something.
 
@@ -76,8 +76,6 @@ cd ~/pred_market/scripts/oci_collector/manage_services
 ---
 
 #### `manage_services/start_stop_kalshi_listener.sh`  
-#### `manage_services/start_stop_synoptic_listener.sh`  
-#### `manage_services/start_stop_nwp_listener.sh`  
 #### `manage_services/start_stop_weather_bot.sh`
 
 **When:** You want to control **one** service (start, stop, logs, status).
@@ -88,7 +86,7 @@ cd ~/pred_market/scripts/oci_collector/manage_services
 
 ```bash
 ./start_stop_kalshi_listener.sh start
-./start_stop_synoptic_listener.sh logs
+./start_stop_weather_bot.sh logs
 ```
 
 ---
@@ -186,7 +184,7 @@ These are created locally, copied to the VM, or generated during setup.
 |------|---------|
 | `~/.kalshi/kalshi_api_key.txt` | Kalshi API private key (PEM). Copy from local before running `first_time_vm_setup.sh`. |
 | `~/.kalshi/kalshi_api_key_id` | Kalshi API key ID. Created by `first_time_vm_setup.sh`. |
-| `~/.kalshi/synoptic_token` | Synoptic API token. Created by `first_time_vm_setup.sh`. |
+| `~/.kalshi/wethr_api_key` | Wethr.net Push API key. Created by `first_time_vm_setup.sh`. |
 | `~/.kalshi/aws_access_key_id` | AWS Access Key. For NWP listener (optional). |
 | `~/.kalshi/aws_secret_access_key` | AWS Secret Key. For NWP listener (optional). |
 | `~/collector-data/` | Parquet output. Created by setup. Mounted into containers. |

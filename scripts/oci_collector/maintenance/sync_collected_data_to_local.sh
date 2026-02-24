@@ -12,7 +12,7 @@
 # Env vars (auto-detected if not set):
 #   COMPARTMENT_ID  — OCI compartment (default: tenancy root)
 #   DISPLAY_NAME    — instance name (default: kalshi-collector)
-#   LOCAL_DATA_DIR  — local destination (default: ../../collector/data)
+#   LOCAL_DATA_DIR  — local destination (default: project root data/)
 set -euo pipefail
 
 DISPLAY_NAME="${DISPLAY_NAME:-kalshi-collector}"
@@ -65,6 +65,7 @@ REMOTE_DIRS=(
   "kalshi_orderbook_snapshots"
   "synoptic_weather_observations"
   "aviationweather_metar"
+  "wethr_push"
   "kalshi_historical"
   "weather_bot_paper_trades"
   "nwp_realtime"
