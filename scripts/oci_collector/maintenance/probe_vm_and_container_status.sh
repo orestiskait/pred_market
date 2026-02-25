@@ -14,13 +14,31 @@ DISPLAY_NAME="${DISPLAY_NAME:-kalshi-collector}"
 START_ALL_SCRIPT="/home/ubuntu/pred_market/scripts/oci_collector/manage_services/start_stop_all_services.sh"
 
 # ── Auto-detect compartment ────────────────────────────────────────────────────
+# Detection order:
+#   1️⃣ Tenancy OCID from ~/.oci/config (most reliable)
+#   2️⃣ First compartment returned by OCI CLI (fallback)
 if [[ -z "${COMPARTMENT_ID:-}" ]]; then
-  COMPARTMENT_ID=$(oci iam compartment list \
-    --compartment-id-in-subtree true --all \
-    --query 'data[0].id' --raw-output 2>/dev/null) || true
-  [[ -z "$COMPARTMENT_ID" ]] && \
-    COMPARTMENT_ID=$(grep -m1 '^tenancy=' ~/.oci/config 2>/dev/null | cut -d= -f2) || true
-  [[ -z "$COMPARTMENT_ID" ]] && echo "ERROR: Set COMPARTMENT_ID." && exit 1
+  # 1) Try tenancy OCID from OCI config
+  if [[ -f "${HOME}/.oci/config" ]]; then
+    COMPARTMENT_ID=$(grep -m1 '^tenancy=' "${HOME}/.oci/config" | cut -d= -f2)
+  fi
+
+  # 2) If still empty, ensure OCI CLI is available before listing compartments
+  if [[ -z "${COMPARTMENT_ID}" ]]; then
+    if ! command -v oci >/dev/null 2>&1; then
+      echo "ERROR: OCI CLI not installed. Install it or set COMPARTMENT_ID manually." >&2
+      exit 1
+    fi
+    COMPARTMENT_ID=$(oci iam compartment list \
+        --compartment-id-in-subtree true --all \
+        --query 'data[0].id' --raw-output 2>/dev/null) || true
+  fi
+
+  # 3) If still empty, abort with clear message
+  if [[ -z "${COMPARTMENT_ID}" ]]; then
+    echo "ERROR: Set COMPARTMENT_ID (auto‑detect failed)." >&2
+    exit 1
+  fi
 fi
 
 # ── Resolve instance ─────────────────────────────────────────────────────────
