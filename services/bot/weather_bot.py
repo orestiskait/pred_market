@@ -232,6 +232,8 @@ class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
 
         if temp_f is not None:
             try:
+                if not ob_time_str.endswith("Z") and "+" not in ob_time_str:
+                    ob_time_str += "Z"
                 ob_time = datetime.fromisoformat(ob_time_str.replace("Z", "+00:00"))
                 logger.info("[%s] %.1f°F at %s", station, temp_f, ob_time_str)
                 self.event_bus.publish(WeatherObservationEvent(
