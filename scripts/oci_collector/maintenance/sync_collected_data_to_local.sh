@@ -1,18 +1,10 @@
 #!/bin/bash
 # Sync collected parquet files from the OCI VM to this machine.
-# Uses rsync — incremental, skips files already present, fast for daily runs.
+# Optimized version: single rsync pass, nested directory support, fast summaries.
 #
 # By default syncs to data/ at project root.
 # Override with: LOCAL_DATA_DIR=/your/path ./sync_collected_data_to_local.sh
-#
-# Usage:
-#   ./sync_collected_data_to_local.sh               # sync all data
-#   ./sync_collected_data_to_local.sh --dry-run    # preview what would be transferred
-#
-# Env vars (auto-detected if not set):
-#   COMPARTMENT_ID  — OCI compartment (default: tenancy root)
-#   DISPLAY_NAME    — instance name (default: kalshi-collector)
-#   LOCAL_DATA_DIR  — local destination (default: project root data/)
+
 set -euo pipefail
 
 DISPLAY_NAME="${DISPLAY_NAME:-kalshi-collector}"
@@ -30,91 +22,68 @@ echo "────────────────────────�
 
 # ── Resolve public IP ─────────────────────────────────────────────────────────
 if [[ -z "${COMPARTMENT_ID:-}" ]]; then
-  COMPARTMENT_ID=$(oci iam compartment list \
-    --compartment-id-in-subtree true --all \
-    --query 'data[0].id' --raw-output 2>/dev/null) || true
-  [[ -z "$COMPARTMENT_ID" ]] && \
-    COMPARTMENT_ID=$(grep -m1 '^tenancy=' ~/.oci/config 2>/dev/null | cut -d= -f2) || true
-  [[ -z "$COMPARTMENT_ID" ]] && echo "ERROR: Set COMPARTMENT_ID." && exit 1
+  # Try to get from OCI CLI, fallback to config
+  COMPARTMENT_ID=$(oci iam compartment list --compartment-id-in-subtree true --all --query 'data[0].id' --raw-output 2>/dev/null) || true
+  [[ -z "$COMPARTMENT_ID" ]] && COMPARTMENT_ID=$(grep -m1 '^tenancy=' ~/.oci/config 2>/dev/null | cut -d= -f2) || true
+  [[ -z "$COMPARTMENT_ID" ]] && { echo "ERROR: Set COMPARTMENT_ID or verify ~/.oci/config"; exit 1; }
 fi
 
-INSTANCE_ID=$(oci compute instance list -c "$COMPARTMENT_ID" \
-  --display-name "$DISPLAY_NAME" \
-  --query 'data[0].id' --raw-output 2>/dev/null) || true
-[[ -z "$INSTANCE_ID" || "$INSTANCE_ID" == "null" ]] && \
-  echo "ERROR: No instance found with display-name '$DISPLAY_NAME'" && exit 1
+INSTANCE_ID=$(oci compute instance list -c "$COMPARTMENT_ID" --display-name "$DISPLAY_NAME" --query 'data[0].id' --raw-output 2>/dev/null) || true
+[[ -z "$INSTANCE_ID" || "$INSTANCE_ID" == "null" ]] && { echo "ERROR: No instance found with display-name '$DISPLAY_NAME'"; exit 1; }
 
-STATE=$(oci compute instance get --instance-id "$INSTANCE_ID" \
-  --query 'data."lifecycle-state"' --raw-output)
-[[ "$STATE" != "RUNNING" ]] && echo "ERROR: VM is $STATE (not RUNNING)" && exit 2
+# Fast check: get state and IP in one OCI metadata call if possible, but list-vnics is more reliable
+PUBLIC_IP=$(oci compute instance list-vnics --instance-id "$INSTANCE_ID" --query 'data[0]."public-ip"' --raw-output)
+[[ -z "$PUBLIC_IP" || "$PUBLIC_IP" == "null" ]] && { echo "ERROR: No public IP found"; exit 3; }
 
-PUBLIC_IP=$(oci compute instance list-vnics --instance-id "$INSTANCE_ID" \
-  --query 'data[0]."public-ip"' --raw-output)
-[[ -z "$PUBLIC_IP" || "$PUBLIC_IP" == "null" ]] && echo "ERROR: No public IP found" && exit 3
-
-echo "[fetch] VM:    $PUBLIC_IP ($STATE)"
-echo "[fetch] Dest:  $LOCAL_DATA_DIR"
-echo ""
+echo "[fetch] VM Host: $PUBLIC_IP"
+echo "[fetch] Local:   $LOCAL_DATA_DIR"
+echo "────────────────────────────────────────"
 
 # ── Sync ──────────────────────────────────────────────────────────────────────
 mkdir -p "$LOCAL_DATA_DIR"
 
-# Subdirs to sync (mirrors ~/collector-data/ layout)
-REMOTE_DIRS=(
-  "kalshi_market_snapshots"
-  "kalshi_orderbook_snapshots"
-  "synoptic_weather_observations"
-  "aviationweather_metar"
-  "wethr_push"
-  "kalshi_historical"
-  "weather_bot_paper_trades"
-  "nwp_realtime"
-  "madis_realtime"
-)
+# Filter Rules:
+# 1. Include directories (otherwise they are skipped before contents are checked)
+# 2. Include .parquet files
+# 3. Exclude everything else
+FILTER_FILE=$(mktemp)
+cat <<EOF > "$FILTER_FILE"
++ */
++ **/*.parquet
+- *
+EOF
 
-TOTAL_FILES=0
-TOTAL_BYTES=0
-
-for subdir in "${REMOTE_DIRS[@]}"; do
-  REMOTE_PATH="ubuntu@${PUBLIC_IP}:/home/ubuntu/collector-data/${subdir}/"
-  LOCAL_PATH="${LOCAL_DATA_DIR}/${subdir}/"
-
-  # Check if the remote dir exists before trying to sync it
-  if ! ssh -o ConnectTimeout=10 -o BatchMode=yes ubuntu@"$PUBLIC_IP" \
-      "test -d /home/ubuntu/collector-data/${subdir}" 2>/dev/null; then
-    echo "[fetch] $subdir/ — not present on VM, skipping"
-    continue
-  fi
-
-  mkdir -p "$LOCAL_PATH"
-  echo "[fetch] Syncing $subdir/ ..."
-
-  RSYNC_INCLUDES=(--include="*.parquet")
-  COUNT_PATTERN='\.parquet$'
-
-  rsync -avz --progress $DRY_RUN \
-    -e "ssh -o ConnectTimeout=10 -o BatchMode=yes" \
-    "${RSYNC_INCLUDES[@]}" \
-    --exclude="*" \
-    "$REMOTE_PATH" "$LOCAL_PATH" 2>&1 | tee /tmp/rsync_out.txt
-
-  # Count what was transferred
-  transferred=$(grep -c "$COUNT_PATTERN" /tmp/rsync_out.txt 2>/dev/null || true)
-  TOTAL_FILES=$(( TOTAL_FILES + transferred ))
-  echo ""
-done
+echo "[fetch] Starting incremental sync..."
+# Use --ignore-existing to skip files already local, but -a normally handles this with timestamps
+# --size-only is even faster if you trust the VM isn't rewriting files with same size
+rsync -avz $DRY_RUN \
+  --ignore-existing \
+  --include-from="$FILTER_FILE" \
+  -e "ssh -o ConnectTimeout=10 -o BatchMode=yes" \
+  "ubuntu@${PUBLIC_IP}:/home/ubuntu/collector-data/" \
+  "$LOCAL_DATA_DIR/" \
+  | tee /tmp/rsync_out.txt
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo "────────────────────────────────────────"
 if [[ -n "$DRY_RUN" ]]; then
-  echo "[fetch] Dry run complete. Run without --dry-run to transfer."
+  echo "[fetch] Dry run complete."
 else
-  echo "[fetch] Done."
+  # Fast calculation of transfer stats
+  TRANSFERRED=$(grep -c '\.parquet$' /tmp/rsync_out.txt || true)
+  
+  # Get total size of data dir quickly
+  TOTAL_SIZE=$(du -sh "$LOCAL_DATA_DIR" | cut -f1)
+  
+  echo "[fetch] Sync complete."
+  echo "  Files transferred: $TRANSFERRED"
+  echo "  Total local storage: $TOTAL_SIZE"
   echo ""
-  echo "Local data:"
-  find "$LOCAL_DATA_DIR" \( -name "*.parquet" -o -name "*.csv" \) | sort | while read -r f; do
-    SIZE=$(du -h "$f" | cut -f1)
-    echo "  $SIZE  $(basename "$(dirname "$f")")/$(basename "$f")"
-  done
+  
+  # Show most recent activity (top 3 subdirs by latest file)
+  echo "Recent updates (local):"
+  # Look for files modified in the last 60 mins (likely the ones we just synced)
+  find "$LOCAL_DATA_DIR" -name "*.parquet" -mmin -60 | rev | cut -d/ -f2 | rev | sort | uniq -c | sort -nr | head -n 3 || true
 fi
+rm -f "$FILTER_FILE"
 echo "────────────────────────────────────────"
