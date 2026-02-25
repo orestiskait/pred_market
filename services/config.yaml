@@ -103,7 +103,7 @@ collection:
 #
 # Streams real-time observations, DSM/CLI releases, and temperature extreme
 # alerts via Server-Sent Events. All event types are stored to parquet:
-#   data/wethr_push/<event_type>/<ICAO>_YYYY-MM-DD.parquet
+#   data/weather/wethr_push/<event_type>/<ICAO>_YYYY-MM-DD.parquet
 #
 # Stations are derived from event_series.weather_bot via the market registry.
 # =============================================================================
