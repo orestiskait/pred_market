@@ -22,7 +22,7 @@ oci:
 #   kalshi_api_key.txt    - Kalshi private key PEM
 #   kalshi_api_key_id     - Kalshi API key ID
 #   wethr_api_key         - Wethr.net Push API key
-#   aws_access_key_id     - AWS Access Key ID (SQS/SNS queues only; HRRR/NBM/RRFS/MADIS S3 downloads use anonymous)
+#   aws_access_key_id     - AWS Access Key ID (SQS/SNS queues only; HRRR/NBM/RRFS S3 downloads use anonymous)
 #   aws_secret_access_key - AWS Secret Access Key (SQS/SNS queues only)
 # =============================================================================
 credentials:
@@ -131,7 +131,6 @@ nwp:
   sqs_queue_prefix: pred-market-nwp   # used as queue name (stable = no orphan queues)
   # sqs_queue_name: pred-market-nwp   # optional override; default = sqs_queue_prefix
   poll_interval_seconds: 20
-  delete_queue_on_shutdown: true      # false in prod = keep queue across restarts
   models:
     hrrr:
       sns_topic_arn: "arn:aws:sns:us-east-1:123901341784:NewHRRRObject"
