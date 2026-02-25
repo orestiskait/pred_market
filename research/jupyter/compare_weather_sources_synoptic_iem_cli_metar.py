@@ -51,12 +51,12 @@ def load_synoptic_asos(
     start_date: date,
     end_date: date,
 ) -> pd.DataFrame:
-    """Load Synoptic ASOS 1-min from synoptic_weather_observations/."""
+    """Load Synoptic ASOS 1-min from weather/synoptic_observations/."""
     stid = synoptic_station_for_icao(station)
     if not stid:
         return pd.DataFrame()
 
-    base = data_dir / "synoptic_weather_observations"
+    base = data_dir / "weather" / "synoptic_observations"
     frames = []
     d = start_date
     while d <= end_date:
@@ -144,7 +144,7 @@ def load_rtma_ru(
     end_date: date,
 ) -> pd.DataFrame:
     """Load RTMA-RU 15-min analysis from rtma_ru/ (2.5km grid at station coords)."""
-    base = data_dir / "rtma_ru"
+    base = data_dir / "weather" / "rtma_ru"
     frames = []
     d = start_date
     while d <= end_date:
@@ -172,7 +172,7 @@ def load_hrrr(
     end_date: date,
 ) -> pd.DataFrame:
     """Load HRRR 15-min sub-hourly from hrrr/ (3km grid at station coords)."""
-    base = data_dir / "hrrr"
+    base = data_dir / "weather" / "nwp_realtime" / "hrrr"
     frames = []
     d = start_date
     while d <= end_date:
@@ -200,7 +200,7 @@ def load_nbm_f02(
     end_date: date,
 ) -> pd.DataFrame:
     """Load NBM 2h-prior forecast (f02) from nbm/. Fetches from start-1d for coverage."""
-    base = data_dir / "nbm"
+    base = data_dir / "weather" / "nwp_realtime" / "nbm"
     frames = []
     fetch_start = start_date - timedelta(days=1)
     d = fetch_start
@@ -235,7 +235,7 @@ def load_rrfs_f02(
     end_date: date,
 ) -> pd.DataFrame:
     """Load RRFS 2h-prior forecast (f02) from rrfs/. Fetches from start-1d for coverage."""
-    base = data_dir / "rrfs"
+    base = data_dir / "weather" / "nwp_realtime" / "rrfs"
     frames = []
     fetch_start = start_date - timedelta(days=1)
     d = fetch_start
@@ -269,7 +269,7 @@ def load_metar(
     end_date: date,
 ) -> pd.DataFrame:
     """Load AWC METAR from awc_metar/."""
-    base = data_dir / "awc_metar"
+    base = data_dir / "weather" / "aviationweather_metar"
     frames = []
     d = start_date
     while d <= end_date:

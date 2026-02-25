@@ -45,8 +45,8 @@ def load_all_kalshi_snapshots(
     start_date: date,
     end_date: date,
 ) -> pd.DataFrame:
-    """Load all Kalshi market snapshots from kalshi_market_snapshots/."""
-    base = data_dir / "kalshi_market_snapshots"
+    """Load all Kalshi market snapshots from kalshi/market_snapshots/."""
+    base = data_dir / "kalshi" / "market_snapshots"
     frames = []
     d = start_date
     while d <= end_date:
@@ -67,7 +67,7 @@ print(f"Loaded {len(snapshots)} snapshots from {start_date} to {end_date}")
 
 # %% Print list of all event tickers
 if snapshots.empty:
-    print("No Kalshi data found. Ensure kalshi_market_snapshots/ has parquet files.")
+    print("No Kalshi data found. Ensure kalshi/market_snapshots/ has parquet files.")
 else:
     event_tickers = sorted(snapshots["event_ticker"].dropna().unique().tolist())
     print(f"Available event tickers ({len(event_tickers)}):")

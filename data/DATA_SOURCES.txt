@@ -1,21 +1,13 @@
 Folder | Source | What it is
-iem_asos_1min | Iowa Environmental Mesonet (IEM) | ASOS 1-minute temperature data (~24h delay)
-awc_metar | Aviation Weather Center (AWC) | METAR observations (hourly + SPECI)
-iem_daily_climate | Iowa Environmental Mesonet (IEM) | NWS Daily Climate Report (CLI) - official high/low for Kalshi settlement. Chicago=CLIMDW (Midway). See docs/events/kalshi_settlement_rules.md
-kalshi_market_snapshots | Kalshi WebSocket | Market snapshots (yes_bid, yes_ask, no_bid, no_ask, last_price)
-kalshi_orderbook_snapshots | Kalshi WebSocket | Orderbook depth
-synoptic_weather_observations | Synoptic WebSocket + REST | ASOS 1-min (live + backfill). source: live|backfill; live wins on dedup.
-weather_bot_paper_trades | Paper execution | Bot trade log (CSV + parquet YYYY-MM-DD.parquet)
-kalshi_historical | Kalshi REST API | Historical candlesticks and trades (backfill)
-nwp_realtime/hrrr | NOAA HRRR (AWS S3) | HRRR 15-min sub-hourly point forecasts (live ingest + latency tracking)
-nwp_realtime/rtma_ru | NOAA RTMA-RU (AWS S3) | RTMA Rapid Update 2.5km analysis (live ingest + latency tracking)
-nwp_realtime/rrfs | NOAA RRFS (AWS S3) | RRFS 3km hourly point forecasts (live ingest + latency tracking)
-nwp_realtime/nbm | NOAA NBM COG (AWS S3) | NBM 2.5km bias-corrected hourly point forecasts (live ingest + latency tracking)
-madis_realtime/madis_metar | NOAA MADIS (AWS S3) | Decoded METAR with high-precision T-groups (temp/dew 0.1C)
-madis_realtime/madis_omo | NOAA MADIS (AWS S3) | One-Minute ASOS (OMO) high-frequency sensor snapshots
-aviationweather_metar/awc_metar | Aviation Weather Center API | METAR (hourly + SPECI). saved_ts, ob_time_utc, temp, raw_ob, RMK, 6hr/24hr min/max. Polled by weather-bot.
-aviationweather_metar/nws_observations | NWS api.weather.gov | Same data as weather.gov/wrh/LowTimeseries. saved_ts, ob_time_utc, temp, 6hr/24hr min/max. Polled by weather-bot.
-wethr_push/observations | Wethr.net Push API | Real-time SSE observations (obs, DSM, CLI, new_high, new_low). Written by weather-bot.
+kalshi/market_snapshots | Kalshi WebSocket | Market snapshots (yes_bid, yes_ask, no_bid, no_ask, last_price)
+kalshi/orderbook_snapshots | Kalshi WebSocket | Orderbook depth
+weather/synoptic_observations | Synoptic WebSocket + REST | ASOS 1-min (live + backfill). 
+weather_bot/trades | Paper execution | Bot trade log (CSV + parquet)
+weather/nwp_realtime | NOAA (AWS S3) | HRRR, RRFS, NBM (live ingest + latency tracking)
+weather/madis_realtime | NOAA MADIS (AWS S3) | Decoded METAR (0.1C precision) and OMO
+weather/aviationweather_metar | AWC + NWS | METAR (hourly + SPECI)
+weather/wethr_push | Wethr.net Push API | Real-time SSE observations (obs, DSM, CLI, alerts)
+
 
 Download scripts: research/download_data/
   iem_asos_1min.py - IEM ASOS 1-min

@@ -1,4 +1,4 @@
-"""Run Synoptic ASOS 1-min backfill into synoptic_weather_observations.
+"""Run Synoptic ASOS 1-min backfill into weather/synoptic_observations.
 
 Fetches from Synoptic Time Series REST API and merges into the same storage
 used by the live WebSocket collector. Live data takes priority when both exist.
@@ -27,7 +27,7 @@ from research.download_data.synoptic_backfill import backfill_range
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Backfill Synoptic ASOS 1-min into synoptic_weather_observations",
+        description="Backfill Synoptic ASOS 1-min into weather/synoptic_observations",
     )
     parser.add_argument("--config", default=None, help="Path to config.yaml")
     parser.add_argument(
@@ -70,7 +70,7 @@ def main():
         end_date = date.fromisoformat(args.end)
 
     print(f"Backfilling Synoptic ASOS 1-min for {args.station}: {start_date} to {end_date}")
-    print(f"Target: {data_dir}/synoptic_weather_observations/")
+    print(f"Target: {data_dir}/weather/synoptic_observations/")
 
     merged = backfill_range(
         icao=args.station,

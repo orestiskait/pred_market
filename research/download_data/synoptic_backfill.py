@@ -1,7 +1,7 @@
-"""Backfill Synoptic ASOS 1-min data into synoptic_weather_observations.
+"""Backfill Synoptic ASOS 1-min data into weather/synoptic_observations.
 
 Uses Synoptic Time Series REST API. Writes to the same storage as the live
-WebSocket collector (synoptic_weather_observations/). Merges with existing data;
+WebSocket collector (weather/synoptic_observations/). Merges with existing data;
 live data takes priority when deduplicating by (ob_timestamp, stid).
 
 Data source: https://api.synopticdata.com/v2/stations/timeseries
