@@ -353,7 +353,7 @@ class LiveListener(AsyncService, KalshiWSMixin):
                             "yes_ask": new_info.get(tk, {}).get("yes_ask", 0),
                             "last_price": new_info.get(tk, {}).get("last_price", 0),
                         }
-                    for stale in list(self.orderbooks) - new_set:
+                    for stale in set(self.orderbooks) - new_set:
                         self.orderbooks.pop(stale, None)
                         self._prev_prices.pop(stale, None)
                         self._last_ob.pop(stale, None)
