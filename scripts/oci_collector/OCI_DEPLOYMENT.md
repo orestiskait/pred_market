@@ -361,4 +361,8 @@ ssh ubuntu@129.158.203.11 '~/pred_market/scripts/oci_collector/maintenance/probe
 cd scripts/oci_collector/maintenance
 ./update_code_and_restart_services.sh
 ./probe_vm_and_container_status.sh
+
+# 4. View container logs (if issues)
+ssh ubuntu@129.158.203.11 'docker logs -f kalshi-listener'
+ssh ubuntu@129.158.203.11 'docker logs -f weather-bot'
 ```
