@@ -3,14 +3,9 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 .env
-# Data outputs (download scripts in research/download_data/)
+# Data outputs
 **/*.parquet
-data/iem_asos_1min/
-data/awc_metar/
-data/iem_daily_climate/
-data/kalshi_market_snapshots/
-data/kalshi_orderbook_snapshots/
-data/synoptic_weather_observations/
-data/weather_bot_paper_trades/
-data/kalshi_historical/
-data/weather_bot/trades/paper_trades.csv
+data/kalshi/
+data/weather/
+data/weather_bot/
+data/historical/
