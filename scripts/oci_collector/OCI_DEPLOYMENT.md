@@ -41,15 +41,17 @@ The VM runs Docker containers for data collection:
 │          ▼                        ▼                              │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │  ~/collector-data/  (shared volume)                        │   │
-│  │  ├── kalshi_market_snapshots/     ← Kalshi prices          │   │
-│  │  ├── kalshi_orderbook_snapshots/  ← Kalshi orderbooks      │   │
-│  │  ├── wethr_push/            ← Wethr.net real-time obs       │   │
-│  │  ├── aviationweather_metar/ ← AWC + NWS METAR (weather-bot)│   │
-│  │  ├── nwp_realtime/          ← HRRR, RRFS, NBM (weather-bot)│   │
-│  │  ├── madis_realtime/        ← MADIS METAR/OMO (weather-bot)│   │
-│  │  ├── synoptic_weather_observations/ ← legacy/historical   │   │
-│  │  ├── kalshi_historical/     ← Kalshi backfill               │   │
-│  │  └── weather_bot_paper_trades/ ← Paper trade logs          │   │
+│  │  ├── kalshi/                                        │   │
+│  │  │  ├── market_snapshots/    ← Kalshi prices       │   │
+│  │  │  └── orderbook_snapshots/ ← Kalshi orderbooks   │   │
+│  │  ├── weather/                                       │   │
+│  │  │  ├── madis_realtime/      ← MADIS METAR/OMO     │   │
+│  │  │  ├── wethr_push/          ← Wethr.net obs       │   │
+│  │  │  ├── nwp_realtime/        ← HRRR, RRFS, NBM     │   │
+│  │  │  ├── aviationweather_metar/ ← AWC/NWS METAR     │   │
+│  │  │  └── synoptic_observations/  ← legacy/hist      │   │
+│  │  └── weather_bot/                                   │   │
+│  │     └── trades/              ← Paper trade logs    │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -314,16 +316,18 @@ To change the frequency, adjust the cron schedule (e.g. `*/30 * * * *` for every
 
 ```
 ~/collector-data/
-├── kalshi_market_snapshots/       # Kalshi price/volume snapshots (one parquet per day)
-├── kalshi_orderbook_snapshots/   # Kalshi orderbook depth data
-├── wethr_push/                    # Wethr.net real-time obs (weather-bot)
-├── aviationweather_metar/        # AWC + NWS METAR (weather-bot)
-├── nwp_realtime/                 # HRRR, RRFS, NBM (weather-bot)
-├── madis_realtime/               # MADIS METAR/OMO (weather-bot)
-├── synoptic_weather_observations/ # Legacy/historical
-├── kalshi_historical/             # Kalshi backfill (candlesticks, trades)
-├── weather_bot_paper_trades/     # Paper trade logs
-└── iem_daily_climate/            # Official NWS daily climate reports
+├── kalshi/
+│   ├── market_snapshots/      # Kalshi price/volume snapshots
+│   └── orderbook_snapshots/   # Kalshi orderbook depth data
+├── weather/
+│   ├── wethr_push/            # Wethr.net real-time obs
+│   ├── aviationweather_metar/ # AWC + NWS METAR
+│   ├── nwp_realtime/          # HRRR, RRFS, NBM
+│   ├── madis_realtime/        # MADIS METAR/OMO
+│   └── synoptic_observations/ # Legacy/historical
+├── weather_bot/
+│   └── trades/                # Paper trade logs
+└── historical/                # Generic backfill/legacy data
 ```
 
 ## Security
