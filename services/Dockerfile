@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libffi-dev \
     libeccodes-dev \
+    libcurl4 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY services/requirements.txt .
