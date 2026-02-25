@@ -41,8 +41,8 @@ case "$cmd" in
     echo "[start_stop_weather_bot] Starting weather bot..."
     $DOCKER run -d \
       --name "$CONTAINER" \
-      -e CREDENTIALS_DIR=/app/credentials \\
-      -v "$CREDS_DIR:/app/credentials:ro" \\
+      -e CREDENTIALS_DIR=/app/credentials \
+      -v "$CREDS_DIR:/app/credentials:ro" \
       -v "$DATA_DIR:/app/data" \
       --restart unless-stopped \
       "$IMAGE" python -m services.bot.weather_bot
