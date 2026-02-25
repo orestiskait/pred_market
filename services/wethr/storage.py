@@ -1,11 +1,11 @@
 """Parquet storage for Wethr.net Push API data with latency tracking.
 
 Stores each event type in a separate parquet file, organized by date:
-  data/wethr_push/observations/<ICAO>_YYYY-MM-DD.parquet
-  data/wethr_push/dsm/<ICAO>_YYYY-MM-DD.parquet
-  data/wethr_push/cli/<ICAO>_YYYY-MM-DD.parquet
-  data/wethr_push/new_high/<ICAO>_YYYY-MM-DD.parquet
-  data/wethr_push/new_low/<ICAO>_YYYY-MM-DD.parquet
+  data/weather/wethr_push/observations/<ICAO>_YYYY-MM-DD.parquet
+  data/weather/wethr_push/dsm/<ICAO>_YYYY-MM-DD.parquet
+  data/weather/wethr_push/cli/<ICAO>_YYYY-MM-DD.parquet
+  data/weather/wethr_push/new_high/<ICAO>_YYYY-MM-DD.parquet
+  data/weather/wethr_push/new_low/<ICAO>_YYYY-MM-DD.parquet
 
 Every row includes `received_ts` (when our client received the SSE event) for
 post-hoc latency analysis: latency = received_ts - observation_time_utc.
@@ -59,7 +59,7 @@ class WethrPushStorage(PerStationDayStore):
     EVENT_TYPES = tuple(_EVENT_META.keys())
 
     def __init__(self, data_dir: str | Path):
-        super().__init__(Path(data_dir) / "wethr_push")
+        super().__init__(Path(data_dir) / "weather" / "wethr_push")
         for et in self.EVENT_TYPES:
             (self.base_dir / et).mkdir(parents=True, exist_ok=True)
 

@@ -1,8 +1,8 @@
 """Parquet storage for NWP model data and MADIS observations with latency tracking.
 
 Storage layouts:
-  data/nwp_realtime/<model>/<ICAO>_<YYYY-MM-DD>.parquet
-  data/madis_realtime/<source>/<ICAO>_<YYYY-MM-DD>.parquet
+  data/weather/nwp_realtime/<model>/<ICAO>_<YYYY-MM-DD>.parquet
+  data/weather/madis_realtime/<source>/<ICAO>_<YYYY-MM-DD>.parquet
 
 Latency columns (added automatically by save()):
   - notification_ts        : when AWS SNS published the S3 event
@@ -66,7 +66,7 @@ class NWPRealtimeStorage(PerStationDayStore):
     SORT_COLS = ["cycle_utc", "forecast_minutes"]
 
     def __init__(self, data_dir: str | Path):
-        super().__init__(Path(data_dir) / "nwp_realtime")
+        super().__init__(Path(data_dir) / "weather" / "nwp_realtime")
 
     def save(
         self,
@@ -107,14 +107,14 @@ class MADISRealtimeStorage(PerStationDayStore):
     """Append-friendly parquet I/O for MADIS observation data with latency tracking.
 
     Storage layout:
-      data/madis_realtime/<source_name>/<ICAO>_<YYYY-MM-DD>.parquet
+      data/weather/madis_realtime/<source_name>/<ICAO>_<YYYY-MM-DD>.parquet
     """
 
     DEDUP_COLS = ["station", "obs_time_utc", "source"]
     SORT_COLS = ["obs_time_utc"]
 
     def __init__(self, data_dir: str | Path):
-        super().__init__(Path(data_dir) / "madis_realtime")
+        super().__init__(Path(data_dir) / "weather" / "madis_realtime")
 
     def save(
         self,

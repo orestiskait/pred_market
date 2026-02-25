@@ -1,7 +1,7 @@
 """Parquet storage for aviation weather METAR data with latency tracking.
 
 Storage layout:
-  data/aviationweather_metar/<source>/<ICAO>_<YYYY-MM-DD>.parquet
+  data/weather/aviationweather_metar/<source>/<ICAO>_<YYYY-MM-DD>.parquet
 
 Sources: awc_metar (Aviation Weather Center), nws_observations (api.weather.gov)
 """
@@ -26,7 +26,7 @@ class MetarStorage(PerStationDayStore):
     SORT_COLS = ["ob_time_utc"]
 
     def __init__(self, data_dir: str | Path):
-        super().__init__(Path(data_dir) / "aviationweather_metar")
+        super().__init__(Path(data_dir) / "weather" / "aviationweather_metar")
 
     def save(self, df: pd.DataFrame, source_name: str) -> None:
         if df.empty:

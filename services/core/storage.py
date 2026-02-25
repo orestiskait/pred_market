@@ -1,9 +1,9 @@
 """Parquet storage for live Kalshi market data and Synoptic observations.
 
 Provides append-friendly parquet I/O organised by date:
-  data/kalshi_market_snapshots/YYYY-MM-DD.parquet
-  data/kalshi_orderbook_snapshots/YYYY-MM-DD.parquet
-  data/synoptic_weather_observations/YYYY-MM-DD.parquet
+  data/kalshi/market_snapshots/YYYY-MM-DD.parquet
+  data/kalshi/orderbook_snapshots/YYYY-MM-DD.parquet
+  data/weather/synoptic_observations/YYYY-MM-DD.parquet
 """
 
 from __future__ import annotations
@@ -83,10 +83,12 @@ class ParquetStorage:
     def __init__(self, data_dir: str):
         self.data_dir = Path(data_dir)
         self.dirs = {
-            "market":       self.data_dir / "kalshi_market_snapshots",
-            "orderbook":    self.data_dir / "kalshi_orderbook_snapshots",
-            "synoptic_ws":  self.data_dir / "synoptic_weather_observations",
-            "paper_trades": self.data_dir / "weather_bot_paper_trades",
+        self.dirs = {
+            "market":       self.data_dir / "kalshi" / "market_snapshots",
+            "orderbook":    self.data_dir / "kalshi" / "orderbook_snapshots",
+            "synoptic_ws":  self.data_dir / "weather" / "synoptic_observations",
+            "paper_trades": self.data_dir / "weather_bot" / "trades",
+        }
         }
         for d in self.dirs.values():
             d.mkdir(parents=True, exist_ok=True)

@@ -13,3 +13,4 @@ data/kalshi_orderbook_snapshots/
 data/synoptic_weather_observations/
 data/weather_bot_paper_trades/
 data/kalshi_historical/
+data/weather_bot/trades/paper_trades.csv
