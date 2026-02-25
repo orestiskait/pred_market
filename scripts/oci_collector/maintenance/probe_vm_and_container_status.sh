@@ -24,7 +24,7 @@ if [[ -z "${COMPARTMENT_ID:-}" ]]; then
   fi
 
   # 2) If still empty, ensure OCI CLI is available before listing compartments
-  if [[ -z "${COMPARTMENT_ID}" ]]; then
+  if [[ -z "${COMPARTMENT_ID:-}" ]]; then
     if ! command -v oci >/dev/null 2>&1; then
       echo "ERROR: OCI CLI not installed. Install it or set COMPARTMENT_ID manually." >&2
       exit 1
@@ -35,7 +35,7 @@ if [[ -z "${COMPARTMENT_ID:-}" ]]; then
   fi
 
   # 3) If still empty, abort with clear message
-  if [[ -z "${COMPARTMENT_ID}" ]]; then
+  if [[ -z "${COMPARTMENT_ID:-}" ]]; then
     echo "ERROR: Set COMPARTMENT_ID (auto‑detect failed)." >&2
     exit 1
   fi
