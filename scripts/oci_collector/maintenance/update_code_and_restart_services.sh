@@ -13,8 +13,10 @@
 #   0 */6 * * * /home/ubuntu/pred_market/scripts/oci_collector/maintenance/update_code_and_restart_services.sh >> /home/ubuntu/collector-data/update.log 2>&1
 set -euo pipefail
 
-REPO_DIR="/home/ubuntu/pred_market"
-OCI_ROOT="/home/ubuntu/pred_market/scripts/oci_collector"
+# Derive repo root from this script's location (works on VM and local)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+OCI_ROOT="$REPO_DIR/scripts/oci_collector"
 START_ALL_SCRIPT="$OCI_ROOT/manage_services/start_stop_all_services.sh"
 IMAGE="kalshi-services:latest"  # Shared image for Kalshi listener and weather bot
 
