@@ -128,9 +128,10 @@ wethr:
 # =============================================================================
 nwp:
   aws_region: us-east-1
-  sqs_queue_prefix: pred-market-nwp
+  sqs_queue_prefix: pred-market-nwp   # used as queue name (stable = no orphan queues)
+  # sqs_queue_name: pred-market-nwp   # optional override; default = sqs_queue_prefix
   poll_interval_seconds: 20
-  delete_queue_on_shutdown: true
+  delete_queue_on_shutdown: true      # false in prod = keep queue across restarts
   models:
     hrrr:
       sns_topic_arn: "arn:aws:sns:us-east-1:123901341784:NewHRRRObject"

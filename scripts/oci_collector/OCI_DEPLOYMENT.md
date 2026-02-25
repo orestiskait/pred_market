@@ -302,6 +302,18 @@ tail -50 ~/collector-data/update.log
 
 To change the frequency, adjust the cron schedule (e.g. `*/30 * * * *` for every 30 minutes, `0 * * * *` for hourly).
 
+## SQS Orphan Queue Cleanup (one-time)
+
+If you saw high SQS costs before Feb 2025, the NWP listener used timestamped queue names (`pred-market-nwp-<timestamp>`), creating a new queue on every restart. Orphan queues kept receiving SNS notifications and inflated costs.
+
+**After deploying the fix** (stable queue name), run once to delete orphan queues:
+
+```bash
+# From project root (local or VM), with AWS credentials configured:
+pred_env/bin/python scripts/cleanup_orphan_sqs_queues.py --dry-run   # list only
+pred_env/bin/python scripts/cleanup_orphan_sqs_queues.py             # delete
+```
+
 ## VM Layout
 
 | Path | Purpose |

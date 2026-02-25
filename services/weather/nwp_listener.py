@@ -26,7 +26,6 @@ import asyncio
 import json
 import logging
 import re
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -472,9 +471,11 @@ class NWPSNSListener(AsyncService):
                 self.model_configs[model_name] = mc
                 logger.info("Model %s: SNS=%s", model_name, mc.sns_topic_arn)
 
-        # Queue name (unique per deployment)
-        queue_prefix = nwp_cfg.get("sqs_queue_prefix", "pred-market-nwp")
-        self.queue_name = f"{queue_prefix}-{int(time.time())}"
+        # Queue name — stable so restarts reuse the same queue (avoids orphan queues
+        # that accumulate SNS deliveries and inflate SQS request costs)
+        self.queue_name = nwp_cfg.get("sqs_queue_name") or nwp_cfg.get(
+            "sqs_queue_prefix", "pred-market-nwp"
+        )
 
         # SQS manager (initialized in run)
         self.sqs_manager: SQSManager | None = None
