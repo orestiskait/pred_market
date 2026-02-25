@@ -83,12 +83,10 @@ class ParquetStorage:
     def __init__(self, data_dir: str):
         self.data_dir = Path(data_dir)
         self.dirs = {
-        self.dirs = {
             "market":       self.data_dir / "kalshi" / "market_snapshots",
             "orderbook":    self.data_dir / "kalshi" / "orderbook_snapshots",
             "synoptic_ws":  self.data_dir / "weather" / "synoptic_observations",
             "paper_trades": self.data_dir / "weather_bot" / "trades",
-        }
         }
         for d in self.dirs.values():
             d.mkdir(parents=True, exist_ok=True)
