@@ -507,8 +507,6 @@ class NWPSNSListener(AsyncService):
                 self._fetchers[model_name] = fetcher_cls(
                     data_dir=data_dir,
                     max_forecast_hour=max_fxx,
-                    aws_access_key_id=None,
-                    aws_secret_access_key=None,
                 )
             else:
                 logger.warning("No fetcher registered for model: %s", model_name)
@@ -525,11 +523,7 @@ class NWPSNSListener(AsyncService):
             if model_name in MADIS_FETCHERS:
                 fetcher_cls = MADIS_FETCHERS[model_name]
                 data_dir = (self.config_dir / self.config["storage"]["data_dir"]).resolve()
-                self._madis_fetchers[model_name] = fetcher_cls(
-                    data_dir=data_dir,
-                    aws_access_key_id=None,
-                    aws_secret_access_key=None,
-                )
+                self._madis_fetchers[model_name] = fetcher_cls(data_dir=data_dir)
             else:
                 logger.warning("No MADIS fetcher for: %s", model_name)
                 self._madis_fetchers[model_name] = None

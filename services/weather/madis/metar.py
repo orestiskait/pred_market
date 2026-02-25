@@ -63,18 +63,11 @@ class MADISMETARFetcher:
 
     SOURCE_NAME = "madis_metar"
 
-    def __init__(
-        self,
-        data_dir: Path | str | None = None,
-        aws_access_key_id: str | None = None,
-        aws_secret_access_key: str | None = None,
-    ):
+    def __init__(self, data_dir: Path | str | None = None):
         if data_dir is None:
             data_dir = Path(__file__).resolve().parent.parent.parent.parent / "data"
         self.data_dir = Path(data_dir) / self.SOURCE_NAME
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        self.aws_access_key_id = aws_access_key_id
-        self.aws_secret_access_key = aws_secret_access_key
 
     def fetch_from_s3(
         self,
@@ -107,14 +100,12 @@ class MADISMETARFetcher:
         from botocore import UNSIGNED
         from botocore.config import Config
 
-        s3_kwargs = {"region_name": REGION}
-        if self.aws_access_key_id and self.aws_secret_access_key:
-            s3_kwargs["aws_access_key_id"] = self.aws_access_key_id
-            s3_kwargs["aws_secret_access_key"] = self.aws_secret_access_key
-        else:
-            s3_kwargs["config"] = Config(signature_version=UNSIGNED)
-
-        s3 = boto3.client("s3", **s3_kwargs)
+        # NOAA MADIS bucket is public; anonymous access only (no credentials).
+        s3 = boto3.client(
+            "s3",
+            region_name=REGION,
+            config=Config(signature_version=UNSIGNED),
+        )
 
         # Download the gzipped NetCDF
         try:

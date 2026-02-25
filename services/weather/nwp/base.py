@@ -88,8 +88,6 @@ class NWPPointFetcher:
         data_dir: Path | str | None = None,
         variables: list[tuple[str, str]] | None = None,
         max_forecast_hour: int | None = None,
-        aws_access_key_id: str | None = None,
-        aws_secret_access_key: str | None = None,
     ):
         if data_dir is None:
             data_dir = Path(__file__).resolve().parent.parent.parent.parent / "data"
@@ -99,8 +97,6 @@ class NWPPointFetcher:
         self.max_forecast_hour = (
             max_forecast_hour if max_forecast_hour is not None else self.DEFAULT_MAX_FXX
         )
-        self.aws_access_key_id = aws_access_key_id
-        self.aws_secret_access_key = aws_secret_access_key
 
     # ------------------------------------------------------------------
     # Config integration

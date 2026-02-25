@@ -19,6 +19,8 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
+from botocore import UNSIGNED
+from botocore.config import Config
 
 from services.weather.station_registry import NWPStation
 
@@ -45,8 +47,6 @@ class NBMCOGFetcher:
         self,
         data_dir: Path | str | None = None,
         max_forecast_hour: int | None = None,
-        aws_access_key_id: str | None = None,
-        aws_secret_access_key: str | None = None,
     ):
         if data_dir is None:
             data_dir = Path(__file__).resolve().parent.parent.parent.parent / "data"
@@ -55,8 +55,6 @@ class NBMCOGFetcher:
         self.max_forecast_hour = (
             max_forecast_hour if max_forecast_hour is not None else self.DEFAULT_MAX_FXX
         )
-        self.aws_access_key_id = aws_access_key_id
-        self.aws_secret_access_key = aws_secret_access_key
 
     @classmethod
     def from_config(cls, config_path: str | Path) -> "NBMCOGFetcher":
@@ -86,22 +84,16 @@ class NBMCOGFetcher:
     def _read_cog_point(
         self, key: str, lat: float, lon: float
     ) -> tuple[float, float, float, float] | None:
-        """Read COG and extract value at (lat, lon). Returns (temp_c, grid_lat, grid_lon) or None."""
+        """Read COG and extract value at (lat, lon). Returns (temp_c, grid_lat, grid_lon) or None.
+
+        NOAA buckets are public; uses anonymous (unsigned) S3 access only.
+        """
         import boto3
-        from botocore import UNSIGNED
-        from botocore.config import Config
         import rasterio
         from rasterio.env import Env
 
-        s3_kwargs = {"region_name": REGION}
-        env_kwargs = {"AWS_S3_ENDPOINT": "s3.us-east-1.amazonaws.com"}
-
-        if self.aws_access_key_id and self.aws_secret_access_key:
-            s3_kwargs["aws_access_key_id"] = self.aws_access_key_id
-            s3_kwargs["aws_secret_access_key"] = self.aws_secret_access_key
-        else:
-            s3_kwargs["config"] = Config(signature_version=UNSIGNED)
-            env_kwargs["AWS_NO_SIGN_REQUEST"] = "YES"
+        s3_kwargs = {"region_name": REGION, "config": Config(signature_version=UNSIGNED)}
+        env_kwargs = {"AWS_S3_ENDPOINT": "s3.us-east-1.amazonaws.com", "AWS_NO_SIGN_REQUEST": "YES"}
 
         s3 = boto3.client("s3", **s3_kwargs)
         url = f"s3://{BUCKET}/{key}"
@@ -218,14 +210,13 @@ class NBMCOGFetcher:
         lookback_hours: int = 6,
         save: bool = True,
     ) -> pd.DataFrame:
-        s3_kwargs = {"region_name": REGION}
-        if self.aws_access_key_id and self.aws_secret_access_key:
-            s3_kwargs["aws_access_key_id"] = self.aws_access_key_id
-            s3_kwargs["aws_secret_access_key"] = self.aws_secret_access_key
-        else:
-            s3_kwargs["config"] = Config(signature_version=UNSIGNED)
+        import boto3
 
-        s3 = boto3.client("s3", **s3_kwargs)
+        s3 = boto3.client(
+            "s3",
+            region_name=REGION,
+            config=Config(signature_version=UNSIGNED),
+        )
         now = datetime.now(timezone.utc)
         best_cycle = None
         for day_offset in range(3):

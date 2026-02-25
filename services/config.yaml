@@ -22,8 +22,8 @@ oci:
 #   kalshi_api_key.txt    - Kalshi private key PEM
 #   kalshi_api_key_id     - Kalshi API key ID
 #   wethr_api_key         - Wethr.net Push API key
-#   aws_access_key_id     - AWS Access Key ID (SQS/SNS for NWP; S3 is anonymous)
-#   aws_secret_access_key - AWS Secret Access Key (SQS/SNS for NWP)
+#   aws_access_key_id     - AWS Access Key ID (SQS/SNS queues only; HRRR/NBM/RRFS/MADIS S3 downloads use anonymous)
+#   aws_secret_access_key - AWS Secret Access Key (SQS/SNS queues only)
 # =============================================================================
 credentials:
   dir: "~/.kalshi"
