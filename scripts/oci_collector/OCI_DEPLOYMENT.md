@@ -348,3 +348,17 @@ pred_env/bin/python scripts/cleanup_orphan_sqs_queues.py             # delete
 - Ensure the subnet's security list allows:
   - **Inbound SSH (port 22)** from your IP
 - Outbound HTTPS is needed for Kalshi API and GitHub.
+## Console Quick Commands
+
+```bash
+# 1. Pull latest code, rebuild image, and restart services
+ssh ubuntu@129.158.203.11 '~/pred_market/scripts/oci_collector/maintenance/update_code_and_restart_services.sh'
+
+# 2. Probe VM and container status
+ssh ubuntu@129.158.203.11 '~/pred_market/scripts/oci_collector/maintenance/probe_vm_and_container_status.sh'
+
+# 3. Or run locally from your machine (requires OCI CLI + SSH):
+cd scripts/oci_collector/maintenance
+./update_code_and_restart_services.sh
+./probe_vm_and_container_status.sh
+```
