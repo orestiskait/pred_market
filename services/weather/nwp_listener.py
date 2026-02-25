@@ -55,10 +55,8 @@ HRRR_PATTERN = re.compile(
 )
 
 # RRFS: rrfs_a/rrfs.YYYYMMDD/HH/.../rrfs.tCCz.prslev.3km.f[FH].conus.grib2
-# Actual formats: prslev.3km, natlev.3km, prslev.2p5km; optional .subh; domain at end
 RRFS_PATTERN = re.compile(
-    r"rrfs\.t(\d{2})z\.(?:prslev|natlev)\.(?:3km|2p5km)\.(?:prob\.)?(?:subh\.)?"
-    r"f(\d{2,3})\.(?:conus|na|ak|hi|pr)\.grib2$"
+    r"rrfs\.t(\d{2})z\.[\w\.]+\.f(\d{2,3})\.(?:conus|na|ak|hi|pr)\.grib2$"
 )
 RRFS_DATE_PATTERN = re.compile(r"rrfs\.(\d{8})")
 
