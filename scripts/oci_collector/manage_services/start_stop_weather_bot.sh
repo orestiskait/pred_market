@@ -42,7 +42,7 @@ case "$cmd" in
     $DOCKER run -d \
       --name "$CONTAINER" \
       -e CREDENTIALS_DIR=/app/credentials \
-      -e LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libcurl.so.4 \
+      -e LD_PRELOAD=/usr/lib/*/libcurl.so.4 \
       -v "$CREDS_DIR:/app/credentials:ro" \
       -v "$DATA_DIR:/app/data" \
       --restart unless-stopped \
