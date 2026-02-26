@@ -128,7 +128,7 @@ wethr:
 # =============================================================================
 nwp:
   aws_region: us-east-1
-  sqs_queue_prefix: pred-market-nwp   # used as queue name (stable = no orphan queues)
+  sqs_queue_prefix: "pred-market-live"   # used as queue name (stable = no orphan queues)
   # sqs_queue_name: pred-market-nwp   # optional override; default = sqs_queue_prefix
   poll_interval_seconds: 20
   models:

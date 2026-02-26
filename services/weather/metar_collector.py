@@ -190,10 +190,14 @@ def _add_rolling_minmax(
     if existing.empty:
         combined = df.copy()
     else:
+        # Ensure consistent timezones for concat and sort
+        existing[ob_col] = pd.to_datetime(existing[ob_col], utc=True)
+        df[ob_col] = pd.to_datetime(df[ob_col], utc=True)
         combined = pd.concat([existing, df], ignore_index=True)
+
     combined = combined.drop_duplicates(
-        subset=["ob_time_utc"], keep="last"
-    ).sort_values("ob_time_utc")
+        subset=[ob_col], keep="last"
+    ).sort_values(ob_col)
 
     ob_col = "ob_time_utc"
     temp_col = "temp_c"

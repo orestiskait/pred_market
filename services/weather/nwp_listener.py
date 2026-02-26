@@ -109,25 +109,26 @@ class SQSManager:
         self.queue_arn: str | None = None
 
     def _delete_existing(self) -> bool:
-        """Delete existing queue if present. Returns True if deleted."""
-        try:
-            resp = self.sqs.get_queue_url(QueueName=self.queue_name)
-            self.sqs.delete_queue(QueueUrl=resp["QueueUrl"])
-            logger.info("Deleted existing queue: %s", self.queue_name)
-            return True
-        except self.sqs.exceptions.QueueDoesNotExist:
-            return False
+        """DEPRECATED. Replaced by direct creation/reuse."""
+        return False
 
     def _create_and_subscribe(self, topic_arns: list[str]) -> None:
         """Create queue and subscribe to SNS topics."""
-        resp = self.sqs.create_queue(
-            QueueName=self.queue_name,
-            Attributes={
-                "ReceiveMessageWaitTimeSeconds": "20",  # Long polling
-                "VisibilityTimeout": "300",  # 5 min to process
-                "MessageRetentionPeriod": "86400",  # 1 day
-            },
-        )
+        import botocore.exceptions
+        try:
+            resp = self.sqs.create_queue(
+                QueueName=self.queue_name,
+                Attributes={
+                    "ReceiveMessageWaitTimeSeconds": "20",  # Long polling
+                    "VisibilityTimeout": "300",  # 5 min to process
+                    "MessageRetentionPeriod": "86400",  # 1 day
+                },
+            )
+        except botocore.exceptions.ClientError as e:
+            if e.response["Error"]["Code"] == "AWS.SimpleQueueService.QueueDeletedRecently":
+                logger.warning("Queue deleted recently. Must wait 60s...")
+                raise
+            raise
         self.queue_url = resp["QueueUrl"]
 
         # Get queue ARN
@@ -137,6 +138,14 @@ class SQSManager:
         )
         self.queue_arn = attrs["Attributes"]["QueueArn"]
         logger.info("SQS queue ready: %s (%s)", self.queue_name, self.queue_arn)
+
+        # Purge any existing messages (e.g. from while bot was offline)
+        try:
+            self.sqs.purge_queue(QueueUrl=self.queue_url)
+            logger.info("Purged existing messages from queue: %s", self.queue_name)
+        except Exception as e:
+            # Purge can fail if called too recently (once per 60s)
+            logger.debug("Skip purge: %s", e)
 
         # Set policy to allow SNS topics to send to this queue
         policy = {
@@ -160,25 +169,46 @@ class SQSManager:
             Attributes={"Policy": json.dumps(policy)},
         )
 
-        # Subscribe to each SNS topic
+        # Subscribe to each SNS topic with a Filter Policy to reduce costs.
+        # Only receive .grib2 and .tif (skip .idx, .gif, .json, etc.)
+        # FilterPolicyScope="MessageBody" allows filtering on the S3 key in the JSON body.
+        filter_policy = {
+            "Records": {
+                "s3": {
+                    "object": {
+                        "key": [{"suffix": ".grib2"}, {"suffix": ".tif"}]
+                    }
+                }
+            }
+        }
+        
         for arn in topic_arns:
             try:
                 self.sns.subscribe(
                     TopicArn=arn,
                     Protocol="sqs",
                     Endpoint=self.queue_arn,
+                    Attributes={
+                        "FilterPolicy": json.dumps(filter_policy),
+                        "FilterPolicyScope": "MessageBody"
+                    }
                 )
-                logger.info("Subscribed SQS to SNS topic: %s", arn)
+                logger.info("Subscribed SQS to SNS topic with FilterPolicy: %s", arn)
             except Exception as e:
-                logger.error("Failed to subscribe to %s: %s", arn, e)
+                # Fallback if topic doesn't support MessageBody filtering (unlikely for NOAA)
+                logger.warning("FilterPolicy failed, trying basic subscription for %s: %s", arn, e)
+                self.sns.subscribe(
+                    TopicArn=arn,
+                    Protocol="sqs",
+                    Endpoint=self.queue_arn,
+                )
 
     async def setup_async(self, topic_arns: list[str]) -> None:
-        """Create SQS queue and subscribe. Uses asyncio.sleep for 60s wait so bot is not blocked."""
+        """Create/Reuse SQS queue and subscribe."""
         loop = asyncio.get_event_loop()
-        deleted = await loop.run_in_executor(None, self._delete_existing)
-        if deleted:
-            logger.info("Waiting 60s for queue name to be released...")
-            await asyncio.sleep(60)
+        # Direct call. If queue exists, it returns attributes. If just deleted, 
+        # it might fail, but we will use a fresh name or just let it fail and 
+        # have the user restart if they are in a 60s window.
         await loop.run_in_executor(None, lambda: self._create_and_subscribe(topic_arns))
 
     def receive_messages(self, max_messages: int = 10, wait_time: int = 20) -> list[dict]:
@@ -207,13 +237,18 @@ class SQSManager:
             )
 
     def cleanup(self) -> None:
-        """Delete the SQS queue on shutdown."""
-        if self.queue_url:
-            try:
-                self.sqs.delete_queue(QueueUrl=self.queue_url)
-                logger.info("Deleted SQS queue: %s", self.queue_name)
-            except Exception as e:
-                logger.warning("Failed to delete SQS queue: %s", e)
+        """Cleanup on shutdown. 
+        Note: We NO LONGER delete the queue to avoid recreation delays and 
+        high SQS billing from rapid churn. The FilterPolicy and startup Purge
+        handle volume and stale data.
+        """
+        # if self.queue_url:
+        #     try:
+        #         self.sqs.delete_queue(QueueUrl=self.queue_url)
+        #         logger.info("Deleted SQS queue: %s", self.queue_name)
+        #     except Exception as e:
+        #         logger.warning("Failed to delete SQS queue: %s", e)
+        pass
 
 
 # ======================================================================
@@ -285,6 +320,12 @@ def parse_sns_message(raw_body: str) -> list[S3EventInfo]:
             continue
 
         event = _match_key(bucket, key, notification_ts)
+        if not event:
+            # ONLY LOG if it looks like it might be one of our models but failed regex
+            if any(m in key for m in ["hrrr", "rrfs", "nbm", "rtma"]):
+                logger.debug("S3 key match skipped: bucket=%s key=%s", bucket, key)
+            return results
+
         if event:
             results.append(event)
 

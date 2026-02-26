@@ -54,12 +54,22 @@ class PerStationDayStore:
 
         if path.exists():
             existing = pd.read_parquet(path)
+            # Ensure consistent timezones for concat and sort
+            for col in sort_cols:
+                if col in existing.columns and pd.api.types.is_datetime64_any_dtype(existing[col]):
+                    existing[col] = pd.to_datetime(existing[col], utc=True)
+                if col in df.columns and pd.api.types.is_datetime64_any_dtype(df[col]):
+                    df[col] = pd.to_datetime(df[col], utc=True)
+
             combined = pd.concat([existing, df], ignore_index=True)
             cols = [c for c in dedup_cols if c in combined.columns]
             if cols:
                 combined = combined.drop_duplicates(subset=cols, keep="last")
         else:
             combined = df
+            for col in sort_cols:
+                if col in combined.columns and pd.api.types.is_datetime64_any_dtype(combined[col]):
+                    combined[col] = pd.to_datetime(combined[col], utc=True)
 
         cols = [c for c in sort_cols if c in combined.columns]
         if cols:

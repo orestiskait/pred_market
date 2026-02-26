@@ -40,7 +40,8 @@ def _add_latency_columns(
     df["saved_ts"] = saved_ts
 
     if reference_col in df.columns:
-        ref = pd.to_datetime(df[reference_col], utc=True)
+        df[reference_col] = pd.to_datetime(df[reference_col], utc=True)
+        ref = df[reference_col]
         df["notification_latency_s"] = (notif_ts - ref).dt.total_seconds().round(1)
         df["total_latency_s"] = (saved_ts - ref).dt.total_seconds().round(1)
 
