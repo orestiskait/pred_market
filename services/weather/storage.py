@@ -150,3 +150,48 @@ class MADISRealtimeStorage(PerStationDayStore):
         return self._read_parquets(
             self.base_dir / source_name, station_icao, start_date, end_date,
         )
+
+
+class SQSMessagesStorage(PerStationDayStore):
+    """Append-friendly parquet I/O for SQS message counts.
+
+    Storage layout:
+      data/weather/sqs_counts/<queue_name>_<YYYY-MM-DD>.parquet
+    """
+
+    DEDUP_COLS = ["date", "queue_name", "model"]
+    SORT_COLS = ["date"]
+
+    def __init__(self, data_dir: str | Path):
+        super().__init__(Path(data_dir) / "weather" / "sqs_counts")
+
+    def save(self, df: pd.DataFrame) -> None:
+        """Save SQS message counts.
+
+        Expects df with columns: [date, queue_name, model, message_count]
+        """
+        if df.empty:
+            return
+
+        # Use queue_name as the 'station' equivalent for partitioning
+        for queue_name in df["queue_name"].unique():
+            queue_df = df[df["queue_name"] == queue_name]
+            for date_val in queue_df["date"].unique():
+                day_df = queue_df[queue_df["date"] == date_val]
+                # We save directly into base_dir (no model subdirs like NWP)
+                # but use queue_name in the filename.
+                self._append_parquet(
+                    self.base_dir, queue_name, date_val, day_df,
+                    dedup_cols=self.DEDUP_COLS, sort_cols=self.SORT_COLS,
+                )
+
+    def read(
+        self,
+        queue_name: str | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> pd.DataFrame:
+        """Read SQS message counts."""
+        return self._read_parquets(
+            self.base_dir, queue_name, start_date, end_date,
+        )

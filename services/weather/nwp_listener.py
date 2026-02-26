@@ -16,12 +16,15 @@ access — NOAA buckets are public, no credentials for reads.
 from __future__ import annotations
 
 import asyncio
+import collections
 import json
 import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+import pandas as pd
 
 from services.core.config import (
     load_config,
@@ -32,7 +35,7 @@ from services.core.config import (
 )
 from services.core.service import AsyncService
 from services.weather.station_registry import nwp_stations_for_series, NWPStation
-from services.weather.storage import NWPRealtimeStorage
+from services.weather.storage import NWPRealtimeStorage, SQSMessagesStorage
 
 logger = logging.getLogger(__name__)
 
@@ -420,6 +423,7 @@ class NWPSNSListener(AsyncService):
         self.aws_creds = get_aws_credentials(config)
 
         self.poll_interval = nwp_cfg.get("poll_interval_seconds", 20)
+        self.flush_interval = config.get("storage", {}).get("flush_interval_seconds", 300)
 
         # Parse enabled model configs from nwp.models
         self.model_configs: dict[str, ModelSNSConfig] = {}
@@ -449,6 +453,13 @@ class NWPSNSListener(AsyncService):
         # Stats
         self._events_processed = 0
         self._events_skipped = 0
+
+        # SQS stats
+        self.sqs_storage = SQSMessagesStorage(data_dir)
+        self._sqs_message_count = 0
+        self._model_message_counts: dict[str, int] = collections.defaultdict(int)
+        self._last_stats_date = datetime.now(timezone.utc).date()
+        self._load_sqs_stats()
 
     def _get_fetcher(self, model_name: str):
         """Lazy-load the appropriate NWP fetcher for a model."""
@@ -504,7 +515,10 @@ class NWPSNSListener(AsyncService):
             )
 
             if not df.empty:
-                self.nwp_storage.save(df, model, event.notification_ts)
+                await loop.run_in_executor(
+                    None,
+                    lambda: self.nwp_storage.save(df, model, event.notification_ts)
+                )
                 self._events_processed += 1
                 logger.info(
                     "%s: saved %d rows for cycle=%s fxx=%02d "
@@ -543,9 +557,11 @@ class NWPSNSListener(AsyncService):
                         break
 
                     body = msg.get("Body", "")
+                    self._sqs_message_count += 1
                     events = parse_sns_message(body)
 
                     for event in events:
+                        self._model_message_counts[event.model] += 1
                         await self._process_event(event)
 
                     # Delete processed message
@@ -562,16 +578,76 @@ class NWPSNSListener(AsyncService):
                     await asyncio.sleep(5)
 
     async def _stats_loop(self) -> None:
-        """Periodically log processing stats."""
+        """Periodically log and save processing stats."""
         while self._running:
-            await asyncio.sleep(300)  # Every 5 minutes
+            await asyncio.sleep(self.flush_interval)
             if self._running:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, self._save_sqs_stats)
                 logger.info(
-                    "Listener stats: processed=%d skipped=%d stations=%d",
+                    "Listener stats: processed=%d skipped=%d sqs_msgs=%d stations=%d",
                     self._events_processed,
                     self._events_skipped,
+                    self._sqs_message_count,
                     len(self.stations),
                 )
+
+    def _save_sqs_stats(self) -> None:
+        """Save daily SQS message counts to parquet."""
+        now = datetime.now(timezone.utc)
+        today = now.date()
+
+        # Reset counts at midnight UTC
+        if today != self._last_stats_date:
+            logger.info("New day (%s). Resetting SQS message counters.", today)
+            self._sqs_message_count = 0
+            self._model_message_counts.clear()
+            self._last_stats_date = today
+
+        rows = []
+        # Total messages received by the queue
+        rows.append({
+            "date": today,
+            "queue_name": self.queue_name,
+            "model": "TOTAL",
+            "message_count": self._sqs_message_count
+        })
+        # Breakdown by model
+        for model in self.model_configs:
+            rows.append({
+                "date": today,
+                "queue_name": self.queue_name,
+                "model": model,
+                "message_count": self._model_message_counts.get(model, 0)
+            })
+
+        df = pd.DataFrame(rows)
+        self.sqs_storage.save(df)
+
+    def _load_sqs_stats(self) -> None:
+        """Load today's starting SQS message counts from storage."""
+        today = datetime.now(timezone.utc).date()
+        try:
+            df = self.sqs_storage.read(self.queue_name, start_date=today, end_date=today)
+            if not df.empty:
+                # We only keep the latest daily record now
+                latest = df[df["date"] == today]
+
+                # TOTAL count
+                total_row = latest[latest["model"] == "TOTAL"]
+                if not total_row.empty:
+                    self._sqs_message_count = int(total_row["message_count"].iloc[0])
+
+                # Model counts
+                for _, row in latest[latest["model"] != "TOTAL"].iterrows():
+                    self._model_message_counts[row["model"]] = int(row["message_count"])
+
+                logger.info(
+                    "Restored SQS daily counters for %s: total=%d, models=%s",
+                    today, self._sqs_message_count, dict(self._model_message_counts)
+                )
+        except Exception as e:
+            logger.debug("No existing SQS stats to restore for %s: %s", today, e)
 
     # ------------------------------------------------------------------
     # AsyncService overrides

@@ -77,16 +77,7 @@ NWS records climate data in **Local Standard Time (LST) year-round**, even durin
 
 The lag from climate day end to final settlement is typically **6–12 hours**.
 
-### Trading strategy
 
-The project runs a **paper-trading bot** (`services/bot/weather_bot.py`) that implements the `LadderStrategy` class:
-
-- Subscribes to real-time Wethr Push API observations for Chicago (KMDW).
-- When N consecutive observations (default: 2) show temperature ≥ the cap strike, it places a **NO contract** order at up to `max_price_cents` (default: 95¢).
-- Uses Kalshi's REST API for order placement (paper mode = simulated fills by default).
-- Configurable budget cap: `max_spend_per_event` (default: $1,000 per event ticker).
-
----
 
 ## 2. Wethr Push API (WETH)
 
@@ -103,13 +94,6 @@ The project runs a **paper-trading bot** (`services/bot/weather_bot.py`) that im
 | `new_low` | Alert: a new intraday low was set at this station |
 
 This is the **primary real-time trading signal source**. The `new_high` / `new_low` alert events are purpose-built for monitoring whether the current intraday extreme has crossed a Kalshi strike threshold.
-
-### Transport & auth
-
-- **Protocol:** Server-Sent Events (SSE) over HTTPS
-- **Endpoint:** `https://wethr.net:3443/api/v2/stream`
-- **Authentication:** API key passed as query parameter; key stored at `~/.kalshi/wethr_api_key`
-- **Reconnection:** Automatic on disconnect (implemented in `WethrSSEMixin`)
 
 ### Update frequency
 
@@ -216,31 +200,9 @@ Code: `services/wethr/listener.py`, `services/wethr/sse.py`, `services/wethr/sto
 
 **METAR** (METeorological Aerodrome Report) is the standard aviation weather report format. Issued by ASOS/AWOS stations at or near airports, METARs contain synoptic-style surface observations: temperature, dew point, wind, visibility, cloud cover, and altimeter. The system collects METARs from two independent sources for redundancy and cross-validation:
 
-| Source | API | Notes |
-|--------|-----|-------|
-| **AWC** (Aviation Weather Center) | `https://aviationweather.gov/api/data/metar` | NOAA-operated; supports bulk station queries; uses HTTP ETags for conditional GET to avoid re-downloading unchanged data |
-| **NWS** (api.weather.gov) | `https://api.weather.gov/stations/{station}/observations` | REST API by station; includes 6-hour min/max fields not in AWC |
-
-### Update frequency
-
 - **Routine METAR:** Published at approximately :55 past each hour (e.g. 14:55Z, 15:55Z).
-- **SPECI (Special):** Published whenever conditions change significantly (wind shift, visibility drops below threshold, precipitation onset, etc.). Can be issued any time.
-- **AWC polling interval:** Every 90 seconds (configurable).
-- **NWS polling interval:** Every 300 seconds (configurable).
-
-### Latency
-
-Empirically measured at ~**1.5 hours** from observation time to API availability (as of 2026-02-22 at KMDW). This reflects AWS caching and API ingestion lag, not the observation age itself (which is current within the hour).
-
-### Storage
-
-```
-data/weather/aviationweather_metar/
-├── awc_metar/<ICAO>_YYYY-MM-DD.parquet
-└── nws_observations/<ICAO>_YYYY-MM-DD.parquet
-```
-
-Code: `services/weather/metar_collector.py`, `services/weather/metar_storage.py`
+- **SPECI (Special):** Published whenever conditions change significantly (wind shift, visibility drops below threshold, precipitation onset, etc.). Can be issued any time
+- latency is approximately 3 minutes
 
 ### Schema
 
@@ -639,15 +601,6 @@ Historical NWS Daily Climate Reports retrieved from IEM's archive. This is the *
 - **Storage:** `data/iem_daily_climate/`
 - **Fetch script:** `research/download_data/iem_daily_climate.py`
 
-### MADIS METAR (real-time via SNS)
-
-MADIS (Meteorological Assimilation Data Ingest System) decoded METAR observations distributed by NOAA via AWS S3. Higher-precision temperature (0.1°C) compared to the standard METAR body (integer °C). Also includes OMO (Other Meteorological Observations) surface data.
-
-- **Source:** `data/weather/madis_realtime/metar/` and `data/weather/madis_realtime/omo/`
-- **Transport:** AWS SNS → SQS → NetCDF download from S3
-- **Code:** `services/weather/madis/`
-
----
 
 ## Latency Comparison Summary
 
@@ -663,8 +616,6 @@ MADIS (Meteorological Assimilation Data Ingest System) decoded METAR observation
 | **RRFS** | Hourly (paused) | ~1.5 hours | Research / future |
 | **Kalshi orderbook** | Real-time (WS) | Milliseconds–seconds | Market microstructure |
 | **Kalshi market snapshot** | 60 s + spikes | Seconds | Position monitoring |
-| **IEM ASOS 1-min (batch)** | Daily | 18–36 hours | Backtesting only |
-| **IEM CLI (batch)** | Daily | 6–12 hours | Settlement verification |
 
 ---
 
