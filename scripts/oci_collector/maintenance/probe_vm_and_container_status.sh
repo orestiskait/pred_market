@@ -101,7 +101,7 @@ echo "── Data recency ──"
 ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" 'bash -s' << 'RECENCY'
 STALE_MIN=15
 DATA_DIR=~/collector-data
-NEWEST=$(find "$DATA_DIR/kalshi_market_snapshots" "$DATA_DIR/kalshi_orderbook_snapshots" "$DATA_DIR/aviationweather_metar" "$DATA_DIR/wethr_push" "$DATA_DIR/nwp_realtime" "$DATA_DIR/madis_realtime" -name "*.parquet" 2>/dev/null \
+NEWEST=$(find "$DATA_DIR/kalshi/market_snapshots" "$DATA_DIR/kalshi/orderbook_snapshots" "$DATA_DIR/weather/aviationweather_metar" "$DATA_DIR/weather/wethr_push" "$DATA_DIR/weather/nwp_realtime" "$DATA_DIR/weather/madis_realtime" -name "*.parquet" 2>/dev/null \
   | xargs -r stat -c "%Y %n" 2>/dev/null | sort -nr | head -1)
 if [[ -z "$NEWEST" ]]; then
   echo "No parquet files yet"
@@ -125,8 +125,30 @@ RECENCY
 
 echo ""
 echo "── Data freshness ──"
-ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" \
-  'ls -la ~/collector-data/kalshi_market_snapshots/ ~/collector-data/kalshi_orderbook_snapshots/ ~/collector-data/aviationweather_metar/ ~/collector-data/wethr_push/ ~/collector-data/nwp_realtime/ ~/collector-data/madis_realtime/ 2>/dev/null || echo "No data dirs yet"' 2>/dev/null
+ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" 'bash -s' <<'FRESH'
+DATA_DIR=~/collector-data
+declare -A paths=(
+  ["Kalshi market"]="kalshi/market_snapshots"
+  ["Kalshi orderbook"]="kalshi/orderbook_snapshots"
+  ["Weather push observations"]="weather/wethr_push/observations"
+
+
+  ["HRRR"]="weather/nwp_realtime/hrrr"
+  ["NBM"]="weather/nwp_realtime/nbm"
+  ["RRFS"]="weather/nwp_realtime/rrfs"
+)
+for label in "${!paths[@]}"; do
+  dir="$DATA_DIR/${paths[$label]}"
+  newest=$(find "$dir" -type f -name "*.parquet" -printf "%T@ %p\n" 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)
+  if [[ -n "$newest" ]]; then
+    mtime=$(stat -c %Y "$newest")
+    age_min=$(( ( $(date +%s) - mtime ) / 60 ))
+    echo "$label latest: $(basename "$newest") ( $age_min min ago )"
+  else
+    echo "$label: no data"
+  fi
+done
+FRESH
 
 echo ""
 echo "────────────────────────────────────────"
