@@ -49,7 +49,7 @@ HRRR_PATTERN = re.compile(
 
 # RRFS: rrfs_a/rrfs.YYYYMMDD/HH/.../rrfs.tCCz.prslev.3km.f[FH].conus.grib2
 RRFS_PATTERN = re.compile(
-    r"rrfs\.t(\d{2})z\.[\w\.]+\.f(\d{2,3})\.(?:conus|na|ak|hi|pr)\.grib2$"
+    r"rrfs\.t(\d{2})z\.prslev\.3km\.f(\d{2,3})\.conus\.grib2$"
 )
 RRFS_DATE_PATTERN = re.compile(r"rrfs\.(\d{8})")
 
@@ -324,10 +324,9 @@ def parse_sns_message(raw_body: str) -> list[S3EventInfo]:
             # ONLY LOG if it looks like it might be one of our models but failed regex
             if any(m in key for m in ["hrrr", "rrfs", "nbm", "rtma"]):
                 logger.debug("S3 key match skipped: bucket=%s key=%s", bucket, key)
-            return results
+            continue
 
-        if event:
-            results.append(event)
+        results.append(event)
 
     return results
 
