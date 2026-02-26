@@ -126,26 +126,35 @@ RECENCY
 echo ""
 echo "── Data freshness ──"
 ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" 'bash -s' <<'FRESH'
-DATA_DIR=~/collector-data
+DATA_DIR=/home/ubuntu/collector-data
 declare -A paths=(
-  ["Kalshi market"]="kalshi/market_snapshots"
-  ["Kalshi orderbook"]="kalshi/orderbook_snapshots"
-  ["Weather push observations"]="weather/wethr_push/observations"
-
-
-  ["HRRR"]="weather/nwp_realtime/hrrr"
-  ["NBM"]="weather/nwp_realtime/nbm"
-  ["RRFS"]="weather/nwp_realtime/rrfs"
+  ["Kalshi Market"]="kalshi/market_snapshots"
+  ["Kalshi Orderbook"]="kalshi/orderbook_snapshots"
+  ["Wethr Push Obs"]="weather/wethr_push/observations"
+  ["Wethr Push DSM"]="weather/wethr_push/dsm"
+  ["Wethr Push CLI"]="weather/wethr_push/cli"
+  ["HRRR (NWP)"]="weather/nwp_realtime/hrrr"
+  ["NBM (NWP)"]="weather/nwp_realtime/nbm"
+  ["RRFS (NWP)"]="weather/nwp_realtime/rrfs"
 )
-for label in "${!paths[@]}"; do
+# Sort keys manually to ensure consistent display
+for label in "Kalshi Market" "Kalshi Orderbook" "Wethr Push Obs" "Wethr Push DSM" "Wethr Push CLI" "HRRR (NWP)" "NBM (NWP)" "RRFS (NWP)"; do
   dir="$DATA_DIR/${paths[$label]}"
   newest=$(find "$dir" -type f -name "*.parquet" -printf "%T@ %p\n" 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)
   if [[ -n "$newest" ]]; then
     mtime=$(stat -c %Y "$newest")
     age_min=$(( ( $(date +%s) - mtime ) / 60 ))
-    echo "$label latest: $(basename "$newest") ( $age_min min ago )"
+    # Color output: green if < 60 min, yellow if < 180 min, red otherwise
+    if [[ $age_min -lt 60 ]]; then
+      status="OK"
+    elif [[ $age_min -lt 180 ]]; then
+      status="DELAYED"
+    else
+      status="STALE"
+    fi
+    echo -e "$(printf "%-25s" "$label") latest: $(basename "$newest") ($age_min min ago) - $status"
   else
-    echo "$label: no data"
+    echo -e "$(printf "%-25s" "$label") : NO DATA"
   fi
 done
 FRESH
