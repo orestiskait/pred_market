@@ -28,3 +28,4 @@ class HRRRFetcher(NWPPointFetcher):
     HERBIE_PRODUCT = "subh"
     DEFAULT_MAX_FXX = 18
     DEFAULT_CYCLES = list(range(24))
+    MODEL_VERSION = "v4.1"

@@ -43,6 +43,7 @@ class NBMCOGFetcher:
     SOURCE_NAME = "nbm"
     DEFAULT_MAX_FXX = 36
     DEFAULT_CYCLES = list(range(24))
+    MODEL_VERSION = COG_VERSION.replace("blend", "")
 
     def __init__(
         self,
@@ -172,6 +173,7 @@ class NBMCOGFetcher:
                 "station": stn.icao,
                 "city": stn.city,
                 "model": self.SOURCE_NAME,
+                "model_version": self.MODEL_VERSION,
                 "model_run_time_utc": cycle_ts,
                 "lead_time_minutes": forecast_minutes,
                 "forecast_target_time_utc": valid_ts,

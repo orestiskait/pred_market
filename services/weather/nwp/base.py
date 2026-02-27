@@ -81,6 +81,7 @@ class NWPPointFetcher:
     DEFAULT_VARIABLES: list[tuple[str, str]] = DEFAULT_VARIABLES
     DEFAULT_MAX_FXX: int = 18
     DEFAULT_CYCLES: list[int] = [0, 6, 12, 18]
+    MODEL_VERSION: str = ""
     # -------------------------------------------------------------------------
 
     def __init__(
@@ -239,6 +240,7 @@ class NWPPointFetcher:
                     "station": stn.icao,
                     "city": stn.city,
                     "model": self.SOURCE_NAME,
+                    "model_version": self.MODEL_VERSION,
                     "model_run_time_utc": cycle_ts,
                     "lead_time_minutes": forecast_minutes,
                     "forecast_target_time_utc": valid_ts,

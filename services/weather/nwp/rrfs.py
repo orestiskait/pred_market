@@ -66,3 +66,4 @@ class RRFSFetcher(NWPPointFetcher):
     HERBIE_KWARGS = {"member": "control", "domain": "conus"}
     DEFAULT_MAX_FXX = 18
     DEFAULT_CYCLES = [0, 6, 12, 18]
+    MODEL_VERSION = "v1 poc"

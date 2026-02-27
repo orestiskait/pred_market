@@ -35,6 +35,7 @@ class RTMARUFetcher(NWPPointFetcher):
     DEFAULT_MAX_FXX = 0
     # 15-min cycles: 96 per day (00, 15, 30, 45 past each hour)
     CYCLE_INTERVAL_MINUTES = 15
+    MODEL_VERSION = "v2.9"
 
     def _cycle_datetimes(self, d: date) -> list[datetime]:
         """Yield all 15-min cycle datetimes for a given date (UTC)."""
