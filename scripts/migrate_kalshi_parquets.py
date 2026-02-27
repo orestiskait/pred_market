@@ -33,6 +33,10 @@ def migrate_market_snapshots():
         try:
             df = pd.read_parquet(f)
             
+            # 0. Rename snapshot_ts if needed
+            if 'snapshot_ts' in df.columns:
+                df.rename(columns={'snapshot_ts': 'snapshot_ts_utc'}, inplace=True)
+            
             # 1. Add missing columns with logic
             if 'no_bid' not in df.columns:
                 df['no_bid'] = df['yes_ask'].apply(lambda x: int(round(100 - x)) if pd.notnull(x) else 0)
@@ -76,6 +80,10 @@ def migrate_orderbook_snapshots():
         try:
             df = pd.read_parquet(f)
             
+            # Rename snapshot_ts if needed
+            if 'snapshot_ts' in df.columns:
+                df.rename(columns={'snapshot_ts': 'snapshot_ts_utc'}, inplace=True)
+                
             # Ensure all columns in schema are present
             for field in ORDERBOOK_SNAPSHOT_SCHEMA.names:
                 if field not in df.columns:
