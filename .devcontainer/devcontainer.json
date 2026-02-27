@@ -12,6 +12,10 @@
   "remoteEnv": {
     "PYTHONPATH": "${containerWorkspaceFolder}"
   },
+
+  "mounts": [
+    "source=pred_market_data,target=/app/data,type=volume"
+  ],
   
   // 2. Add useful standard Dev Container features
   "features": {
@@ -46,5 +50,5 @@
   },
 
   // 5. Upgrade pip first, and prefer updateContentCommand over postCreateCommand
-  "updateContentCommand": "pip install --upgrade pip && pip install -r services/requirements.txt"
+  "updateContentCommand": "sudo pip install --upgrade pip && sudo pip install -r services/requirements.txt"
 }
