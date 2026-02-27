@@ -609,7 +609,7 @@ Historical NWS Daily Climate Reports retrieved from IEM's archive. This is the *
 | **METAR** | Hourly + SPECI | ~1.5 hours | Cross-validation |
 | **HRRR** | Hourly | ~1.5 hours | Forecast context |
 | **NBM** | Hourly | ~1.5 hours | Calibrated forecast |
-| **RRFS** | Hourly (paused) | ~1.5 hours | Research / future |
+| **RRFS** | Hourly | ~1.5 hours | Research / future |
 | **Kalshi orderbook** | Real-time (WS) | Milliseconds–seconds | Market microstructure |
 | **Kalshi market snapshot** | 60 s + spikes | Seconds | Position monitoring |
 

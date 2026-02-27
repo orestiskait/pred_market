@@ -122,7 +122,8 @@ class NBMCOGFetcher:
                         glon, glat = inv.transform(gx, gy)
                         return (val, glat, glon)
         except Exception as e:
-            logger.warning("NBM COG read failed %s: %s", key, e)
+            import traceback
+            logger.warning("NBM COG read failed %s: %s\n%s", key, e, traceback.format_exc())
         return None
 
     def fetch_run(
