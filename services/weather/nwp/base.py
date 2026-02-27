@@ -91,7 +91,7 @@ class NWPPointFetcher:
         max_forecast_hour: int | None = None,
     ):
         if data_dir is None:
-            data_dir = Path(__file__).resolve().parent.parent.parent.parent / "data"
+            data_dir = Path(__file__).resolve().parent.parent.parent.parent / "data" / "weather" / "nwp_realtime"
         self.data_dir = Path(data_dir) / self.SOURCE_NAME
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.variables = variables or list(self.DEFAULT_VARIABLES)
@@ -164,7 +164,7 @@ class NWPPointFetcher:
             try:
                 ds = H.xarray(search_str, remove_grib=True)
             except Exception:
-                logger.warning(
+                logger.debug(
                     "%s: could not read %s for cycle=%s fxx=%02d",
                     self.SOURCE_NAME, search_str,
                     cycle.strftime("%Y-%m-%d %HZ"), fxx,

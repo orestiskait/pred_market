@@ -178,8 +178,8 @@ class NBMCOGFetcher:
                 "lead_time_minutes": forecast_minutes,
                 "forecast_target_time_utc": valid_ts,
                 "tmp_2m_f": temp_f,
-                "max_temp_18hr_p10_f": p10_f,
-                "max_temp_18hr_p90_f": p90_f,
+                "max_temp_p10_f": p10_f,
+                "max_temp_p90_f": p90_f,
                 "grid_lat": round(grid_lat, 4),
                 "grid_lon": round(grid_lon, 4),
             })

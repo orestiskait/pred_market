@@ -1,5 +1,11 @@
 """Fetch HRRR 15-minute sub-hourly model data for configured research stations.
 
+.. deprecated::
+   Use ``research.download_data.backfill_nwp`` instead.
+   It saves to data/weather/nwp_realtime/hrrr/ (same as the live system),
+   applies LST-day clamping, downloads fxx files in parallel, and writes
+   proper backfill metadata (notification_ts_utc, saved_ts_utc, is_live=False).
+
 Convenience wrapper around the unified NWP runner. For multi-model usage
 (HRRR / RTMA-RU / RRFS / NBM) use run_nwp_collection.py.
 

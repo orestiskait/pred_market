@@ -1,5 +1,11 @@
 """Fetch NWP model data (HRRR / RTMA-RU / RRFS / NBM) for research stations.
 
+.. deprecated::
+   Use ``research.download_data.backfill_nwp`` instead.
+   It saves to data/weather/nwp_realtime/{model}/ (same as the live system),
+   applies LST-day clamping, downloads fxx files in parallel, and writes
+   proper backfill metadata (notification_ts_utc, saved_ts_utc, is_live=False).
+
 Usage:
   1. Set MODEL, MODE, START_DATE, END_DATE, etc. below.
   2. Run: python -m research.download_data.run_nwp_collection

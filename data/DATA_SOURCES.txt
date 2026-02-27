@@ -3,22 +3,30 @@ kalshi/market_snapshots | Kalshi WebSocket | Market snapshots (yes_bid, yes_ask,
 kalshi/orderbook_snapshots | Kalshi WebSocket | Orderbook depth
 weather/synoptic_observations | Synoptic WebSocket + REST | ASOS 1-min (live + backfill). 
 weather_bot/trades | Paper execution | Bot trade log (CSV + parquet)
-weather/nwp_realtime | NOAA (AWS S3) | HRRR, RRFS, NBM (live ingest + latency tracking)
+weather/nwp_realtime/{model}/ | NOAA (AWS S3) | HRRR, RRFS, NBM (live ingest AND historical backfill)
+  → model dirs: hrrr/, nbm/, rrfs/
+  → file format: {ICAO}_{YYYY-MM-DD}.parquet  (keyed by cycle UTC date)
+  → live rows  : is_live=True,  notification_ts_utc=actual SNS timestamp
+  → backfill   : is_live=False, notification_ts_utc=cycle_time + P95_latency (hardcoded)
 weather/madis_realtime | NOAA MADIS (AWS S3) | Decoded METAR (0.1C precision) and OMO
 weather/aviationweather_metar | AWC + NWS | METAR (hourly + SPECI)
 weather/wethr_push | Wethr.net Push API | Real-time SSE observations (obs, DSM, CLI, alerts)
 
 
 Download scripts: research/download_data/
-  iem_asos_1min.py - IEM ASOS 1-min
-  synoptic_backfill.py - Synoptic REST backfill into synoptic_weather_observations
+  backfill_nwp.py           - ★ PRIMARY: Multi-year parallel NWP backfill (HRRR, NBM, RRFS)
+                                Saves to data/weather/nwp_realtime/{model}/
+                                Applies LST-day clamping, parallel fxx downloads,
+                                hardcoded P95 latency metadata (is_live=False)
+  iem_asos_1min.py          - IEM ASOS 1-min historical observations
+  synoptic_backfill.py      - Synoptic REST backfill into synoptic_weather_observations
   run_synoptic_asos_collection.py - Synoptic 1-min backfill (e.g. last 1 year for Chicago)
-  awc_metar.py - AWC METAR
-  run_metar_collection.py - METAR/SPECI for overlap days (IEM + Synoptic + CLI)
-  iem_daily_climate.py - IEM Daily Climate
-  run_weather_collection.py - Run all weather downloads
-  run_nwp_collection.py - Unified NWP backfill script for all models (HRRR, NBM, RRFS, RTMA-RU)
-  run_hrrr_collection.py - HRRR-specific backfill script
+  awc_metar.py              - AWC METAR
+  run_metar_collection.py   - METAR/SPECI for overlap days (IEM + Synoptic + CLI)
+  iem_daily_climate.py      - IEM Daily Climate (CLI) — ground truth label (Final_CLI_High)
+  run_weather_collection.py - Run all observation downloads
+  run_nwp_collection.py     - DEPRECATED: use backfill_nwp.py instead
+  run_hrrr_collection.py    - DEPRECATED: use backfill_nwp.py instead
 
 Real-time services: services/
   bot/weather_bot.py     - Paper trading + Wethr.net Push API + aviationweather METAR + NWP/MADIS ingest
@@ -28,3 +36,4 @@ Real-time services: services/
   weather/madis/         - Shared fetcher logic for MADIS METAR and OMO NetCDF data
 
 Dependencies: pip install boto3 herbie-data xarray cfgrib eccodes rasterio netCDF4
+
