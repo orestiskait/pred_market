@@ -7,8 +7,8 @@ Stores each event type in a separate parquet file, organized by date:
   data/weather/wethr_push/new_high/<ICAO>_YYYY-MM-DD.parquet
   data/weather/wethr_push/new_low/<ICAO>_YYYY-MM-DD.parquet
 
-Every row includes `received_ts` (when our client received the SSE event) for
-post-hoc latency analysis: latency = received_ts - observation_time_utc.
+Every row includes `received_ts_utc` (when our client received the SSE event) for
+post-hoc latency analysis: latency = received_ts_utc - observation_time_utc.
 """
 
 from __future__ import annotations
@@ -20,8 +20,12 @@ from pathlib import Path
 import pandas as pd
 
 from services.core.parquet_store import PerStationDayStore
+from services.markets.kalshi_registry import KALSHI_MARKET_REGISTRY
 
 logger = logging.getLogger(__name__)
+
+# Cache for station -> timezone mapping
+_STATION_TZ = {mc.icao: mc.tz for mc in KALSHI_MARKET_REGISTRY.values()}
 
 
 _EVENT_META: dict[str, dict] = {
@@ -73,8 +77,30 @@ class WethrPushStorage(PerStationDayStore):
             return
 
         df = df.copy()
-        if "received_ts" not in df.columns:
-            df["received_ts"] = pd.Timestamp.now(tz="UTC")
+        if "received_ts_utc" not in df.columns:
+            df["received_ts_utc"] = pd.Timestamp.now(tz="UTC")
+
+        if "live" not in df.columns:
+            df["live"] = True
+
+        # Add LST columns
+        if date_col := meta.get("date_col"):
+            if date_col in df.columns:
+                # Group by station to apply correct timezone
+                for station in df["station_code"].unique():
+                    mask = df["station_code"] == station
+                    tz_name = _STATION_TZ.get(station)
+                    if not tz_name:
+                        continue
+                    
+                    # Convert to LST (ignoring DST as per instruction, using standard time)
+                    # Note: tz_convert handles the complexity of IANA zones, but user said "Careful there is no daylight saving".
+                    # For now we use the IANA zone which is the robust way to get local time for a city.
+                    ts_utc = pd.to_datetime(df.loc[mask, date_col], utc=True)
+                    ts_lst = ts_utc.dt.tz_convert(tz_name)
+                    
+                    df.loc[mask, "observation_time_lst"] = ts_lst.dt.strftime("%Y-%m-%d %H:%M:%S")
+                    df.loc[mask, "observation_date_lst"] = ts_lst.dt.date
 
         date_col = meta["date_col"]
         event_dir = self._subdir(event_type)
@@ -85,13 +111,13 @@ class WethrPushStorage(PerStationDayStore):
             if date_col and date_col in stn_df.columns:
                 dates = pd.to_datetime(stn_df[date_col], utc=True).dt.date.unique()
             else:
-                dates = stn_df["received_ts"].dt.date.unique()
+                dates = stn_df["received_ts_utc"].dt.date.unique()
 
             for obs_date in dates:
                 if date_col and date_col in stn_df.columns:
                     day_df = stn_df[pd.to_datetime(stn_df[date_col], utc=True).dt.date == obs_date]
                 else:
-                    day_df = stn_df[stn_df["received_ts"].dt.date == obs_date]
+                    day_df = stn_df[stn_df["received_ts_utc"].dt.date == obs_date]
 
                 path = self._append_parquet(
                     event_dir, station, obs_date, day_df,

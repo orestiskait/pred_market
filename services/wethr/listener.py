@@ -118,7 +118,8 @@ class WethrPushCollector(AsyncService, WethrSSEMixin, MetarCollectorMixin):
         row = {
             "station_code": data.get("station_code", ""),
             "observation_time_utc": ob_time,
-            "received_ts": received_ts,
+            "received_ts_utc": received_ts.astimezone(timezone.utc),
+            "live": True,
             "product": data.get("product", ""),
             "temperature_celsius": data.get("temperature_celsius"),
             "temperature_fahrenheit": data.get("temperature_fahrenheit"),
@@ -151,7 +152,8 @@ class WethrPushCollector(AsyncService, WethrSSEMixin, MetarCollectorMixin):
         row = {
             "station_code": data.get("station_code", ""),
             "for_date": data.get("for_date", ""),
-            "received_ts": received_ts,
+            "received_ts_utc": received_ts.astimezone(timezone.utc),
+            "live": True,
             "high_f": data.get("high_f"),
             "high_c": data.get("high_c"),
             "high_time_utc": data.get("high_time_utc", ""),
@@ -171,7 +173,8 @@ class WethrPushCollector(AsyncService, WethrSSEMixin, MetarCollectorMixin):
         row = {
             "station_code": data.get("station_code", ""),
             "for_date": data.get("for_date", ""),
-            "received_ts": received_ts,
+            "received_ts_utc": received_ts.astimezone(timezone.utc),
+            "live": True,
             "high_f": data.get("high_f"),
             "high_c": data.get("high_c"),
             "low_f": data.get("low_f"),
@@ -191,7 +194,8 @@ class WethrPushCollector(AsyncService, WethrSSEMixin, MetarCollectorMixin):
         row = {
             "station_code": data.get("station_code", ""),
             "observation_time_utc": ob_time,
-            "received_ts": received_ts,
+            "received_ts_utc": received_ts.astimezone(timezone.utc),
+            "live": True,
             "logic": data.get("logic", ""),
             "value_f": data.get("value_f"),
             "value_c": data.get("value_c"),

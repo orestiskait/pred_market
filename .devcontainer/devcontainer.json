@@ -14,7 +14,7 @@
   },
 
   "mounts": [
-    "source=pred_market_data,target=/app/data,type=volume"
+    "source=${localWorkspaceFolder}/data,target=/app/data,type=bind"
   ],
   
   // 2. Add useful standard Dev Container features
