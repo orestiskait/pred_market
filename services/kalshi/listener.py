@@ -78,7 +78,7 @@ class LiveListener(AsyncService, KalshiWSMixin):
 
         # Delta compression: track which OB levels changed since last snapshot
         self._snapshot_count = 0
-        self._last_ob: Dict[str, Dict[str, Dict[int, float]]] = {}
+        self._last_ob: Dict[str, Dict[str, Dict[float, float]]] = {}
         self._dirty_levels: Dict[str, Dict[str, set]] = {}
 
     # ------------------------------------------------------------------ #
@@ -117,9 +117,7 @@ class LiveListener(AsyncService, KalshiWSMixin):
                 for price, _qty in data.get(side, []):
                     p = float(price)
                     if p < 1.0 and p > 0: # Likely dollars
-                        p = int(round(p * 100))
-                    else:
-                        p = int(round(p))
+                        p = p * 100
                     self._dirty_levels.setdefault(tk, {}).setdefault(side, set()).add(p)
 
         elif mtype in ("ticker", "ticker_v2"):
@@ -142,11 +140,9 @@ class LiveListener(AsyncService, KalshiWSMixin):
                         if api_f in data:
                             val = data[api_f]
                             if "_dollars" in api_f:
-                                self.market_info[tk][internal_f] = int(round(val * 100))
-                            elif "_fp" in api_f:
-                                self.market_info[tk][internal_f] = int(round(float(val)))
+                                self.market_info[tk][internal_f] = float(val) * 100
                             else:
-                                self.market_info[tk][internal_f] = val
+                                self.market_info[tk][internal_f] = float(val)
                             break
                             
                 # Keep no_bid/no_ask in sync when ticker sends yes_bid/yes_ask but not no_*
@@ -154,9 +150,9 @@ class LiveListener(AsyncService, KalshiWSMixin):
                 ya = info.get("yes_ask", 0) or 0
                 yb = info.get("yes_bid", 0) or 0
                 if "no_bid" not in data and "no_bid_dollars" not in data:
-                    info["no_bid"] = int(round(100 - ya))
+                    info["no_bid"] = 100.0 - float(ya)
                 if "no_ask" not in data and "no_ask_dollars" not in data:
-                    info["no_ask"] = int(round(100 - yb))
+                    info["no_ask"] = 100.0 - float(yb)
 
                 if self.spike_threshold > 0:
                     self._maybe_snapshot_on_spike(tk)
@@ -201,10 +197,10 @@ class LiveListener(AsyncService, KalshiWSMixin):
         """Mark every level of a ticker dirty (used after a WS full snapshot)."""
         ob = self.orderbooks.get(tk, {"yes": {}, "no": {}})
         self._dirty_levels[tk] = {
-            side: {int(p) for p in ob[side]} for side in ("yes", "no")
+            side: {float(p) for p in ob[side]} for side in ("yes", "no")
         }
 
-    def _trim_ob(self, levels: list[tuple[int, float]]) -> list[tuple[int, float]]:
+    def _trim_ob(self, levels: list[tuple[float, float]]) -> list[tuple[float, float]]:
         """Sort by best price and apply max_ob_depth."""
         levels.sort(key=lambda x: x[0], reverse=True)
         if self.max_ob_depth:
@@ -242,12 +238,13 @@ class LiveListener(AsyncService, KalshiWSMixin):
                 "subtitle": info.get("subtitle", ""),
                 "yes_bid": info.get("yes_bid", 0),
                 "yes_ask": info.get("yes_ask", 0),
-                "no_bid": info.get("no_bid", int(round(100 - (info.get("yes_ask") or 0)))),
-                "no_ask": info.get("no_ask", int(round(100 - (info.get("yes_bid") or 0)))),
-                "last_price": info.get("last_price", 0),
-                "volume": info.get("volume", 0),
-                "open_interest": info.get("open_interest", 0),
+                "no_bid": info.get("no_bid", 100.0 - float(info.get("yes_ask") or 0.0)),
+                "no_ask": info.get("no_ask", 100.0 - float(info.get("yes_bid") or 0.0)),
+                "last_price": info.get("last_price", 0.0),
+                "volume": info.get("volume", 0.0),
+                "open_interest": info.get("open_interest", 0.0),
                 "trigger": trigger,
+                "is_data_live": True,
             })
 
             ob = self.orderbooks.get(tk, {"yes": {}, "no": {}})
@@ -255,7 +252,7 @@ class LiveListener(AsyncService, KalshiWSMixin):
             if is_baseline:
                 for side in ("yes", "no"):
                     levels = self._trim_ob(
-                        [(int(p), float(q)) for p, q in ob[side].items() if q > 0]
+                        [(float(p), float(q)) for p, q in ob[side].items() if q > 0]
                     )
                     for price, qty in levels:
                         self._ob_buf.append({
@@ -265,10 +262,11 @@ class LiveListener(AsyncService, KalshiWSMixin):
                             "price_cents": price,
                             "quantity": qty,
                             "snapshot_type": "baseline",
+                            "is_data_live": True,
                         })
                 # Reset reference for next delta cycle
                 self._last_ob[tk] = {
-                    side: {int(p): float(q) for p, q in ob[side].items() if q > 0}
+                    side: {float(p): float(q) for p, q in ob[side].items() if q > 0}
                     for side in ("yes", "no")
                 }
             else:
@@ -276,13 +274,13 @@ class LiveListener(AsyncService, KalshiWSMixin):
                 prev_ob = self._last_ob.get(tk, {"yes": {}, "no": {}})
                 for side in ("yes", "no"):
                     changed_prices = dirty.get(side, set())
-                    cur = {int(p): float(q) for p, q in ob[side].items() if q > 0}
+                    cur = {float(p): float(q) for p, q in ob[side].items() if q > 0}
 
                     # Also detect levels that existed in prev but are now gone
                     removed = set(prev_ob.get(side, {}).keys()) - set(cur.keys())
                     changed_prices = changed_prices | removed
 
-                    delta_levels: list[tuple[int, float]] = []
+                    delta_levels: list[tuple[float, float]] = []
                     for price in changed_prices:
                         qty = cur.get(price, 0.0)
                         old_qty = prev_ob.get(side, {}).get(price, 0.0)
@@ -298,11 +296,12 @@ class LiveListener(AsyncService, KalshiWSMixin):
                             "price_cents": price,
                             "quantity": qty,  # 0.0 = level removed
                             "snapshot_type": "delta",
+                            "is_data_live": True,
                         })
 
                 # Update reference for next delta
                 self._last_ob[tk] = {
-                    side: {int(p): float(q) for p, q in ob[side].items() if q > 0}
+                    side: {float(p): float(q) for p, q in ob[side].items() if q > 0}
                     for side in ("yes", "no")
                 }
 

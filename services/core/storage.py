@@ -30,23 +30,25 @@ MARKET_SNAPSHOT_SCHEMA = pa.schema([
     ("event_ticker",  pa.string()),
     ("market_ticker", pa.string()),
     ("subtitle",      pa.string()),
-    ("yes_bid",       pa.int32()),
-    ("yes_ask",       pa.int32()),
-    ("no_bid",        pa.int32()),
-    ("no_ask",        pa.int32()),
-    ("last_price",    pa.int32()),
-    ("volume",        pa.int64()),
-    ("open_interest", pa.int64()),
+    ("yes_bid",       pa.float64()),
+    ("yes_ask",       pa.float64()),
+    ("no_bid",        pa.float64()),
+    ("no_ask",        pa.float64()),
+    ("last_price",    pa.float64()),
+    ("volume",        pa.float64()),
+    ("open_interest", pa.float64()),
     ("trigger",       pa.string()),
+    ("is_data_live",  pa.bool_()),
 ])
 
 ORDERBOOK_SNAPSHOT_SCHEMA = pa.schema([
     ("snapshot_ts_utc",    pa.timestamp("us", tz="UTC")),
     ("market_ticker",  pa.string()),
     ("side",           pa.string()),
-    ("price_cents",    pa.int32()),
+    ("price_cents",    pa.float64()),
     ("quantity",       pa.float64()),
     ("snapshot_type",  pa.string()),  # "baseline" | "delta"
+    ("is_data_live",   pa.bool_()),
 ])
 
 SYNOPTIC_WS_SCHEMA = pa.schema([
@@ -224,7 +226,7 @@ class ParquetStorage:
         timestamps = raw["snapshot_ts_utc"].unique()
 
         # book[ticker][side][price] = qty
-        book: Dict[str, Dict[str, Dict[int, float]]] = {}
+        book: Dict[str, Dict[str, Dict[float, float]]] = {}
         rows: list[dict] = []
 
         for ts in timestamps:

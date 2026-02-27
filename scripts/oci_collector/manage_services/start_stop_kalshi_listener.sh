@@ -36,6 +36,9 @@ case "$cmd" in
     [[ ! -d "$CREDS_DIR" ]] && \
       echo "ERROR: $CREDS_DIR not found. Run setup_collector/first_time_vm_setup.sh first." && exit 1
 
+    # Fix permissions so the non-root container user can read the API keys
+    sudo chmod -R a+rx "$CREDS_DIR" 2>/dev/null || true
+
     $DOCKER rm -f "$CONTAINER" 2>/dev/null || true
 
     echo "[start_stop_kalshi_listener] Starting Kalshi listener..."

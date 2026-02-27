@@ -39,10 +39,13 @@ def migrate_market_snapshots():
             
             # 1. Add missing columns with logic
             if 'no_bid' not in df.columns:
-                df['no_bid'] = df['yes_ask'].apply(lambda x: int(round(100 - x)) if pd.notnull(x) else 0)
+                df['no_bid'] = df['yes_ask'].apply(lambda x: 100.0 - float(x) if pd.notnull(x) else 0.0)
             
             if 'no_ask' not in df.columns:
-                df['no_ask'] = df['yes_bid'].apply(lambda x: int(round(100 - x)) if pd.notnull(x) else 0)
+                df['no_ask'] = df['yes_bid'].apply(lambda x: 100.0 - float(x) if pd.notnull(x) else 0.0)
+            
+            if 'is_data_live' not in df.columns:
+                df['is_data_live'] = True
             
             # 2. Ensure all columns in schema are present
             for field in MARKET_SNAPSHOT_SCHEMA.names:
@@ -53,11 +56,13 @@ def migrate_market_snapshots():
             # 3. Reorder and cast to schema types
             df = df[MARKET_SNAPSHOT_SCHEMA.names]
             type_map = {
-                "yes_bid": "int32", "yes_ask": "int32", "no_bid": "int32", "no_ask": "int32",
-                "last_price": "int32", "volume": "int64", "open_interest": "int64",
+                "yes_bid": "float64", "yes_ask": "float64", "no_bid": "float64", "no_ask": "float64",
+                "last_price": "float64", "volume": "float64", "open_interest": "float64",
             }
             for col, dtype in type_map.items():
-                df[col] = df[col].fillna(0).astype(dtype)
+                df[col] = df[col].fillna(0.0).astype(dtype)
+            
+            df['is_data_live'] = df['is_data_live'].astype(bool)
             
             table = pa.Table.from_pandas(df, schema=MARKET_SNAPSHOT_SCHEMA, preserve_index=False)
             pq.write_table(table, f)
@@ -84,20 +89,30 @@ def migrate_orderbook_snapshots():
             if 'snapshot_ts' in df.columns:
                 df.rename(columns={'snapshot_ts': 'snapshot_ts_utc'}, inplace=True)
                 
+            if 'is_data_live' not in df.columns:
+                df['is_data_live'] = True
+
             # Ensure all columns in schema are present
             for field in ORDERBOOK_SNAPSHOT_SCHEMA.names:
                 if field not in df.columns:
                     print(f"  Adding missing column: {field} to {f.name}")
-                    df[field] = "" if field in ["market_ticker", "side", "snapshot_type"] else 0.0
+                    if field in ["market_ticker", "side", "snapshot_type"]:
+                        df[field] = ""
+                    elif field == "is_data_live":
+                        df[field] = True
+                    else:
+                        df[field] = 0.0
             
             # Reorder and cast
             df = df[ORDERBOOK_SNAPSHOT_SCHEMA.names]
             type_map = {
-                "price_cents": "int32",
+                "price_cents": "float64",
                 "quantity": "float64",
             }
             for col, dtype in type_map.items():
-                df[col] = df[col].fillna(0).astype(dtype)
+                df[col] = df[col].fillna(0.0).astype(dtype)
+            
+            df['is_data_live'] = df['is_data_live'].astype(bool)
                 
             table = pa.Table.from_pandas(df, schema=ORDERBOOK_SNAPSHOT_SCHEMA, preserve_index=False)
             pq.write_table(table, f)
