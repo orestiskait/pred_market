@@ -318,6 +318,9 @@ def parse_sns_message(raw_body: str) -> list[S3EventInfo]:
         s3_info = record.get("s3", {})
         bucket = s3_info.get("bucket", {}).get("name", "")
         key = s3_info.get("object", {}).get("key", "")
+        if key:
+            import urllib.parse
+            key = urllib.parse.unquote_plus(key)
 
         if not key:
             continue
