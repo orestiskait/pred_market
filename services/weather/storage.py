@@ -1,15 +1,13 @@
-"""Parquet storage for NWP model data and MADIS observations with latency tracking.
+"""Parquet storage for NWP model data and MADIS observations.
 
 Storage layouts:
   data/weather/nwp_realtime/<model>/<ICAO>_<YYYY-MM-DD>.parquet
   data/weather/madis_realtime/<source>/<ICAO>_<YYYY-MM-DD>.parquet
 
-Latency columns (added automatically by save()):
-  - notification_ts        : when AWS SNS published the S3 event
-  - saved_ts               : when we persisted to parquet
-  - notification_latency_s : notification_ts minus data reference time
-  - ingest_latency_s       : saved_ts minus notification_ts
-  - total_latency_s        : saved_ts minus data reference time
+Metadata columns (added automatically by save()):
+  - notification_ts_utc : when AWS SNS published the S3 event
+  - saved_ts_utc        : when we persisted to parquet
+  - is_live             : boolean indicating boolean live ingestion
 """
 
 from __future__ import annotations
@@ -25,46 +23,37 @@ from services.core.parquet_store import PerStationDayStore
 logger = logging.getLogger(__name__)
 
 
-def _add_latency_columns(
+def _add_metadata_columns(
     df: pd.DataFrame,
     notification_ts: datetime,
-    reference_col: str,
 ) -> pd.DataFrame:
-    """Add notification_ts, saved_ts, and latency columns to *df* in-place."""
+    """Add notification_ts_utc, saved_ts_utc and is_live columns to *df* in-place."""
     saved_ts = pd.Timestamp.now(tz="UTC")
     notif_ts = pd.Timestamp(notification_ts)
     if notif_ts.tzinfo is None:
         notif_ts = notif_ts.tz_localize("UTC")
 
-    df["notification_ts"] = notif_ts
-    df["saved_ts"] = saved_ts
+    df["notification_ts_utc"] = notif_ts
+    df["saved_ts_utc"] = saved_ts
+    df["is_live"] = True
 
-    if reference_col in df.columns:
-        df[reference_col] = pd.to_datetime(df[reference_col], utc=True)
-        ref = df[reference_col]
-        df["notification_latency_s"] = (notif_ts - ref).dt.total_seconds().round(1)
-        df["total_latency_s"] = (saved_ts - ref).dt.total_seconds().round(1)
-
-    df["ingest_latency_s"] = round((saved_ts - notif_ts).total_seconds(), 1)
     return df
 
 
-def _log_save(label: str, n_rows: int, path: Path, df: pd.DataFrame) -> None:
+def _log_save(label: str, n_rows: int, path: Path) -> None:
     logger.info(
-        "%s: saved %d rows → %s (notification_latency=%.0fs, ingest_latency=%.1fs)",
+        "%s: saved %d rows → %s",
         label,
         n_rows,
         path,
-        df["notification_latency_s"].mean() if "notification_latency_s" in df.columns else 0,
-        df["ingest_latency_s"].mean() if "ingest_latency_s" in df.columns else 0,
     )
 
 
 class NWPRealtimeStorage(PerStationDayStore):
-    """Append-friendly parquet I/O for real-time NWP data with latency tracking."""
+    """Append-friendly parquet I/O for real-time NWP data."""
 
-    DEDUP_COLS = ["station", "cycle_utc", "forecast_minutes", "model"]
-    SORT_COLS = ["cycle_utc", "forecast_minutes"]
+    DEDUP_COLS = ["station", "model_run_time_utc", "lead_time_minutes", "model"]
+    SORT_COLS = ["model_run_time_utc", "lead_time_minutes"]
 
     def __init__(self, data_dir: str | Path):
         super().__init__(Path(data_dir) / "weather" / "nwp_realtime")
@@ -79,18 +68,18 @@ class NWPRealtimeStorage(PerStationDayStore):
             return
 
         df = df.copy()
-        _add_latency_columns(df, notification_ts, "cycle_utc")
+        _add_metadata_columns(df, notification_ts)
 
         model_dir = self._subdir(model_name)
         for station_icao in df["station"].unique():
             stn_df = df[df["station"] == station_icao]
-            for cycle_date in stn_df["cycle_utc"].dt.date.unique():
-                day_df = stn_df[stn_df["cycle_utc"].dt.date == cycle_date]
+            for cycle_date in stn_df["model_run_time_utc"].dt.date.unique():
+                day_df = stn_df[stn_df["model_run_time_utc"].dt.date == cycle_date]
                 path = self._append_parquet(
                     model_dir, station_icao, cycle_date, day_df,
                     dedup_cols=self.DEDUP_COLS, sort_cols=self.SORT_COLS,
                 )
-                _log_save(model_name, len(day_df), path, day_df)
+                _log_save(model_name, len(day_df), path)
 
     def read(
         self,
@@ -127,7 +116,11 @@ class MADISRealtimeStorage(PerStationDayStore):
             return
 
         df = df.copy()
-        _add_latency_columns(df, notification_ts, "obs_time_utc")
+        _add_metadata_columns(df, notification_ts)
+        
+        # Ensure obs_time_utc is set appropriately to be safe, if we still use it (optional)
+        if "obs_time_utc" in df.columns:
+            df["obs_time_utc"] = pd.to_datetime(df["obs_time_utc"], utc=True)
 
         source_dir = self._subdir(source_name)
         for station_icao in df["station"].unique():
@@ -138,7 +131,7 @@ class MADISRealtimeStorage(PerStationDayStore):
                     source_dir, station_icao, obs_date, day_df,
                     dedup_cols=self.DEDUP_COLS, sort_cols=self.SORT_COLS,
                 )
-                _log_save(source_name, len(day_df), path, day_df)
+                _log_save(source_name, len(day_df), path)
 
     def read(
         self,

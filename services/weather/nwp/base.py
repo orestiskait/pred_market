@@ -152,9 +152,9 @@ class NWPPointFetcher:
         Handles both single-step files (hourly models) and multi-step files
         (sub-hourly HRRR) transparently.
 
-        Returns DataFrame with columns: station, city, model, cycle_utc,
-        forecast_minutes, valid_utc, valid_local, <var>_k, <var>_f,
-        grid_lat, grid_lon.
+        Returns DataFrame with columns: station, city, model, model_run_time_utc,
+        lead_time_minutes, forecast_target_time_utc, forecast_target_time_lst,
+        forecast_target_date_lst, <var>_k, <var>_f, grid_lat, grid_lon.
         """
         H = self._make_herbie(cycle, fxx)
 
@@ -178,7 +178,7 @@ class NWPPointFetcher:
             return pd.DataFrame()
 
         df = pd.DataFrame(all_rows)
-        df = _add_valid_local(df, stations)
+        df = _add_time_columns(df, stations)
         return df
 
     def _extract_from_dataset(
@@ -239,9 +239,9 @@ class NWPPointFetcher:
                     "station": stn.icao,
                     "city": stn.city,
                     "model": self.SOURCE_NAME,
-                    "cycle_utc": cycle_ts,
-                    "forecast_minutes": forecast_minutes,
-                    "valid_utc": valid_ts,
+                    "model_run_time_utc": cycle_ts,
+                    "lead_time_minutes": forecast_minutes,
+                    "forecast_target_time_utc": valid_ts,
                     f"{col_prefix}_k": val_k,
                     f"{col_prefix}_f": kelvin_to_fahrenheit(val_k),
                     "grid_lat": glat,
@@ -291,7 +291,7 @@ class NWPPointFetcher:
 
         Searches backwards from the current UTC hour.  Safe to call
         repeatedly — ``save_parquet`` deduplicates on
-        (station, cycle_utc, forecast_minutes).
+        (station, model_run_time_utc, lead_time_minutes).
         """
         now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
 
@@ -365,7 +365,7 @@ class NWPPointFetcher:
 
                 if not df.empty:
                     if rolling_lead_minutes is not None:
-                        df = df[df["forecast_minutes"] == rolling_lead_minutes]
+                        df = df[df["lead_time_minutes"] == rolling_lead_minutes]
                     if not df.empty and save:
                         self._save_by_station(df, current)
                     if not df.empty:
@@ -386,7 +386,7 @@ class NWPPointFetcher:
     ) -> Path:
         """Save/append: ``<source>/<ICAO>_<date>.parquet``.
 
-        Deduplicates on (station, cycle_utc, forecast_minutes).
+        Deduplicates on (station, model_run_time_utc, lead_time_minutes).
         """
         if df.empty:
             return self.data_dir
@@ -396,7 +396,7 @@ class NWPPointFetcher:
         if path.exists():
             existing = pd.read_parquet(path)
             combined = pd.concat([existing, df], ignore_index=True)
-            dedup_cols = [c for c in ("station", "cycle_utc", "forecast_minutes")
+            dedup_cols = [c for c in ("station", "model_run_time_utc", "lead_time_minutes")
                          if c in combined.columns]
             if dedup_cols:
                 combined = combined.drop_duplicates(subset=dedup_cols, keep="last")
@@ -404,7 +404,7 @@ class NWPPointFetcher:
             combined = df
 
         combined = combined.sort_values(
-            ["cycle_utc", "forecast_minutes"], ignore_index=True
+            ["model_run_time_utc", "lead_time_minutes"], ignore_index=True
         )
         combined.to_parquet(path, index=False)
         logger.info("Saved %d rows → %s", len(combined), path)
@@ -467,18 +467,32 @@ def _resolve_steps(ds) -> list:
     return [np.timedelta64(0, "ns")]
 
 
-def _add_valid_local(
-    df: pd.DataFrame, stations: list[NWPStation]
-) -> pd.DataFrame:
-    """Add a 'valid_local' column with timezone-localized valid times."""
+def _add_time_columns(df: pd.DataFrame, stations: list[NWPStation]) -> pd.DataFrame:
+    """Add LST time and date columns (Local Standard Time, no DST applied)."""
+    if "forecast_target_time_utc" not in df.columns:
+        return df
+
     tz_map = {stn.icao: stn.tz for stn in stations}
     parts: list[pd.DataFrame] = []
+    
+    import pytz
+    jan_first = datetime(2026, 1, 1)
+
     for icao, group in df.groupby("station"):
         group = group.copy()
-        tz = tz_map.get(icao)
-        if tz:
-            group["valid_local"] = (
-                group["valid_utc"].dt.tz_convert(tz).dt.tz_localize(None)
-            )
+        tz_name = tz_map.get(icao)
+        
+        offset_hours = 0
+        if tz_name:
+            tz = pytz.timezone(tz_name)
+            # Find the UTC offset during standard time (e.g. January 1st)
+            std_offset = tz.utcoffset(jan_first)
+            if std_offset is not None:
+                offset_hours = std_offset.total_seconds() / 3600
+
+        group["forecast_target_time_lst"] = group["forecast_target_time_utc"].dt.tz_localize(None) + pd.Timedelta(hours=offset_hours)
+        group["forecast_target_date_lst"] = group["forecast_target_time_lst"].dt.date
         parts.append(group)
+
     return pd.concat(parts, ignore_index=True) if parts else df
+

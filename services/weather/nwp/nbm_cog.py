@@ -23,6 +23,7 @@ from botocore import UNSIGNED
 from botocore.config import Config
 
 from services.weather.station_registry import NWPStation
+from services.weather.nwp.base import _add_time_columns
 
 logger = logging.getLogger(__name__)
 
@@ -70,15 +71,15 @@ class NBMCOGFetcher:
         max_fxx = model_cfg.get("max_forecast_hour", cls.DEFAULT_MAX_FXX)
         return cls(data_dir=data_dir, max_forecast_hour=max_fxx)
 
-    def _cog_key(self, cycle: datetime, valid: datetime) -> str:
+    def _cog_key(self, cycle: datetime, valid: datetime, variable: str = VARIABLE) -> str:
         """Build S3 key for temp COG: run_cycle, valid_time."""
         run = cycle.strftime("%Y-%m-%dT%H:00")
         v = valid.strftime("%Y-%m-%dT%H:00")
         hh = cycle.strftime("%H00")
         y, m, d = cycle.year, cycle.month, cycle.day
         return (
-            f"{COG_VERSION}/conus/{y}/{m:02d}/{d:02d}/{hh}/{VARIABLE}/"
-            f"{COG_VERSION}_conus_{VARIABLE}_{run}_{v}.tif"
+            f"{COG_VERSION}/conus/{y}/{m:02d}/{d:02d}/{hh}/{variable}/"
+            f"{COG_VERSION}_conus_{variable}_{run}_{v}.tif"
         )
 
     def _read_cog_point(
@@ -122,8 +123,11 @@ class NBMCOGFetcher:
                         glon, glat = inv.transform(gx, gy)
                         return (val, glat, glon)
         except Exception as e:
-            import traceback
-            logger.warning("NBM COG read failed %s: %s\n%s", key, e, traceback.format_exc())
+            if "does not exist" in str(e):
+                logger.debug("NBM COG key does not exist: %s", key)
+            else:
+                import traceback
+                logger.warning("NBM COG read failed %s: %s\n%s", key, e, traceback.format_exc())
         return None
 
     def fetch_run(
@@ -138,25 +142,43 @@ class NBMCOGFetcher:
         valid = cycle + timedelta(hours=fxx)
         forecast_minutes = fxx * 60
 
-        key = self._cog_key(cycle, valid)
+        key_temp = self._cog_key(cycle, valid, "temp")
+        key_maxt_p10 = self._cog_key(cycle, valid, "maxt18p10")
+        key_maxt_p90 = self._cog_key(cycle, valid, "maxt18p90")
+
         rows = []
         for stn in stations:
-            result = self._read_cog_point(key, stn.lat, stn.lon)
-            if result is None:
+            result_temp = self._read_cog_point(key_temp, stn.lat, stn.lon)
+            if result_temp is None:
                 continue
-            temp_c, grid_lat, grid_lon = result
+            
+            # Fetch maxt18 percentiles (only exist at specific valid times like 06Z, else None)
+            result_p10 = self._read_cog_point(key_maxt_p10, stn.lat, stn.lon)
+            result_p90 = self._read_cog_point(key_maxt_p90, stn.lat, stn.lon)
+            
+            temp_c, grid_lat, grid_lon = result_temp
             temp_f = _celsius_to_fahrenheit(temp_c)
+            
+            p10_f = None
+            p90_f = None
+            if result_p10 is not None:
+                p10_f = _celsius_to_fahrenheit(result_p10[0])
+            if result_p90 is not None:
+                p90_f = _celsius_to_fahrenheit(result_p90[0])
+
             cycle_ts = pd.Timestamp(cycle)
             valid_ts = pd.Timestamp(valid)
             rows.append({
                 "station": stn.icao,
                 "city": stn.city,
                 "model": self.SOURCE_NAME,
-                "cycle_utc": cycle_ts,
-                "forecast_minutes": forecast_minutes,
-                "valid_utc": valid_ts,
+                "model_run_time_utc": cycle_ts,
+                "lead_time_minutes": forecast_minutes,
+                "forecast_target_time_utc": valid_ts,
                 "tmp_2m_k": temp_c + 273.15,
                 "tmp_2m_f": temp_f,
+                "max_temp_18hr_p10_f": p10_f,
+                "max_temp_18hr_p90_f": p90_f,
                 "grid_lat": round(grid_lat, 4),
                 "grid_lon": round(grid_lon, 4),
             })
@@ -164,22 +186,7 @@ class NBMCOGFetcher:
         if not rows:
             return pd.DataFrame()
         df = pd.DataFrame(rows)
-        return self._add_valid_local(df, stations)
-
-    def _add_valid_local(
-        self, df: pd.DataFrame, stations: list[NWPStation]
-    ) -> pd.DataFrame:
-        tz_map = {stn.icao: stn.tz for stn in stations}
-        parts = []
-        for icao, group in df.groupby("station"):
-            group = group.copy()
-            tz = tz_map.get(icao)
-            if tz:
-                group["valid_local"] = (
-                    group["valid_utc"].dt.tz_convert(tz).dt.tz_localize(None)
-                )
-            parts.append(group)
-        return pd.concat(parts, ignore_index=True) if parts else df
+        return _add_time_columns(df, stations)
 
     def fetch_cycle(
         self,
@@ -285,7 +292,7 @@ class NBMCOGFetcher:
                     continue
                 if not df.empty:
                     if rolling_lead_minutes is not None:
-                        df = df[df["forecast_minutes"] == rolling_lead_minutes]
+                        df = df[df["lead_time_minutes"] == rolling_lead_minutes]
                     if not df.empty and save:
                         self._save_by_station(df, current)
                     if not df.empty:
@@ -304,14 +311,14 @@ class NBMCOGFetcher:
         if path.exists():
             existing = pd.read_parquet(path)
             combined = pd.concat([existing, df], ignore_index=True)
-            dedup_cols = [c for c in ("station", "cycle_utc", "forecast_minutes")
+            dedup_cols = [c for c in ("station", "model_run_time_utc", "lead_time_minutes")
                          if c in combined.columns]
             if dedup_cols:
                 combined = combined.drop_duplicates(subset=dedup_cols, keep="last")
         else:
             combined = df
         combined = combined.sort_values(
-            ["cycle_utc", "forecast_minutes"], ignore_index=True
+            ["model_run_time_utc", "lead_time_minutes"], ignore_index=True
         )
         combined.to_parquet(path, index=False)
         logger.info("Saved %d rows → %s", len(combined), path)
