@@ -115,25 +115,51 @@ class LiveListener(AsyncService, KalshiWSMixin):
             tk = data.get("market_ticker", "")
             for side in ("yes", "no"):
                 for price, _qty in data.get(side, []):
-                    self._dirty_levels.setdefault(tk, {}).setdefault(side, set()).add(int(price))
+                    p = float(price)
+                    if p < 1.0 and p > 0: # Likely dollars
+                        p = int(round(p * 100))
+                    else:
+                        p = int(round(p))
+                    self._dirty_levels.setdefault(tk, {}).setdefault(side, set()).add(p)
 
         elif mtype in ("ticker", "ticker_v2"):
             tk = data.get("market_ticker", "")
             self.ticker_data[tk] = data
             if tk in self.market_info:
-                for f in ("yes_bid", "yes_ask", "no_bid", "no_ask", "last_price", "volume", "open_interest"):
-                    if f in data:
-                        self.market_info[tk][f] = data[f]
+                # Map new Kalshi API fields to our internal "cents" fields
+                mapping = {
+                    "yes_bid": ("yes_bid", "yes_bid_dollars"),
+                    "yes_ask": ("yes_ask", "yes_ask_dollars"),
+                    "no_bid": ("no_bid", "no_bid_dollars"),
+                    "no_ask": ("no_ask", "no_ask_dollars"),
+                    "last_price": ("last_price", "last_price_dollars"),
+                    "volume": ("volume", "volume_fp"),
+                    "open_interest": ("open_interest", "open_interest_fp"),
+                }
+                
+                for internal_f, api_fields in mapping.items():
+                    for api_f in api_fields:
+                        if api_f in data:
+                            val = data[api_f]
+                            if "_dollars" in api_f:
+                                self.market_info[tk][internal_f] = int(round(val * 100))
+                            elif "_fp" in api_f:
+                                self.market_info[tk][internal_f] = int(round(float(val)))
+                            else:
+                                self.market_info[tk][internal_f] = val
+                            break
+                            
                 # Keep no_bid/no_ask in sync when ticker sends yes_bid/yes_ask but not no_*
-                ya = self.market_info[tk].get("yes_ask", 0) or 0
-                yb = self.market_info[tk].get("yes_bid", 0) or 0
-                if "no_bid" not in data:
-                    self.market_info[tk]["no_bid"] = int(round(100 - ya))
-                if "no_ask" not in data:
-                    self.market_info[tk]["no_ask"] = int(round(100 - yb))
+                info = self.market_info[tk]
+                ya = info.get("yes_ask", 0) or 0
+                yb = info.get("yes_bid", 0) or 0
+                if "no_bid" not in data and "no_bid_dollars" not in data:
+                    info["no_bid"] = int(round(100 - ya))
+                if "no_ask" not in data and "no_ask_dollars" not in data:
+                    info["no_ask"] = int(round(100 - yb))
 
                 if self.spike_threshold > 0:
-                    self._maybe_snapshot_on_spike(tk, data)
+                    self._maybe_snapshot_on_spike(tk)
 
         elif mtype == "error":
             logger.error("WS error: %s", data)
@@ -144,9 +170,10 @@ class LiveListener(AsyncService, KalshiWSMixin):
     # Spike detection                                                      #
     # ------------------------------------------------------------------ #
 
-    def _maybe_snapshot_on_spike(self, tk: str, data: dict):
+    def _maybe_snapshot_on_spike(self, tk: str):
         """Snapshot immediately when price moves ≥ spike_threshold since last snapshot."""
         prev = self._prev_prices.get(tk)
+        info = self.market_info.get(tk, {})
         if prev is None:
             return
 
@@ -156,7 +183,7 @@ class LiveListener(AsyncService, KalshiWSMixin):
 
         for key in ("yes_bid", "yes_ask", "last_price"):
             old_val = prev.get(key, 0) or 0
-            new_val = data.get(key) if data.get(key) is not None else old_val
+            new_val = info.get(key, 0) or 0
             if abs(new_val - old_val) >= self.spike_threshold:
                 logger.info(
                     "Spike on %s: %s %d → %d (Δ%d)",

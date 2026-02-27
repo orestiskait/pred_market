@@ -58,7 +58,12 @@ class KalshiWSMixin:
         ob = {"yes": {}, "no": {}}
         for side in ("yes", "no"):
             for price, qty in data.get(side, []):
-                ob[side][int(price)] = qty
+                p = float(price)
+                if p < 1.0 and p > 0: # Likely dollars
+                    p = int(round(p * 100))
+                else:
+                    p = int(round(p))
+                ob[side][p] = float(qty)
         self.orderbooks[tk] = ob
 
     def apply_orderbook_delta(self, data: dict) -> None:
@@ -68,11 +73,16 @@ class KalshiWSMixin:
             return
         for side in ("yes", "no"):
             for price, qty in data.get(side, []):
-                p = int(price)
-                if qty <= 0:
+                p = float(price)
+                if p < 1.0 and p > 0: # Likely dollars
+                    p = int(round(p * 100))
+                else:
+                    p = int(round(p))
+                q = float(qty)
+                if q <= 0:
                     self.orderbooks[tk][side].pop(p, None)
                 else:
-                    self.orderbooks[tk][side][p] = qty
+                    self.orderbooks[tk][side][p] = q
 
     # Hook for subclass-specific processing ───────────────────────────
 

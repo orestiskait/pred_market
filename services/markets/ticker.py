@@ -141,14 +141,47 @@ def discover_markets(
         for m in markets:
             tk = m["ticker"]
             market_tickers.append(tk)
-            yes_bid = m.get("yes_bid") or 0
-            yes_ask = m.get("yes_ask") or 0
+
+            # Handle new Kalshi API fields (dollars -> cents, volume_fp/open_interest_fp)
+            yes_bid_val = m.get("yes_bid")
+            if yes_bid_val is None and "yes_bid_dollars" in m:
+                yes_bid_val = int(round(m["yes_bid_dollars"] * 100))
+            yes_bid = yes_bid_val or 0
+
+            yes_ask_val = m.get("yes_ask")
+            if yes_ask_val is None and "yes_ask_dollars" in m:
+                yes_ask_val = int(round(m["yes_ask_dollars"] * 100))
+            yes_ask = yes_ask_val or 0
+
             no_bid = m.get("no_bid")
-            no_ask = m.get("no_ask")
             if no_bid is None:
-                no_bid = int(round(100 - yes_ask))
+                if "no_bid_dollars" in m:
+                    no_bid = int(round(m["no_bid_dollars"] * 100))
+                else:
+                    no_bid = int(round(100 - yes_ask))
+
+            no_ask = m.get("no_ask")
             if no_ask is None:
-                no_ask = int(round(100 - yes_bid))
+                if "no_ask_dollars" in m:
+                    no_ask = int(round(m["no_ask_dollars"] * 100))
+                else:
+                    no_ask = int(round(100 - yes_bid))
+
+            last_price = m.get("last_price")
+            if last_price is None and "last_price_dollars" in m:
+                last_price = int(round(m["last_price_dollars"] * 100))
+            last_price = last_price or 0
+
+            volume = m.get("volume")
+            if volume is None and "volume_fp" in m:
+                volume = int(round(float(m["volume_fp"])))
+            volume = volume or 0
+
+            oi = m.get("open_interest")
+            if oi is None and "open_interest_fp" in m:
+                oi = int(round(float(m["open_interest_fp"])))
+            oi = oi or 0
+
             market_info[tk] = {
                 "event_ticker": event_ticker,
                 "subtitle": m.get("subtitle", ""),
@@ -156,11 +189,12 @@ def discover_markets(
                 "yes_ask": int(round(yes_ask)),
                 "no_bid": int(round(no_bid)),
                 "no_ask": int(round(no_ask)),
-                "last_price": m.get("last_price", 0),
-                "volume": m.get("volume", 0),
-                "open_interest": m.get("open_interest", 0),
+                "last_price": int(round(last_price)),
+                "volume": int(round(volume)),
+                "open_interest": int(round(oi)),
                 "cap_strike": m.get("cap_strike"),
             }
+
         logger.info("  %d contracts found", len(markets))
 
     logger.info("Tracking %d total contracts", len(market_tickers))
