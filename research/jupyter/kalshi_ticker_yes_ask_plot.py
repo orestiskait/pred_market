@@ -59,7 +59,7 @@ def load_all_kalshi_snapshots(
 
     if not frames:
         return pd.DataFrame()
-    return pd.concat(frames, ignore_index=True).sort_values("snapshot_ts").reset_index(drop=True)
+    return pd.concat(frames, ignore_index=True).sort_values("snapshot_ts_utc").reset_index(drop=True)
 
 
 snapshots = load_all_kalshi_snapshots(data_dir, start_date, end_date)
@@ -88,8 +88,8 @@ def plot_yes_ask_for_event(
         print(f"No data for event ticker: {event_ticker}")
         return
 
-    if sub["snapshot_ts"].dt.tz is None:
-        sub["snapshot_ts"] = sub["snapshot_ts"].dt.tz_localize("UTC")
+    if sub["snapshot_ts_utc"].dt.tz is None:
+        sub["snapshot_ts_utc"] = sub["snapshot_ts_utc"].dt.tz_localize("UTC")
 
     market_tickers = sub["market_ticker"].unique().tolist()
     if not market_tickers:
@@ -102,7 +102,7 @@ def plot_yes_ask_for_event(
         "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
     ]
     for idx, mt in enumerate(sorted(market_tickers)):
-        mt_df = sub[sub["market_ticker"] == mt].sort_values("snapshot_ts")
+        mt_df = sub[sub["market_ticker"] == mt].sort_values("snapshot_ts_utc")
         if mt_df.empty or "yes_ask" not in mt_df.columns:
             continue
         subtitle = (
@@ -112,7 +112,7 @@ def plot_yes_ask_for_event(
         )
         fig.add_trace(
             go.Scattergl(
-                x=mt_df["snapshot_ts"],
+                x=mt_df["snapshot_ts_utc"],
                 y=mt_df["yes_ask"],
                 mode="lines+markers",
                 line=dict(width=2, color=colors[idx % len(colors)]),

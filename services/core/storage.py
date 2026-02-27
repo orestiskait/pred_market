@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # ======================================================================
 
 MARKET_SNAPSHOT_SCHEMA = pa.schema([
-    ("snapshot_ts",   pa.timestamp("us", tz="UTC")),
+    ("snapshot_ts_utc",   pa.timestamp("us", tz="UTC")),
     ("event_ticker",  pa.string()),
     ("market_ticker", pa.string()),
     ("subtitle",      pa.string()),
@@ -41,7 +41,7 @@ MARKET_SNAPSHOT_SCHEMA = pa.schema([
 ])
 
 ORDERBOOK_SNAPSHOT_SCHEMA = pa.schema([
-    ("snapshot_ts",    pa.timestamp("us", tz="UTC")),
+    ("snapshot_ts_utc",    pa.timestamp("us", tz="UTC")),
     ("market_ticker",  pa.string()),
     ("side",           pa.string()),
     ("price_cents",    pa.int32()),
@@ -220,15 +220,15 @@ class ParquetStorage:
         if raw.empty:
             return raw
 
-        raw = raw.sort_values("snapshot_ts")
-        timestamps = raw["snapshot_ts"].unique()
+        raw = raw.sort_values("snapshot_ts_utc")
+        timestamps = raw["snapshot_ts_utc"].unique()
 
         # book[ticker][side][price] = qty
         book: Dict[str, Dict[str, Dict[int, float]]] = {}
         rows: list[dict] = []
 
         for ts in timestamps:
-            snap = raw[raw["snapshot_ts"] == ts]
+            snap = raw[raw["snapshot_ts_utc"] == ts]
             snap_type = snap["snapshot_type"].iloc[0]
 
             if snap_type == "baseline":
@@ -251,7 +251,7 @@ class ParquetStorage:
                     for price, qty in levels.items():
                         if qty > 0:
                             rows.append({
-                                "snapshot_ts": ts,
+                                "snapshot_ts_utc": ts,
                                 "market_ticker": tk,
                                 "side": side,
                                 "price_cents": price,

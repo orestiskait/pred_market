@@ -236,7 +236,7 @@ class LiveListener(AsyncService, KalshiWSMixin):
         for tk in self.market_tickers:
             info = self.market_info.get(tk, {})
             self._market_buf.append({
-                "snapshot_ts": ts,
+                "snapshot_ts_utc": ts,
                 "event_ticker": info.get("event_ticker", ""),
                 "market_ticker": tk,
                 "subtitle": info.get("subtitle", ""),
@@ -259,7 +259,7 @@ class LiveListener(AsyncService, KalshiWSMixin):
                     )
                     for price, qty in levels:
                         self._ob_buf.append({
-                            "snapshot_ts": ts,
+                            "snapshot_ts_utc": ts,
                             "market_ticker": tk,
                             "side": side,
                             "price_cents": price,
@@ -292,7 +292,7 @@ class LiveListener(AsyncService, KalshiWSMixin):
                     delta_levels = self._trim_ob(delta_levels)
                     for price, qty in delta_levels:
                         self._ob_buf.append({
-                            "snapshot_ts": ts,
+                            "snapshot_ts_utc": ts,
                             "market_ticker": tk,
                             "side": side,
                             "price_cents": price,

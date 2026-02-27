@@ -115,7 +115,7 @@ would have arrived.
 ### How It's Enforced
 
 1. **Weather events** use `received_ts` for ordering (not `ob_timestamp`)
-2. **Orderbook snapshots** use `snapshot_ts` (the Kalshi WS push time)
+2. **Orderbook snapshots** use `snapshot_ts_utc` (the Kalshi WS push time)
 3. **Market discovery** is synthesized from the first snapshot of each day,
    timestamped to the earliest event of that day (mimicking the bot's
    `_discover()` running before WS feeds start)
@@ -126,7 +126,7 @@ would have arrived.
 
 | Risk | Prevention |
 |---|---|
-| Future orderbook visible during weather trigger | OB snapshots ordered by `snapshot_ts`; weather by `received_ts` |
+| Future orderbook visible during weather trigger | OB snapshots ordered by `snapshot_ts_utc`; weather by `received_ts` |
 | Strategy seeing tomorrow's contracts | Discovery events are per-day; ladder is rebuilt on each discovery |
 | Strategy accumulating stale weather history | `on_market_discovery` clears `weather_history` (production behavior) |
 | NWS window miscalculation | `nws_observation_period()` uses Standard Time offset (Jan 15 trick) |

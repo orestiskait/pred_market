@@ -481,7 +481,7 @@ Code: `services/kalshi/listener.py`, `services/core/storage.py`
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `snapshot_ts` | timestamp[UTC] | Wall-clock time the snapshot was taken |
+| `snapshot_ts_utc` | timestamp[UTC] | Wall-clock time the snapshot was taken |
 | `event_ticker` | string | Event series identifier (e.g. `KXHIGHCHI-26FEB22`) |
 | `market_ticker` | string | Individual contract identifier (e.g. `KXHIGHCHI-26FEB22-T75`) |
 | `subtitle` | string | Human-readable description (e.g. `"High above 75"`) |
@@ -529,7 +529,7 @@ Code: `services/kalshi/listener.py` (`_take_snapshot` method), `services/core/st
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `snapshot_ts` | timestamp[UTC] | Wall-clock time the snapshot was taken |
+| `snapshot_ts_utc` | timestamp[UTC] | Wall-clock time the snapshot was taken |
 | `market_ticker` | string | Contract identifier |
 | `side` | string | `"yes"` or `"no"` |
 | `price_cents` | int32 | Price level in cents (1–99) |

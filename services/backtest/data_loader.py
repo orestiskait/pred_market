@@ -12,7 +12,7 @@ DATA LEAKAGE PREVENTION
   used for timeline ordering — this mirrors production where the bot only
   reacts when the WS message arrives.
 
-* Orderbook snapshots are ordered by ``snapshot_ts`` (when the Kalshi WS
+* Orderbook snapshots are ordered by ``snapshot_ts_utc`` (when the Kalshi WS
   sent the snapshot).
 
 * Market discovery events are synthesised from ``kalshi_market_snapshots``:
@@ -153,7 +153,7 @@ class DataLoader:
             df = df[mask]
 
         events: list[SimEvent] = []
-        for ts, group in df.groupby("snapshot_ts"):
+        for ts, group in df.groupby("snapshot_ts_utc"):
             # Build per-ticker orderbook dicts
             ob_by_ticker: dict[str, dict] = {}
             for _, row in group.iterrows():
@@ -195,18 +195,18 @@ class DataLoader:
             df = df[mask]
 
         events: list[SimEvent] = []
-        df = df.sort_values("snapshot_ts")
+        df = df.sort_values("snapshot_ts_utc")
 
         # Group by calendar date (UTC) to emit one discovery per day
-        df["_date"] = df["snapshot_ts"].dt.date
+        df["_date"] = df["snapshot_ts_utc"].dt.date
         for d, day_df in df.groupby("_date"):
-            first_ts = day_df["snapshot_ts"].min()
+            first_ts = day_df["snapshot_ts_utc"].min()
             # Deduplicate tickers — keep first occurrence
             seen: set[str] = set()
             market_tickers: list[str] = []
             market_info: dict[str, dict] = {}
 
-            for _, row in day_df[day_df["snapshot_ts"] == first_ts].iterrows():
+            for _, row in day_df[day_df["snapshot_ts_utc"] == first_ts].iterrows():
                 tk = row["market_ticker"]
                 if tk in seen:
                     continue

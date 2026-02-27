@@ -8,7 +8,7 @@
 
 | Context | Convention | Example |
 |---------|-----------|---------|
-| Parquet schemas | `pa.timestamp("us", tz="UTC")` | `snapshot_ts`, `timestamp` |
+| Parquet schemas | `pa.timestamp("us", tz="UTC")` | `snapshot_ts_utc`, `timestamp` |
 | Weather observations | Column named `valid_utc` (timezone-aware) | `2026-02-19 15:30:00+00:00` |
 | Python runtime | Always use `utc_now()` / `utc_today()` from `tz.py` | Never `datetime.now()` or `date.today()` |
 | Filenames (daily parquet) | UTC date in filename | `2026-02-19.parquet`, `KMDW_2026-02-19.parquet` |

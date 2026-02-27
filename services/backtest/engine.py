@@ -14,7 +14,7 @@ The engine does NOT subclass or monkey-patch any of these.  Instead it:
 LATENCY & DATA LEAKAGE
 ========================
 The timeline produced by DataLoader already orders events by wall-clock
-(received_ts for weather, snapshot_ts for orderbooks).  The engine simply
+(received_ts for weather, snapshot_ts_utc for orderbooks).  The engine simply
 iterates in order — no future data can leak.
 
 The Synoptic ``ob_timestamp`` is embedded inside the WeatherObservationEvent
