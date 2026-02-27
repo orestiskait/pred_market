@@ -141,10 +141,6 @@ Code: `services/wethr/listener.py`, `services/wethr/sse.py`, `services/wethr/sto
 | `wind_gust_mph` | float | Wind gust in mph (null if calm) |
 | `visibility_miles` | float | Visibility in statute miles |
 | `altimeter_inhg` | float | Altimeter setting in inHg |
-| `wethr_high_nws_f` | float | Running intraday high per NWS method (°F) |
-| `wethr_high_wu_f` | float | Running intraday high per Weather Underground method (°F) |
-| `wethr_low_nws_f` | float | Running intraday low per NWS method (°F) |
-| `wethr_low_wu_f` | float | Running intraday low per WU method (°F) |
 | `anomaly` | bool | Wethr flag: observation is anomalous / suspect |
 | `event_id` | string | Wethr-assigned unique event ID |
 

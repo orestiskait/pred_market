@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     libeccodes-dev \
     libcurl4 \
+    libexpat1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY services/requirements.txt .
