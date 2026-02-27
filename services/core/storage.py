@@ -259,6 +259,7 @@ class ParquetStorage:
                                 "price_cents": price,
                                 "quantity": qty,
                                 "snapshot_type": "reconstructed",
+                                "is_data_live": True,
                             })
 
         return pd.DataFrame(rows)
