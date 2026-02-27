@@ -177,7 +177,6 @@ class NBMCOGFetcher:
                 "model_run_time_utc": cycle_ts,
                 "lead_time_minutes": forecast_minutes,
                 "forecast_target_time_utc": valid_ts,
-                "tmp_2m_k": temp_c + 273.15,
                 "tmp_2m_f": temp_f,
                 "max_temp_18hr_p10_f": p10_f,
                 "max_temp_18hr_p90_f": p90_f,
