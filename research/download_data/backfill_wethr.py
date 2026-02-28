@@ -62,11 +62,8 @@ def _parse_iso_ts(raw: str) -> datetime | None:
         return None
 
 
-def fetch_observations_day(station: str, target_date: date, api_key: str) -> pd.DataFrame:
-    """Fetch one day of historical observations and return a DataFrame matching listener schema.
-
-    Only collects raw observations — no CLI/DSM/high/low extraction.
-    """
+def fetch_and_split_day(station: str, target_date: date, api_key: str):
+    """Fetch one day of historical observations, and extract Obs, DSM, and CLI."""
     url = "https://wethr.net/api/v2/observations.php"
     params = {
         "station_code": station,
@@ -82,29 +79,42 @@ def fetch_observations_day(station: str, target_date: date, api_key: str) -> pd.
         data = res.json()
     except Exception as e:
         logger.error("Failed to fetch %s for %s: %s", station, target_date, e)
-        return pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     if not data or not isinstance(data, list):
         logger.debug("No data or invalid format for %s %s", station, target_date)
-        return pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     def _f(val):
         return float(val) if val is not None else None
 
-    rows = []
+    obs_rows = []
+    dsm_rows = {}
+    cli_rows = {}
+
     for item in data:
+        ob_ts = _parse_iso_ts(item.get("observation_time", ""))
+        received_ts = (ob_ts + _P95_LATENCY) if ob_ts is not None else pd.Timestamp.now(tz="UTC")
+        for_date_str = target_date.isoformat()
+
+        # NWS Logic / probable extremes
+        sh_c = _f(item.get("six_hour_high"))
+        sh_f = (sh_c * 9 / 5 + 32) if sh_c is not None else None
+        sl_c = _f(item.get("six_hour_low"))
+        sl_f = (sl_c * 9 / 5 + 32) if sl_c is not None else None
+
+        alt = _f(item.get("altimeter"))
         dp_c = item.get("dew_point")
         dp_f = (dp_c * 9 / 5 + 32) if dp_c is not None else None
-        alt = _f(item.get("altimeter"))
 
-        rows.append({
+        obs_row = {
             "station_code":          item.get("station_code", ""),
-            "observation_time_utc":  (ob_ts := _parse_iso_ts(item.get("observation_time", ""))),
-            "received_ts_utc":       (ob_ts + _P95_LATENCY) if ob_ts is not None else pd.Timestamp.now(tz="UTC"),
+            "observation_time_utc":  ob_ts,
+            "received_ts_utc":       received_ts,
             "live":                  False,
             "product":               "ASOS-HR" if alt is not None else "ASOS-HFM",
             "temperature_celsius":   _f(item.get("temperature")),
-            "temperature_fahrenheit": _f(item.get("temperature_display")),
+            "temperature_fahrenheit": _f(item.get("temperature_display", item.get("temperature_f"))),
             "dew_point_celsius":     _f(dp_c),
             "dew_point_fahrenheit":  dp_f,
             "relative_humidity":     _f(item.get("relative_humidity")),
@@ -113,93 +123,62 @@ def fetch_observations_day(station: str, target_date: date, api_key: str) -> pd.
             "wind_gust_mph":         _f(item.get("wind_gust")),
             "visibility_miles":      _f(item.get("visibility")),
             "altimeter_inhg":        alt,
-            "wethr_high_nws_f":      _f(item.get("wethr_high")),
+            "wethr_high_nws_f":      sh_f,
             "wethr_high_wu_f":       None,
-            "wethr_low_nws_f":       _f(item.get("wethr_low")),
+            "wethr_low_nws_f":       sl_f,
             "wethr_low_wu_f":        None,
             "anomaly":               False,
             "event_id":              str(item.get("id", "")),
-        })
+        }
+        obs_rows.append(obs_row)
 
-    return pd.DataFrame(rows) if rows else pd.DataFrame()
+        # Extract DSM
+        # We capture the latest distinctive DSM of the day
+        dsm_hi_f = _f(item.get("dsm_high_f", item.get("dsm_high_display")))
+        dsm_lo_f = _f(item.get("dsm_low_f", item.get("dsm_low_display")))
+        if dsm_hi_f is not None or dsm_lo_f is not None:
+            # use a composite key for unique DSM releases just in case it updates
+            dsm_key = f"{dsm_hi_f}_{dsm_lo_f}"
+            if dsm_key not in dsm_rows:
+                dsm_rows[dsm_key] = {
+                    "station_code": station,
+                    "for_date": for_date_str,
+                    "received_ts_utc": received_ts,
+                    "live": False,
+                    "high_f": dsm_hi_f,
+                    "high_c": _f(item.get("dsm_high")),
+                    "high_time_utc": "",  # Not exposed in history API
+                    "low_f": dsm_lo_f,
+                    "low_c": _f(item.get("dsm_low")),
+                    "low_time_utc": "",
+                    "anomaly": False,
+                    "event_id": str(item.get("id", "")),
+                }
 
+        # Extract CLI
+        cli_hi_f = _f(item.get("cli_high_f", item.get("cli_high_display")))
+        cli_lo_f = _f(item.get("cli_low_f", item.get("cli_low_display")))
+        if cli_hi_f is not None or cli_lo_f is not None:
+            cli_key = f"{cli_hi_f}_{cli_lo_f}"
+            if cli_key not in cli_rows:
+                cli_rows[cli_key] = {
+                    "station_code": station,
+                    "for_date": for_date_str,
+                    "received_ts_utc": received_ts,
+                    "live": False,
+                    "high_f": cli_hi_f,
+                    "high_c": _f(item.get("cli_high")),
+                    "low_f": cli_lo_f,
+                    "low_c": _f(item.get("cli_low")),
+                    "anomaly": False,
+                    "event_id": str(item.get("id", "")),
+                }
 
-def infer_cli_from_saved_observations(
-    storage: WethrPushStorage,
-    station: str,
-    start_date: date,
-    end_date: date,
-) -> pd.DataFrame:
-    """Read back saved observations (with storage-added observation_date_lst) and
-    infer CLI records per (station, LST day).
-
-    high_f = max(wethr_high_nws_f)  — NWS probable high for the day
-    low_f  = min(wethr_low_nws_f)   — NWS probable low for the day
-
-    Schema matches listener.py on_wethr_cli exactly:
-      station_code, for_date, received_ts_utc, live,
-      high_f, high_c, low_f, low_c, anomaly, event_id
-    """
-    obs_df = storage.read("observations", station=station, start_date=start_date, end_date=end_date)
-
-    if obs_df.empty:
-        logger.warning("No saved observations found for %s; skipping CLI inference.", station)
-        return pd.DataFrame()
-
-    if "observation_date_lst" not in obs_df.columns:
-        logger.error(
-            "observation_date_lst column missing from saved observations for %s. "
-            "Storage may not have a timezone entry for this station.",
-            station,
-        )
-        return pd.DataFrame()
-
-    cli_rows = []
-
-    for lst_date, day_df in obs_df.groupby("observation_date_lst"):
-        highs = day_df["wethr_high_nws_f"].dropna()
-        lows  = day_df["wethr_low_nws_f"].dropna()
-
-        if highs.empty and lows.empty:
-            logger.debug("No NWS high/low values for %s on LST %s; skipping.", station, lst_date)
-            continue
-
-        high_f = float(highs.max()) if not highs.empty else None
-        low_f  = float(lows.min())  if not lows.empty  else None
-
-        # Derive Celsius from the paired temperature_celsius column of the extreme row
-        high_c = None
-        low_c  = None
-        if high_f is not None:
-            hi_row = day_df.loc[day_df["wethr_high_nws_f"].idxmax()]
-            tc = hi_row.get("temperature_celsius")
-            high_c = round(float(tc), 4) if tc is not None and pd.notna(tc) else round((high_f - 32) * 5 / 9, 4)
-        if low_f is not None:
-            lo_row = day_df.loc[day_df["wethr_low_nws_f"].idxmin()]
-            tc = lo_row.get("temperature_celsius")
-            low_c = round(float(tc), 4) if tc is not None and pd.notna(tc) else round((low_f - 32) * 5 / 9, 4)
-
-        # for_date is the LST date string, matching listener.py convention
-        for_date_str = lst_date.strftime("%Y-%m-%d") if hasattr(lst_date, "strftime") else str(lst_date)
-
-        # received_ts_utc = latest obs time in the LST day + P95 latency
-        latest_obs_ts = pd.to_datetime(day_df["observation_time_utc"], utc=True).max()
-        cli_received_ts = latest_obs_ts + pd.Timedelta(_P95_LATENCY)
-
-        cli_rows.append({
-            "station_code":   station,
-            "for_date":       for_date_str,
-            "received_ts_utc": cli_received_ts,
-            "live":           False,
-            "high_f":         high_f,
-            "high_c":         high_c,
-            "low_f":          low_f,
-            "low_c":          low_c,
-            "anomaly":        False,
-            "event_id":       "",  # inferred — no real SSE event ID
-        })
-
-    return pd.DataFrame(cli_rows) if cli_rows else pd.DataFrame()
+    return (
+        pd.DataFrame(obs_rows) if obs_rows else pd.DataFrame(),
+        pd.DataFrame(list(dsm_rows.values())) if dsm_rows else pd.DataFrame(),
+        pd.DataFrame(list(cli_rows.values())) if cli_rows else pd.DataFrame(),
+    )
 
 
 def main():
@@ -222,7 +201,6 @@ def main():
     logger.info("Stations: %s", STATIONS)
     logger.info("Date range: %s to %s", START_DATE, END_DATE)
 
-    # Build sequential list of (station, date) tasks
     tasks = []
     for stn in STATIONS:
         curr = START_DATE
@@ -231,55 +209,39 @@ def main():
             curr += timedelta(days=1)
 
     logger.info("Total days to process: %d", len(tasks))
+    logger.info("Fetching and extracting observations, DSM, and CLI...")
 
-    # ── Phase 1: Fetch and save observations (sequential) ───────────────────
-    logger.info("Phase 1: Fetching and saving observations...")
-
-    total_obs_rows = 0
+    total_obs = 0
+    total_dsm = 0
+    total_cli = 0
     t0 = time.time()
 
     for i, (stn, d) in enumerate(tasks, start=1):
-        obs_df = fetch_observations_day(stn, d, api_key)
+        obs_df, dsm_df, cli_df = fetch_and_split_day(stn, d, api_key)
         time.sleep(RATE_LIMIT_SLEEP)
 
         if not obs_df.empty:
             storage.save(obs_df, "observations")
-            total_obs_rows += len(obs_df)
+            total_obs += len(obs_df)
+        if not dsm_df.empty:
+            storage.save(dsm_df, "dsm")
+            total_dsm += len(dsm_df)
+        if not cli_df.empty:
+            storage.save(cli_df, "cli")
+            total_cli += len(cli_df)
 
         if i % 10 == 0 or i == len(tasks):
             logger.info(
-                "Progress: %d/%d days  |  observation rows saved: %d",
-                i, len(tasks), total_obs_rows,
+                "Progress: %d/%d days | obs_rows: %d | dsm_rows: %d | cli_rows: %d",
+                i, len(tasks), total_obs, total_dsm, total_cli,
             )
-
-    logger.info("Phase 1 complete. %d observation rows saved.", total_obs_rows)
-
-    # ── Phase 2: Infer CLI from saved observations ───────────────────────────
-    logger.info("Phase 2: Inferring CLI from saved observations...")
-
-    total_cli_rows = 0
-
-    for stn in STATIONS:
-        cli_df = infer_cli_from_saved_observations(storage, stn, START_DATE, END_DATE)
-
-        if not cli_df.empty:
-            storage.save(cli_df, "cli")
-            total_cli_rows += len(cli_df)
-            logger.info(
-                "CLI [%s]: saved %d records (%s → %s LST).",
-                stn, len(cli_df),
-                cli_df["for_date"].min(), cli_df["for_date"].max(),
-            )
-        else:
-            logger.info("CLI [%s]: no records inferred.", stn)
 
     elapsed_min = (time.time() - t0) / 60.0
     logger.info(
         "Backfill complete in %.1f min. "
-        "Observations: %d rows | CLI: %d records.",
-        elapsed_min, total_obs_rows, total_cli_rows,
+        "Observations: %d | DSM: %d | CLI: %d",
+        elapsed_min, total_obs, total_dsm, total_cli,
     )
-
 
 if __name__ == "__main__":
     main()
