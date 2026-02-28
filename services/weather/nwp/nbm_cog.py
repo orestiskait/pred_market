@@ -50,6 +50,8 @@ class NBMCOGFetcher:
         data_dir: Path | str | None = None,
         max_forecast_hour: int | None = None,
     ):
+        import boto3
+
         if data_dir is None:
             data_dir = Path(__file__).resolve().parent.parent.parent.parent / "data"
         self.data_dir = Path(data_dir) / self.SOURCE_NAME
@@ -57,6 +59,15 @@ class NBMCOGFetcher:
         self.max_forecast_hour = (
             max_forecast_hour if max_forecast_hour is not None else self.DEFAULT_MAX_FXX
         )
+        # Cache S3 client — reused across all fetch calls (avoids per-call construction).
+        self._s3 = boto3.client(
+            "s3",
+            region_name=REGION,
+            config=Config(signature_version=UNSIGNED),
+        )
+        # pyproj Transformer cache: populated lazily per CRS the first time a
+        # raster is opened, then reused for all subsequent reads.
+        self._transformer_cache: dict[str, object] = {}
 
     @classmethod
     def from_config(cls, config_path: str | Path) -> "NBMCOGFetcher":
@@ -85,42 +96,41 @@ class NBMCOGFetcher:
 
     def _read_cog_point(
         self, key: str, lat: float, lon: float
-    ) -> tuple[float, float, float, float] | None:
-        """Read COG and extract value at (lat, lon). Returns (temp_c, grid_lat, grid_lon) or None.
+    ) -> tuple[float, float, float] | None:
+        """Read one COG and extract value at (lat, lon).
 
-        NOAA buckets are public; uses anonymous (unsigned) S3 access only.
+        Returns (value, grid_lat, grid_lon) or None on failure.
+        Re-uses the cached pyproj Transformer per CRS to avoid rebuilding it
+        on every call.
         """
-        import boto3
         import rasterio
+        import rasterio.windows as rwin
+        from pyproj import Transformer
         from rasterio.env import Env
 
-        s3_kwargs = {"region_name": REGION, "config": Config(signature_version=UNSIGNED)}
         env_kwargs = {"AWS_S3_ENDPOINT": "s3.us-east-1.amazonaws.com", "AWS_NO_SIGN_REQUEST": "YES"}
-
-        s3 = boto3.client("s3", **s3_kwargs)
         url = f"s3://{BUCKET}/{key}"
         try:
             with Env(**env_kwargs):
                 with rasterio.open(url) as src:
-                    import rasterio.windows as rwin
-                    from pyproj import Transformer
+                    crs_str = str(src.crs)
+                    # Reuse transformer if we've seen this CRS before.
+                    if crs_str not in self._transformer_cache:
+                        self._transformer_cache[crs_str] = (
+                            Transformer.from_crs("EPSG:4326", src.crs, always_xy=True),
+                            Transformer.from_crs(src.crs, "EPSG:4326", always_xy=True),
+                        )
+                    fwd, inv = self._transformer_cache[crs_str]
 
-                    transformer = Transformer.from_crs(
-                        "EPSG:4326", src.crs, always_xy=True
-                    )
-                    x, y = transformer.transform(lon, lat)
+                    x, y = fwd.transform(lon, lat)
                     row, col = src.index(x, y)
                     if 0 <= row < src.height and 0 <= col < src.width:
-                        window = rwin.Window(
-                            max(0, col - 1), max(0, row - 1), 3, 3
-                        )
+                        window = rwin.Window(max(0, col - 1), max(0, row - 1), 3, 3)
                         data = src.read(1, window=window)
                         r = min(1, row - window.row_off)
                         c = min(1, col - window.col_off)
                         val = float(data[r, c])
-                        # Grid center for this pixel
                         gx, gy = src.xy(row, col)
-                        inv = Transformer.from_crs(src.crs, "EPSG:4326", always_xy=True)
                         glon, glat = inv.transform(gx, gy)
                         return (val, glat, glon)
         except Exception as e:
@@ -137,7 +147,13 @@ class NBMCOGFetcher:
         fxx: int,
         stations: list[NWPStation],
     ) -> pd.DataFrame:
-        """Fetch one (cycle, fxx) and extract point values from COG."""
+        """Fetch one (cycle, fxx) and extract point values from COG.
+
+        temp and tempstddev are independent S3 objects — fetch them
+        concurrently so their network round-trips overlap.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
         if cycle.tzinfo is None:
             cycle = cycle.replace(tzinfo=timezone.utc)
         valid = cycle + timedelta(hours=fxx)
@@ -148,11 +164,15 @@ class NBMCOGFetcher:
 
         rows = []
         for stn in stations:
-            result_temp = self._read_cog_point(key_temp, stn.lat, stn.lon)
+            # Fire both S3 reads in parallel — they are completely independent.
+            with ThreadPoolExecutor(max_workers=2) as _pool:
+                fut_temp = _pool.submit(self._read_cog_point, key_temp, stn.lat, stn.lon)
+                fut_std  = _pool.submit(self._read_cog_point, key_tempstddev, stn.lat, stn.lon)
+                result_temp = fut_temp.result()
+                result_std  = fut_std.result()
+
             if result_temp is None:
                 continue
-            
-            result_std = self._read_cog_point(key_tempstddev, stn.lat, stn.lon)
             
             temp_c, grid_lat, grid_lon = result_temp
             temp_f = _celsius_to_fahrenheit(temp_c)
@@ -221,13 +241,7 @@ class NBMCOGFetcher:
         lookback_hours: int = 6,
         save: bool = True,
     ) -> pd.DataFrame:
-        import boto3
-
-        s3 = boto3.client(
-            "s3",
-            region_name=REGION,
-            config=Config(signature_version=UNSIGNED),
-        )
+        s3 = self._s3  # reuse cached client
         now = datetime.now(timezone.utc)
         best_cycle = None
         for day_offset in range(3):

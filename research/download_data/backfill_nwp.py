@@ -81,10 +81,10 @@ CYCLES = None
 MAX_FXX = None
 
 # Parallel download workers (fxx files downloaded concurrently per cycle)
-MAX_WORKERS = 8
+MAX_WORKERS = 16
 
 # Parallel concurrent days per model
-MAX_PARALLEL_DAYS = 3
+MAX_PARALLEL_DAYS = 6
 
 # Skip cycles already present in the target parquet (safe resume after crash)
 SKIP_EXISTING = True
@@ -366,13 +366,24 @@ def backfill_model(
     t0 = time.time()
 
     def _process_day(current_date: date) -> tuple[int, int, int, int]:
+        """Download all cycles for one day and write ONE parquet at the end.
+
+        Accumulating frames in memory and flushing once avoids the N×24
+        read-concat-dedup-write pattern that was hammering the parquet file
+        on every cycle.
+        """
         d_completed = d_skipped = d_errors = d_total_rows = 0
+
+        # Load existing cycle timestamps once per (station, day) for resume.
         existing_by_stn: dict[str, set[str]] = {}
         if skip_existing:
             for stn in stations:
                 existing_by_stn[stn.icao] = get_existing_cycles(
                     model_name, stn.icao, current_date
                 )
+
+        # Accumulate new frames per station; write parquet ONCE at end of day.
+        day_frames: dict[str, list[pd.DataFrame]] = {stn.icao: [] for stn in stations}
 
         for cycle_hour in cycle_hours:
             cycle_dt = datetime(current_date.year, current_date.month, current_date.day, cycle_hour)
@@ -416,16 +427,31 @@ def backfill_model(
                 stn_df = df[df["station"] == stn.icao].copy()
                 if stn_df.empty:
                     continue
-
                 stn_df = filter_to_lst_day(stn_df, cycle_dt, stn.tz)
                 if stn_df.empty:
                     continue
-
                 stn_df = add_backfill_metadata(stn_df, model_name, cycle_dt)
-                path = save_to_nwp_realtime(stn_df, model_name, stn.icao, current_date)
-                logger.debug("Saved %d rows (cycle %02d) → %s", len(stn_df), cycle_hour, path.name)
-                d_total_rows += len(stn_df)
+                day_frames[stn.icao].append(stn_df)
+                logger.debug("Queued %d rows (cycle %02d) for %s",
+                             len(stn_df), cycle_hour, stn.icao)
 
+        # --- Single write per station per day --------------------------------
+        for stn in stations:
+            frames = day_frames[stn.icao]
+            if not frames:
+                continue
+            combined_new = pd.concat(frames, ignore_index=True)
+            path = save_to_nwp_realtime(combined_new, model_name, stn.icao, current_date)
+            n = len(combined_new)
+            d_total_rows += n
+            logger.info("Wrote %d rows → %s", n, path.name)
+
+        print(
+            f"  [{model_name.upper()}] {current_date}  "
+            f"cycles={d_completed - d_skipped - d_errors} "
+            f"skipped={d_skipped} err={d_errors} rows={d_total_rows}",
+            flush=True,
+        )
         return d_completed, d_skipped, d_errors, d_total_rows
 
     days_to_process = []
