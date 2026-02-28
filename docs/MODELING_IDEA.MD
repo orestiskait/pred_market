@@ -284,9 +284,11 @@ This feature encodes a critical physical insight: a *stale* intraday maximum (se
 
 ### 5.4 NBM Forecast Features (from latest available NBM cycle)
 
-For each training observation at time $t$, identify the **most recent available NBM cycle** in the dataset that respects the P95 latency constraint (see [§6 Latency — Decay Weight Approach](#6-latency--future-seeing-prevention)):
+For each training observation at time $t$, identify the **most recent available NBM cycle** in the dataset that satisfies the latency constraint. Prefer using the ground-truth `notification_ts_utc` (the exact time data became available) when present in the parquet; otherwise, fall back to the conservative P95 latency bound:
 
-$$\text{latest\_nbm\_cycle} = \max \{ c \mid c + 4048\text{s} \leq t,\ c \in \text{available NBM cycles in data} \}$$
+$$\text{latest\_nbm\_cycle} = \max \{ c \mid \text{available\_at}(c) \leq t \}$$
+
+Where $\text{available\_at}(c) = \min(\text{notification\_ts\_utc}(c), c + 4048\text{s})$.
 
 **Key change from strict-drop**: If the theoretically expected cycle is missing from the data, **do NOT drop the row**. Instead, use the most recent *available* cycle that satisfies the latency constraint. The `nbm_cycle_age_minutes` feature acts as a **decay weight** — XGBoost will naturally learn to trust stale NWP data less as this feature increases. If no NBM cycle at all is available for the entire climate day, set all NBM features to `NaN` (XGBoost handles missing values natively).
 
@@ -307,7 +309,9 @@ Extract forecast rows from the selected cycle whose `forecast_target_time_utc` f
 
 Same decay-weight logic as NBM, but with RRFS-specific latency and cycle frequency:
 
-$$\text{latest\_rrfs\_cycle} = \max \{ c \mid c + 3600\text{s} \leq t,\ c \in \text{available RRFS cycles in data} \}$$
+$$\text{latest\_rrfs\_cycle} = \max \{ c \mid \text{available\_at}(c) \leq t \}$$
+
+Where $\text{available\_at}(c) = \min(\text{notification\_ts\_utc}(c), c + 3600\text{s})$.
 
 Note: RRFS cycles are only 4x daily (00Z, 06Z, 12Z, 18Z), so `rrfs_cycle_age_minutes` will typically be **much larger** than `nbm_cycle_age_minutes`. XGBoost will learn appropriate trust levels for each. If no RRFS cycle is available at all, set all RRFS features to `NaN`.
 
@@ -382,10 +386,10 @@ This is the **most critical guardrail** in backtesting. Every feature must refle
 
 ### 6.1 NWP Latency Model
 
-| NWP Model | P95 Latency | Cycles per Day | Rule |
-|-----------|-------------|----------------|------|
-| **NBM** | 4048s (≈ 67.5 min) | 24 (hourly) | Cycle available when `cycle_utc + 4048s ≤ t` |
-| **RRFS** | 3600s (≈ 60 min) | 4 (00Z, 06Z, 12Z, 18Z) | Cycle available when `cycle_utc + 3600s ≤ t` |
+| NWP Model | P95 Latency (Fallback) | Cycles per Day | Availability Rule |
+|-----------|------------------------|----------------|-------------------|
+| **NBM** | 4048s (≈ 67.5 min) | 24 (hourly) | `notification_ts_utc ≤ t` (or fallback to `cycle + 4048s`) |
+| **RRFS** | 3600s (≈ 60 min) | 4 (00Z, 06Z, 12Z, 18Z) | `notification_ts_utc ≤ t` (or fallback to `cycle + 3600s`) |
 
 ### 6.2 Decay Weight Approach (Use Most Recent Available, Do Not Drop)
 
@@ -393,12 +397,12 @@ The previous design dropped any observation where the "expected" NWP cycle was m
 
 For each observation at time $t$:
 
-1. **Compute the latency-safe horizon**:
-   - NBM: `t_safe = t - 4048s` — any cycle at or before this time is fair game
-   - RRFS: `t_safe = t - 3600s`
+1. **Determine the availability timestamp for each cycle**:
+   - If `notification_ts_utc` is present in the data, use it as the definitive arrival time.
+   - If missing (e.g., older backfill formats), use the conservative fallback: `t_arrival = cycle_utc + P95_latency`.
 
-2. **Find the most recent available cycle** in the data that satisfies the constraint:
-   - NBM: `latest_nbm_cycle = max { c ∈ data | c ≤ t_safe }`
+2. **Find the most recent available cycle** at observation time $t$:
+   - NBM: `latest_nbm_cycle = max { c ∈ data | t_arrival(c) ≤ t }`
    - RRFS: `latest_rrfs_cycle = max { c ∈ data | c ≤ t_safe }`
 
 3. **Pass `cycle_age_minutes` as a feature**:
@@ -429,11 +433,11 @@ Solar position features (`solar_elevation_deg`, `solar_azimuth_deg`, etc.) are c
 
 ### 6.6 Handling Backfill vs. Live Data
 
-The NWP backfill script populates `notification_ts_utc = cycle_time + P95_latency` and `is_live = False`. For the latency model, only the `model_run_time_utc` and the **fixed P95 latency constants** matter — we do NOT use `notification_ts_utc` from the parquet, because:
-- Backfill rows have synthetic notification timestamps
-- Live rows have real notification timestamps
+The pipeline **prefers ground-truth timestamps**. 
+- **Live Data**: Uses the actual `notification_ts_utc` recorded when the model cycle was first received via AWS SNS. This perfectly captures real delays, outages, and regional network latency.
+- **Backfill Data**: For files where `notification_ts_utc` is missing or NaN, the pipeline automatically falls back to adding the conservative P95 constants (`cycle + 4048s` for NBM).
 
-Using fixed P95 constants ensures consistency between backfill and live data.
+This hybrid approach ensures that we use the most accurate timing info available while maintaining a robust safety floor for older historical data.
 
 ---
 

@@ -179,22 +179,34 @@ def _wind_dir_sincos(wind_direction: object) -> tuple[float, float]:
 def _find_latest_safe_cycle(
     nwp_df: pd.DataFrame,
     observation_time: datetime,
-    latency_seconds: int,
+    fallback_latency_seconds: int,
 ) -> Optional[pd.Timestamp]:
     """Return the most recent model_run_time_utc that satisfies the latency constraint.
 
-    Implements the decay-weight approach from §6.2:
-        latest_cycle = max { c ∈ data | c + latency_seconds ≤ observation_time }
-
-    Returns None if no qualifying cycle exists at all.
+    If 'notification_ts_utc' exists in the df, use it directly (ground truth
+    of when the data arrived). If missing/NaN, fall back to adding back the
+    P95 latency to the model run time.
     """
     if nwp_df.empty:
         return None
 
-    safe_horizon = pd.Timestamp(observation_time) - pd.Timedelta(seconds=latency_seconds)
-    cycles = nwp_df["model_run_time_utc"]
+    obs_ts = pd.Timestamp(observation_time)
+    
+    if "notification_ts_utc" in nwp_df.columns:
+        # Use exact Parquet timestamps when available
+        valid_rows = nwp_df[nwp_df["notification_ts_utc"] <= obs_ts]
+        # For legacy rows backfilled without notification_ts_utc, use the fallback
+        missing_ts = nwp_df["notification_ts_utc"].isna()
+        fallback_rows = nwp_df[
+            missing_ts & ((nwp_df["model_run_time_utc"] + pd.Timedelta(seconds=fallback_latency_seconds)) <= obs_ts)
+        ]
+        qualifying = pd.concat([valid_rows, fallback_rows])["model_run_time_utc"]
+    else:
+        # Pure fallback
+        safe_horizon = obs_ts - pd.Timedelta(seconds=fallback_latency_seconds)
+        cycles = nwp_df["model_run_time_utc"]
+        qualifying = cycles[cycles <= safe_horizon]
 
-    qualifying = cycles[cycles <= safe_horizon]
     if qualifying.empty:
         return None
 
@@ -254,7 +266,7 @@ def _extract_nwp_features(
     nan = float("nan")
     result: dict[str, float] = {}
 
-    # Identify best available cycle
+    # Identify best available cycle (preferring exact notification_ts_utc)
     cycle_time = _find_latest_safe_cycle(nwp_df, observation_time, latency_seconds)
     age = _cycle_age_minutes(observation_time, cycle_time)
 
