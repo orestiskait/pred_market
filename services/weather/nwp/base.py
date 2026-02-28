@@ -473,23 +473,25 @@ def _add_time_columns(df: pd.DataFrame, stations: list[NWPStation]) -> pd.DataFr
     if "forecast_target_time_utc" not in df.columns:
         return df
 
+    from zoneinfo import ZoneInfo  # stdlib since Python 3.9 — no extra install needed
     tz_map = {stn.icao: stn.tz for stn in stations}
+    # Use a fixed Jan-1 date to get the standard-time (no DST) UTC offset
+    jan_first_utc = datetime(2026, 1, 1, tzinfo=timezone.utc)
     parts: list[pd.DataFrame] = []
-    
-    import pytz
-    jan_first = datetime(2026, 1, 1)
 
     for icao, group in df.groupby("station"):
         group = group.copy()
         tz_name = tz_map.get(icao)
-        
+
         offset_hours = 0
         if tz_name:
-            tz = pytz.timezone(tz_name)
-            # Find the UTC offset during standard time (e.g. January 1st)
-            std_offset = tz.utcoffset(jan_first)
-            if std_offset is not None:
-                offset_hours = std_offset.total_seconds() / 3600
+            try:
+                zi = ZoneInfo(tz_name)
+                std_offset = jan_first_utc.astimezone(zi).utcoffset()
+                if std_offset is not None:
+                    offset_hours = std_offset.total_seconds() / 3600
+            except Exception:
+                logger.warning("_add_time_columns: unknown timezone %r for station %s", tz_name, icao)
 
         group["forecast_target_time_lst"] = group["forecast_target_time_utc"].dt.tz_localize(None) + pd.Timedelta(hours=offset_hours)
         group["forecast_target_date_lst"] = group["forecast_target_time_lst"].dt.date
