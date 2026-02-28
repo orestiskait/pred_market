@@ -65,9 +65,10 @@ class NBMCOGFetcher:
             region_name=REGION,
             config=Config(signature_version=UNSIGNED),
         )
-        # pyproj Transformer cache: populated lazily per CRS the first time a
-        # raster is opened, then reused for all subsequent reads.
-        self._transformer_cache: dict[str, object] = {}
+        # pyproj Transformer cache: populated lazily per CRS.
+        # Transformers are NOT thread-safe, so we must use a thread-local cache.
+        import threading
+        self._local = threading.local()
 
     @classmethod
     def from_config(cls, config_path: str | Path) -> "NBMCOGFetcher":
@@ -114,13 +115,16 @@ class NBMCOGFetcher:
             with Env(**env_kwargs):
                 with rasterio.open(url) as src:
                     crs_str = str(src.crs)
-                    # Reuse transformer if we've seen this CRS before.
-                    if crs_str not in self._transformer_cache:
-                        self._transformer_cache[crs_str] = (
+                    # Reuse transformer safely per thread
+                    if not hasattr(self._local, "transformer_cache"):
+                        self._local.transformer_cache = {}
+                        
+                    if crs_str not in self._local.transformer_cache:
+                        self._local.transformer_cache[crs_str] = (
                             Transformer.from_crs("EPSG:4326", src.crs, always_xy=True),
                             Transformer.from_crs(src.crs, "EPSG:4326", always_xy=True),
                         )
-                    fwd, inv = self._transformer_cache[crs_str]
+                    fwd, inv = self._local.transformer_cache[crs_str]
 
                     x, y = fwd.transform(lon, lat)
                     row, col = src.index(x, y)
