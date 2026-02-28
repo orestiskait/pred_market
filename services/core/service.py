@@ -58,8 +58,11 @@ class AsyncService:
             loop.add_signal_handler(sig, self.shutdown)
 
         logger.info("Starting %s...", self.__class__.__name__)
+        self._main_task = asyncio.current_task()
         try:
             await asyncio.gather(*self._get_tasks())
+        except asyncio.CancelledError:
+            logger.info("%s run task cancelled for shutdown.", self.__class__.__name__)
         finally:
             self._on_shutdown()
             logger.info("%s stopped.", self.__class__.__name__)
@@ -68,6 +71,8 @@ class AsyncService:
         """Signal-safe shutdown trigger."""
         logger.info("Shutdown signal received")
         self._running = False
+        if hasattr(self, "_main_task") and self._main_task and not self._main_task.done():
+            self._main_task.cancel()
 
 
 class MetarCollectorMixin:

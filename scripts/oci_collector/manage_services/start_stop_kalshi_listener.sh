@@ -20,8 +20,8 @@ cmd="${1:-start}"
 
 case "$cmd" in
   stop)
-    echo "[start_stop_kalshi_listener] Stopping Kalshi listener..."
-    $DOCKER stop "$CONTAINER" 2>/dev/null || echo "(kalshi-listener not running)"
+    echo "[start_stop_kalshi_listener] Stopping Kalshi listener gracefully..."
+    $DOCKER stop --time 30 "$CONTAINER" 2>/dev/null || echo "(kalshi-listener not running)"
     ;;
 
   logs)
@@ -39,6 +39,9 @@ case "$cmd" in
     # Fix permissions so the non-root container user can read the API keys
     sudo chmod -R a+rx "$CREDS_DIR" 2>/dev/null || true
 
+    # Issue a graceful stop just in case it's currently running, before rebuilding/restarting
+    echo "[start_stop_kalshi_listener] Checking if container is running..."
+    $DOCKER stop --time 30 "$CONTAINER" 2>/dev/null || true
     $DOCKER rm -f "$CONTAINER" 2>/dev/null || true
 
     echo "[start_stop_kalshi_listener] Starting Kalshi listener..."
