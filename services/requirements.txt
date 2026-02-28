@@ -22,3 +22,9 @@ boto3>=1.28.0
 
 # MADIS observation ingest — gzipped NetCDF from noaa-madis-pds
 netCDF4>=1.6.0
+
+# ── Weather Brain ML Model Pipeline ────────────────────────────────────
+# Stage 2: XGBoost quantile regression (reg:quantileerror)
+xgboost>=2.0.0
+# Stage 5: Isotonic calibration (IsotonicRegression) + evaluation metrics
+scikit-learn>=1.3.0
