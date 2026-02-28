@@ -443,11 +443,10 @@ class NWPSNSListener(AsyncService):
 
         # Queue name — stable so restarts reuse the same queue (avoids orphan queues
         # that accumulate SNS deliveries and inflate SQS request costs).
-        # Appending hostname ensures local dev and OCI VM do not steal messages.
-        import socket
-        hostname = socket.gethostname().split(".")[0]
-        prefix = nwp_cfg.get("sqs_queue_prefix", "pred-market-nwp")
-        self.queue_name = nwp_cfg.get("sqs_queue_name") or f"{prefix}-{hostname}"
+        # We enforce a single queue name because NWP polling is strictly single-instance.
+        self.queue_name = nwp_cfg.get("sqs_queue_name") or nwp_cfg.get(
+            "sqs_queue_prefix", "pred-market-live"
+        )
 
         # SQS manager (initialized in run)
         self.sqs_manager: SQSManager | None = None
