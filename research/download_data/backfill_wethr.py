@@ -108,12 +108,14 @@ def fetch_history_day(station: str, target_date: date, api_key: str) -> dict[str
         dp_c = item.get("dew_point")
         dp_f = (dp_c * 9/5 + 32) if dp_c is not None else None
         
+        altimeter_val = _to_float(item.get("altimeter"))
+        
         row = {
             "station_code": item.get("station_code", ""),
             "observation_time_utc": _parse_iso_ts(item.get("observation_time", "")),
             "received_ts_utc": received_ts,
             "live": False,  # Explicitly mark as not live
-            "product": item.get("data_source", "") or "",
+            "product": "ASOS-HR" if altimeter_val is not None else "ASOS-HFM",
             "temperature_celsius": _to_float(item.get("temperature")),
             "temperature_fahrenheit": _to_float(item.get("temperature_display")),
             "dew_point_celsius": _to_float(dp_c),
@@ -123,7 +125,7 @@ def fetch_history_day(station: str, target_date: date, api_key: str) -> dict[str
             "wind_speed_mph": _to_float(item.get("wind_speed")),
             "wind_gust_mph": _to_float(item.get("wind_gust")),
             "visibility_miles": _to_float(item.get("visibility")),
-            "altimeter_inhg": _to_float(item.get("altimeter")),
+            "altimeter_inhg": altimeter_val,
             "wethr_high_nws_f": _to_float(item.get("highest_probable_f")), # Best effort proxy
             "wethr_high_wu_f": None,
             "wethr_low_nws_f": _to_float(item.get("lowest_probable_f")),   # Best effort proxy

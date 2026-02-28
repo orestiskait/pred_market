@@ -157,8 +157,13 @@ class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
 
     def _build_nwp_listener(self, config: dict, config_dir: Path):
         """Build NWPSNSListener if NWP is configured, else return None."""
+        import os
+        if os.environ.get("ENABLE_NWP", "").lower() not in ["1", "true", "yes"]:
+            logger.info("NWP ingest disabled by default. Set ENABLE_NWP=1 runtime environment variable to enable.")
+            return None
+
         nwp_cfg = config.get("nwp", {})
-        if not nwp_cfg:
+        if not nwp_cfg or nwp_cfg.get("enabled") is False:
             return None
         enabled_models = [
             m for m, mc in nwp_cfg.get("models", {}).items()

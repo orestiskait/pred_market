@@ -113,41 +113,7 @@ def _solar_position(dt_utc: datetime, lat: float, lon: float) -> dict[str, float
     }
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Product-type helpers
-# ──────────────────────────────────────────────────────────────────────
 
-# ASOS-HR observations are typically published at :53 or :55 past the hour
-# for routine METARs.  SPECI reports can fall at any minute but are rare.
-# ASOS-HFM are every 5 minutes on the :00/:05/:10/... cycle.
-_ASOS_HR_MINUTES: frozenset[int] = frozenset([47, 50, 52, 53, 54, 55, 56, 57, 58, 59, 0, 1, 2])
-
-def _infer_is_asos_hr(
-    product: str,
-    obs_minute: int,
-    prev_obs_time: Optional[pd.Timestamp],
-    obs_time: pd.Timestamp,
-) -> bool:
-    """Determine if an observation is ASOS-HR (hourly METAR with T-group).
-
-    Primary: use ``product`` column when available (explicit label wins).
-    Fallback (for older backfill files where product == ''):
-      • Minute of hour is in the typical METAR window (:47–:02 next hour)
-      • OR inter-observation gap > 30 minutes (ASOS-HFM never gaps > 10 min)
-
-    This never misclassifies ASOS-HFM as HR when explicit labels exist.
-    """
-    if product:
-        return product.upper() == "ASOS-HR"
-
-    # Fallback: infer from timing patterns
-    if obs_minute in _ASOS_HR_MINUTES:
-        return True
-    if prev_obs_time is not None:
-        gap_minutes = (obs_time - prev_obs_time).total_seconds() / 60.0
-        if gap_minutes > 30:
-            return True
-    return False
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -553,12 +519,7 @@ class FeatureEngine:
 
                 # Only generate training rows from ASOS-HR observations
                 product_str = str(row.get("product", "") or "")
-                is_hr = _infer_is_asos_hr(
-                    product=product_str,
-                    obs_minute=obs_time.minute,
-                    prev_obs_time=prev_obs_time,
-                    obs_time=obs_time,
-                )
+                is_hr = product_str.upper() == "ASOS-HR"
                 prev_obs_time = obs_time  # update before continue
 
                 if not is_hr:

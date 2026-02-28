@@ -45,6 +45,7 @@ case "$cmd" in
     $DOCKER run -d \
       --name "$CONTAINER" \
       -e CREDENTIALS_DIR=/app/credentials \
+      -e ENABLE_NWP=1 \
       -v "$CREDS_DIR:/app/credentials:ro" \
       -v "$DATA_DIR:/app/data" \
       --restart unless-stopped \
