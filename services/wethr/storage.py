@@ -99,8 +99,9 @@ class WethrPushStorage(PerStationDayStore):
                     ts_utc = pd.to_datetime(df.loc[mask, date_col], utc=True)
                     ts_lst = ts_utc.dt.tz_convert(tz_name)
                     
-                    df.loc[mask, "observation_time_lst"] = ts_lst.dt.strftime("%Y-%m-%d %H:%M:%S")
-                    df.loc[mask, "observation_date_lst"] = ts_lst.dt.date
+                    if date_col != "for_date":
+                        df.loc[mask, "observation_time_lst"] = ts_lst.dt.strftime("%Y-%m-%d %H:%M:%S")
+                        df.loc[mask, "observation_date_lst"] = ts_lst.dt.date
 
         date_col = meta["date_col"]
         event_dir = self._subdir(event_type)
