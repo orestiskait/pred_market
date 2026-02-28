@@ -21,7 +21,7 @@ cmd="${1:-start}"
 case "$cmd" in
   stop)
     echo "[start_stop_kalshi_listener] Stopping Kalshi listener gracefully..."
-    $DOCKER stop --time 30 "$CONTAINER" 2>/dev/null || echo "(kalshi-listener not running)"
+    $DOCKER stop -t 30 "$CONTAINER" 2>/dev/null || echo "(kalshi-listener not running)"
     
     echo "[start_stop_kalshi_listener] --- Last 20 lines of logs (checking for graceful shutdown) ---"
     $DOCKER logs --tail 20 "$CONTAINER" 2>/dev/null || true
@@ -45,7 +45,7 @@ case "$cmd" in
 
     # Issue a graceful stop just in case it's currently running, before rebuilding/restarting
     echo "[start_stop_kalshi_listener] Checking if container is running..."
-    $DOCKER stop --time 30 "$CONTAINER" 2>/dev/null || true
+    $DOCKER stop -t 30 "$CONTAINER" 2>/dev/null || true
     
     echo "[start_stop_kalshi_listener] --- Last 20 lines of logs (checking for graceful shutdown) ---"
     $DOCKER logs --tail 20 "$CONTAINER" 2>/dev/null || true
