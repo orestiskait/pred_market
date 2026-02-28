@@ -58,8 +58,8 @@ RRFS_DATE_PATTERN = re.compile(r"rrfs\.(\d{8})")
 
 # NBM COG: blendv4.3/conus/YYYY/MM/DD/HH00/temp/blendv4.3_conus_temp_RUN_VALID.tif
 NBM_COG_PATTERN = re.compile(
-    r"blendv4\.3/conus/(\d{4})/(\d{2})/(\d{2})/(\d{2})00/(?:temp|qmd|prob)/"
-    r"blendv4\.3_conus_(?:temp|qmd|prob)_"
+    r"blendv4\.3/conus/(\d{4})/(\d{2})/(\d{2})/(\d{2})00/(?:temp|tempstddev|qmd|prob)/"
+    r"blendv4\.3_conus_(?:temp|tempstddev|qmd|prob)_"
     r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})_(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})\.tif$"
 )
 

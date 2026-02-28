@@ -116,8 +116,9 @@ The **National Blend of Models** provides statistically bias-corrected, consensu
 | `lead_time_minutes` | int64 | Minutes of forecast lead (60, 120, …) |
 | `forecast_target_time_utc` | datetime[UTC] | Valid time of forecast |
 | `tmp_2m_f` | float64 | Forecasted 2m temp in °F |
-| `max_temp_p10_f` | string/null | 10th percentile max temp (often null in backfill) |
-| `max_temp_p90_f` | string/null | 90th percentile max temp (often null in backfill) |
+| `tmp_2m_std_f` | float64/null | Forecasted 2m temp standard deviation in °F |
+| `max_temp_p10_f_std` | float64/null | 10th percentile derived from tmp_2m_std_f |
+| `max_temp_p90_f_std` | float64/null | 90th percentile derived from tmp_2m_std_f |
 | `forecast_target_time_lst` | datetime | Target time in Local Standard Time |
 | `forecast_target_date_lst` | string | Target LST date (YYYY-MM-DD) |
 | `notification_ts_utc` | datetime[UTC] | When the SNS/backfill notification was created |
@@ -135,7 +136,7 @@ The **Rapid Refresh Forecast System** provides higher-temporal-resolution (15-mi
 | Variable | `tmp_2m_f` — 2m air temperature in °F |
 | **Status** | Pre-operational as of early 2026; data generation paused Dec 2024. Historical prototype data available on S3. |
 
-**RRFS schema** (from parquet): identical to NBM except no `max_temp_p10_f` / `max_temp_p90_f` columns.
+**RRFS schema** (from parquet): identical to NBM except no std-derived columns (`tmp_2m_std_f`, `max_temp_p10_f_std`, or `max_temp_p90_f_std`).
 
 | Column | Type | Description |
 |--------|------|-------------|

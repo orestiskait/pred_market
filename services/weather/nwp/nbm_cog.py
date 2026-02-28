@@ -144,8 +144,7 @@ class NBMCOGFetcher:
         forecast_minutes = fxx * 60
 
         key_temp = self._cog_key(cycle, valid, "temp")
-        key_maxt_p10 = self._cog_key(cycle, valid, "maxt18p10")
-        key_maxt_p90 = self._cog_key(cycle, valid, "maxt18p90")
+        key_tempstddev = self._cog_key(cycle, valid, "tempstddev")
 
         rows = []
         for stn in stations:
@@ -153,19 +152,21 @@ class NBMCOGFetcher:
             if result_temp is None:
                 continue
             
-            # Fetch maxt18 percentiles (only exist at specific valid times like 06Z, else None)
-            result_p10 = self._read_cog_point(key_maxt_p10, stn.lat, stn.lon)
-            result_p90 = self._read_cog_point(key_maxt_p90, stn.lat, stn.lon)
+            result_std = self._read_cog_point(key_tempstddev, stn.lat, stn.lon)
             
             temp_c, grid_lat, grid_lon = result_temp
             temp_f = _celsius_to_fahrenheit(temp_c)
             
-            p10_f = None
-            p90_f = None
-            if result_p10 is not None:
-                p10_f = _celsius_to_fahrenheit(result_p10[0])
-            if result_p90 is not None:
-                p90_f = _celsius_to_fahrenheit(result_p90[0])
+            # standard deviation of temp (tempstddev is in K. delta T is same: 1K = 1C. 1C = 1.8F difference)
+            temp_std_f = None
+            if result_std is not None:
+                temp_std_f = result_std[0] * 1.8
+                
+            p10_std_f = None
+            p90_std_f = None
+            if temp_f is not None and temp_std_f is not None:
+                p10_std_f = temp_f - (1.28 * temp_std_f)
+                p90_std_f = temp_f + (1.28 * temp_std_f)
 
             cycle_ts = pd.Timestamp(cycle)
             valid_ts = pd.Timestamp(valid)
@@ -178,8 +179,9 @@ class NBMCOGFetcher:
                 "lead_time_minutes": forecast_minutes,
                 "forecast_target_time_utc": valid_ts,
                 "tmp_2m_f": temp_f,
-                "max_temp_p10_f": p10_f,
-                "max_temp_p90_f": p90_f,
+                "tmp_2m_std_f": temp_std_f,
+                "max_temp_p10_f_std": p10_std_f,
+                "max_temp_p90_f_std": p90_std_f,
                 "grid_lat": round(grid_lat, 4),
                 "grid_lon": round(grid_lon, 4),
             })
