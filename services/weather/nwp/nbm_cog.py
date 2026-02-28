@@ -22,6 +22,11 @@ import pandas as pd
 from botocore import UNSIGNED
 from botocore.config import Config
 
+import rasterio
+import rasterio.windows as rwin
+from pyproj import Transformer
+from rasterio.env import Env
+
 from services.weather.station_registry import NWPStation
 from services.weather.nwp.base import _add_time_columns
 
@@ -104,11 +109,6 @@ class NBMCOGFetcher:
         Re-uses the cached pyproj Transformer per CRS to avoid rebuilding it
         on every call.
         """
-        import rasterio
-        import rasterio.windows as rwin
-        from pyproj import Transformer
-        from rasterio.env import Env
-
         env_kwargs = {"AWS_S3_ENDPOINT": "s3.us-east-1.amazonaws.com", "AWS_NO_SIGN_REQUEST": "YES"}
         url = f"s3://{BUCKET}/{key}"
         try:

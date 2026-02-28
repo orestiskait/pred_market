@@ -24,6 +24,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# Import rasterio first to ensure its bundled libcurl is loaded before pyarrow/pandas
+# loads theirs, preventing GDAL CPLE_AppDefined curl version mismatch errors.
+import rasterio
+
 import pandas as pd
 
 from services.core.config import (
