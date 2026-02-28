@@ -34,7 +34,7 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 from services.core.config import load_config, _read_credential
-from services.wethr.storage import WethrPushStorage
+from services.wethr.storage import WethrPushStorage, _STATION_TZ
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +45,8 @@ logger = logging.getLogger(__name__)
 # python3 -m research.download_data.backfill_wethr
 
 STATIONS = ["KMDW"]
-START_DATE = date(2026, 2, 25)
-END_DATE = date(2026, 2, 28)
+START_DATE = date(2025, 12, 15)
+END_DATE = date(2025, 12, 17)
 
 RATE_LIMIT_SLEEP = 0.25  # seconds between requests — well within 300 req/min
 
@@ -89,8 +89,8 @@ def fetch_and_split_day(station: str, target_date: date, api_key: str):
         return float(val) if val is not None else None
 
     obs_rows = []
-    dsm_rows = {}
-    cli_rows = {}
+    dsm_rows = []
+    cli_rows = []
 
     for item in data:
         ob_ts = _parse_iso_ts(item.get("observation_time", ""))
@@ -123,9 +123,9 @@ def fetch_and_split_day(station: str, target_date: date, api_key: str):
             "wind_gust_mph":         _f(item.get("wind_gust")),
             "visibility_miles":      _f(item.get("visibility")),
             "altimeter_inhg":        alt,
-            "wethr_high_nws_f":      sh_f,
+            "wethr_high_nws_f":      None,
             "wethr_high_wu_f":       None,
-            "wethr_low_nws_f":       sl_f,
+            "wethr_low_nws_f":       None,
             "wethr_low_wu_f":        None,
             "anomaly":               False,
             "event_id":              str(item.get("id", "")),
@@ -137,47 +137,46 @@ def fetch_and_split_day(station: str, target_date: date, api_key: str):
         dsm_hi_f = _f(item.get("dsm_high_f", item.get("dsm_high_display")))
         dsm_lo_f = _f(item.get("dsm_low_f", item.get("dsm_low_display")))
         if dsm_hi_f is not None or dsm_lo_f is not None:
-            # use a composite key for unique DSM releases just in case it updates
-            dsm_key = f"{dsm_hi_f}_{dsm_lo_f}"
-            if dsm_key not in dsm_rows:
-                dsm_rows[dsm_key] = {
-                    "station_code": station,
-                    "for_date": for_date_str,
-                    "received_ts_utc": received_ts,
-                    "live": False,
-                    "high_f": dsm_hi_f,
-                    "high_c": _f(item.get("dsm_high")),
-                    "high_time_utc": "",  # Not exposed in history API
-                    "low_f": dsm_lo_f,
-                    "low_c": _f(item.get("dsm_low")),
-                    "low_time_utc": "",
-                    "anomaly": False,
-                    "event_id": str(item.get("id", "")),
-                }
+            dsm_rows.append({
+                "station_code": station,
+                "for_date": for_date_str,
+                "received_ts_utc": ob_ts + _P95_LATENCY,
+                "live": False,
+                "high_f": dsm_hi_f,
+                "high_c": _f(item.get("dsm_high")),
+                "high_time_utc": ob_ts,
+                "low_f": dsm_lo_f,
+                "low_c": _f(item.get("dsm_low")),
+                "low_time_utc": ob_ts,
+                "observation_time_utc": ob_ts,
+                "anomaly": False,
+                "event_id": str(item.get("id", "")),
+            })
 
         # Extract CLI
         cli_hi_f = _f(item.get("cli_high_f", item.get("cli_high_display")))
         cli_lo_f = _f(item.get("cli_low_f", item.get("cli_low_display")))
         if cli_hi_f is not None or cli_lo_f is not None:
-            cli_key = f"{cli_hi_f}_{cli_lo_f}"
-            if cli_key not in cli_rows:
-                cli_rows[cli_key] = {
-                    "station_code": station,
-                    "for_date": for_date_str,
-                    "received_ts_utc": received_ts,
-                    "live": False,
-                    "high_f": cli_hi_f,
-                    "high_c": _f(item.get("cli_high")),
-                    "low_f": cli_lo_f,
-                    "low_c": _f(item.get("cli_low")),
-                    "anomaly": False,
-                    "event_id": str(item.get("id", "")),
-                }
+            cli_rows.append({
+                "station_code": station,
+                "for_date": for_date_str,
+                "received_ts_utc": ob_ts + _P95_LATENCY,
+                "live": False,
+                "high_f": cli_hi_f,
+                "high_c": _f(item.get("cli_high")),
+                "high_time_utc": ob_ts,
+                "low_f": cli_lo_f,
+                "low_c": _f(item.get("cli_low")),
+                "low_time_utc": ob_ts,
+                "observation_time_utc": ob_ts,
+                "anomaly": False,
+                "event_id": str(item.get("id", "")),
+            })
 
     return (
         pd.DataFrame(obs_rows) if obs_rows else pd.DataFrame(),
-        pd.DataFrame(list(dsm_rows.values())) if dsm_rows else pd.DataFrame(),
-        pd.DataFrame(list(cli_rows.values())) if cli_rows else pd.DataFrame(),
+        pd.DataFrame(dsm_rows) if dsm_rows else pd.DataFrame(),
+        pd.DataFrame(cli_rows) if cli_rows else pd.DataFrame(),
     )
 
 
@@ -223,17 +222,30 @@ def main():
         if not obs_df.empty:
             storage.save(obs_df, "observations")
             total_obs += len(obs_df)
+
+        def map_lst_date(df):
+            tz_name = _STATION_TZ.get(stn)
+            if tz_name and not df.empty and "observation_time_utc" in df.columns:
+                ts_utc = pd.to_datetime(df["observation_time_utc"], utc=True)
+                ts_lst = ts_utc.dt.tz_convert(tz_name).dt.tz_localize(None)
+                df["for_date"] = ts_lst.dt.strftime("%Y-%m-%d")
+            
+            return df
+
         if not dsm_df.empty:
+            dsm_df = map_lst_date(dsm_df)
             storage.save(dsm_df, "dsm")
             total_dsm += len(dsm_df)
+            
         if not cli_df.empty:
+            cli_df = map_lst_date(cli_df)
             storage.save(cli_df, "cli")
             total_cli += len(cli_df)
 
         if i % 10 == 0 or i == len(tasks):
             logger.info(
                 "Progress: %d/%d days | obs_rows: %d | dsm_rows: %d | cli_rows: %d",
-                i, len(tasks), total_obs, total_dsm, total_cli,
+                i, len(tasks), total_obs, total_dsm, total_cli
             )
 
     elapsed_min = (time.time() - t0) / 60.0

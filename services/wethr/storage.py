@@ -31,18 +31,18 @@ _STATION_TZ = {mc.icao: mc.tz for mc in KALSHI_MARKET_REGISTRY.values()}
 _EVENT_META: dict[str, dict] = {
     "observations": {
         "date_col": "observation_time_utc",
-        "dedup": ["station_code", "observation_time_utc"],
+        "dedup": ["station_code", "observation_time_utc","product"],
         "sort": "observation_time_utc",
     },
     "dsm": {
         "date_col": "for_date",
-        "dedup": ["station_code", "for_date"],
-        "sort": "for_date",
+        "dedup": ["station_code", "received_ts_utc"],
+        "sort": "received_ts_utc",
     },
     "cli": {
         "date_col": "for_date",
-        "dedup": ["station_code", "for_date"],
-        "sort": "for_date",
+        "dedup": ["station_code", "received_ts_utc"],
+        "sort": "received_ts_utc",
     },
     "new_high": {
         "date_col": "observation_time_utc",

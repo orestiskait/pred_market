@@ -53,9 +53,11 @@ def _nested_get(d: dict, *keys) -> object:
 
 def _parse_iso_ts(raw: str) -> datetime | None:
     """Parse an ISO timestamp string, returning None on failure."""
+    if not raw:
+        return None
     try:
         return datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, AttributeError):
         return None
 
 
@@ -162,6 +164,7 @@ class WethrPushCollector(AsyncService, WethrSSEMixin, MetarCollectorMixin):
             "low_time_utc": data.get("low_time_utc", ""),
             "anomaly": data.get("anomaly", False),
             "event_id": data.get("id", ""),
+            "observation_time_utc": _parse_iso_ts(data.get("timestamp", "")),
         }
         self._buffers["dsm"].append(row)
         logger.info(
@@ -181,6 +184,7 @@ class WethrPushCollector(AsyncService, WethrSSEMixin, MetarCollectorMixin):
             "low_c": data.get("low_c"),
             "anomaly": data.get("anomaly", False),
             "event_id": data.get("id", ""),
+            "observation_time_utc": _parse_iso_ts(data.get("timestamp", "")),
         }
         self._buffers["cli"].append(row)
         logger.info(
