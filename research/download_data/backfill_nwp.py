@@ -62,8 +62,8 @@ P95_NOTIFICATION_LATENCY_S: dict[str, float] = {
 # ══════════════════════════════════════════════════════════════════════
 # Configuration — edit these constants before running
 # ══════════════════════════════════════════════════════════════════════
-
-# python -m research.download_data.backfill_nwp
+# python3 -m research.download_data.check_backfill_nwp.py
+# python3 -m research.download_data.backfill_nwp
 
 MODELS = ["nbm", "rrfs"]           # "hrrr" | "nbm" | "rrfs" — or any combination
 START_DATE = date(2025, 5, 28)
@@ -81,10 +81,10 @@ CYCLES = None
 MAX_FXX = None
 
 # Parallel download workers (fxx files downloaded concurrently per cycle)
-MAX_WORKERS = 32
+MAX_WORKERS = 8
 
 # Parallel concurrent days per model
-MAX_PARALLEL_DAYS = 100
+MAX_PARALLEL_DAYS = 3
 
 # Skip cycles already present in the target parquet (safe resume after crash)
 SKIP_EXISTING = True
@@ -374,8 +374,6 @@ def backfill_model(
                     model_name, stn.icao, current_date
                 )
 
-        daily_stn_frames: dict[str, list[pd.DataFrame]] = {stn.icao: [] for stn in stations}
-
         for cycle_hour in cycle_hours:
             cycle_dt = datetime(current_date.year, current_date.month, current_date.day, cycle_hour)
             d_completed += 1
@@ -424,15 +422,9 @@ def backfill_model(
                     continue
 
                 stn_df = add_backfill_metadata(stn_df, model_name, cycle_dt)
-                daily_stn_frames[stn.icao].append(stn_df)
+                path = save_to_nwp_realtime(stn_df, model_name, stn.icao, current_date)
+                logger.debug("Saved %d rows (cycle %02d) → %s", len(stn_df), cycle_hour, path.name)
                 d_total_rows += len(stn_df)
-
-        # Batch save at the end of the day instead of overwriting constantly
-        for stn in stations:
-            if daily_stn_frames[stn.icao]:
-                combined_df = pd.concat(daily_stn_frames[stn.icao], ignore_index=True)
-                path = save_to_nwp_realtime(combined_df, model_name, stn.icao, current_date)
-                logger.debug("Batched %d rows → %s", len(combined_df), path.name)
 
         return d_completed, d_skipped, d_errors, d_total_rows
 
