@@ -116,7 +116,7 @@ class ModelDataLoader:
     def load_cli(self, start_date: date, end_date: date) -> pd.DataFrame:
         """Load CLI (Climatological Local report) ground-truth labels.
 
-        Key columns: for_date (YYYY-MM-DD LST), high_f.
+        Key columns: for_date_lst (YYYY-MM-DD LST), high_f.
         """
         df = _read_icao_date_files(
             self.data_dir / self._CLI_SUBPATH, self.icao, start_date, end_date
@@ -128,7 +128,7 @@ class ModelDataLoader:
     def load_dsm(self, start_date: date, end_date: date) -> pd.DataFrame:
         """Load DSM (Daily Summary Message) fallback labels.
 
-        Key columns: for_date, high_f.  Used only when CLI is unavailable.
+        Key columns: for_date_lst, high_f.  Used only when CLI is unavailable.
         """
         df = _read_icao_date_files(
             self.data_dir / self._DSM_SUBPATH, self.icao, start_date, end_date
@@ -201,14 +201,14 @@ class ModelDataLoader:
 
         # Load DSM first (lower priority — will be overwritten by CLI)
         dsm = self.load_dsm(start_date, end_date)
-        if not dsm.empty and "for_date" in dsm.columns and "high_f" in dsm.columns:
+        if not dsm.empty and "for_date_lst" in dsm.columns and "high_f" in dsm.columns:
             for _, row in dsm.iterrows():
-                label_map[str(row["for_date"])] = int(row["high_f"])
+                label_map[str(row["for_date_lst"])] = int(row["high_f"])
 
         # Load CLI second (higher priority)
         cli = self.load_cli(start_date, end_date)
-        if not cli.empty and "for_date" in cli.columns and "high_f" in cli.columns:
+        if not cli.empty and "for_date_lst" in cli.columns and "high_f" in cli.columns:
             for _, row in cli.iterrows():
-                label_map[str(row["for_date"])] = int(row["high_f"])
+                label_map[str(row["for_date_lst"])] = int(row["high_f"])
 
         return label_map

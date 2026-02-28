@@ -139,7 +139,7 @@ def fetch_and_split_day(station: str, target_date: date, api_key: str):
         if dsm_hi_f is not None or dsm_lo_f is not None:
             dsm_rows.append({
                 "station_code": station,
-                "for_date": for_date_str,
+                "for_date_lst": for_date_str,
                 "received_ts_utc": ob_ts + _P95_LATENCY,
                 "live": False,
                 "high_f": dsm_hi_f,
@@ -159,7 +159,7 @@ def fetch_and_split_day(station: str, target_date: date, api_key: str):
         if cli_hi_f is not None or cli_lo_f is not None:
             cli_rows.append({
                 "station_code": station,
-                "for_date": for_date_str,
+                "for_date_lst": for_date_str,
                 "received_ts_utc": ob_ts + _P95_LATENCY,
                 "live": False,
                 "high_f": cli_hi_f,
@@ -223,22 +223,11 @@ def main():
             storage.save(obs_df, "observations")
             total_obs += len(obs_df)
 
-        def map_lst_date(df):
-            tz_name = _STATION_TZ.get(stn)
-            if tz_name and not df.empty and "observation_time_utc" in df.columns:
-                ts_utc = pd.to_datetime(df["observation_time_utc"], utc=True)
-                ts_lst = ts_utc.dt.tz_convert(tz_name).dt.tz_localize(None)
-                df["for_date"] = ts_lst.dt.strftime("%Y-%m-%d")
-            
-            return df
-
         if not dsm_df.empty:
-            dsm_df = map_lst_date(dsm_df)
             storage.save(dsm_df, "dsm")
             total_dsm += len(dsm_df)
             
         if not cli_df.empty:
-            cli_df = map_lst_date(cli_df)
             storage.save(cli_df, "cli")
             total_cli += len(cli_df)
 

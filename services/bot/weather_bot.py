@@ -280,39 +280,41 @@ class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
     def on_wethr_dsm(self, data: dict, received_ts: datetime) -> None:
         row = {
             "station_code": data.get("station_code", ""),
-            "for_date": data.get("for_date", ""),
+            "for_date_lst": data.get("for_date", ""),
             "received_ts": received_ts,
             "high_f": data.get("high_f"),
             "high_c": data.get("high_c"),
-            "high_time_utc": data.get("high_time_utc", ""),
+            "high_time_utc": _parse_iso_ts(data.get("high_time_utc", "")),
             "low_f": data.get("low_f"),
             "low_c": data.get("low_c"),
-            "low_time_utc": data.get("low_time_utc", ""),
+            "low_time_utc": _parse_iso_ts(data.get("low_time_utc", "")),
             "anomaly": data.get("anomaly", False),
             "event_id": data.get("id", ""),
         }
         self._wethr_buffers["dsm"].append(row)
         logger.info(
             "DSM [%s] for %s: high=%s°F low=%s°F",
-            row["station_code"], row["for_date"], row["high_f"], row["low_f"],
+            row["station_code"], row["for_date_lst"], row["high_f"], row["low_f"],
         )
 
     def on_wethr_cli(self, data: dict, received_ts: datetime) -> None:
         row = {
             "station_code": data.get("station_code", ""),
-            "for_date": data.get("for_date", ""),
+            "for_date_lst": data.get("for_date", ""),
             "received_ts": received_ts,
             "high_f": data.get("high_f"),
             "high_c": data.get("high_c"),
+            "high_time_utc": _parse_iso_ts(data.get("high_time_utc", "")),
             "low_f": data.get("low_f"),
             "low_c": data.get("low_c"),
+            "low_time_utc": _parse_iso_ts(data.get("low_time_utc", "")),
             "anomaly": data.get("anomaly", False),
             "event_id": data.get("id", ""),
         }
         self._wethr_buffers["cli"].append(row)
         logger.info(
             "CLI [%s] for %s: high=%s°F low=%s°F",
-            row["station_code"], row["for_date"], row["high_f"], row["low_f"],
+            row["station_code"], row["for_date_lst"], row["high_f"], row["low_f"],
         )
 
     def _on_wethr_extreme(self, event_type: str, data: dict, received_ts: datetime) -> None:

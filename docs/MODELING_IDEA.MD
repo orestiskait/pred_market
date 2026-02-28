@@ -87,7 +87,7 @@ Exactly **three** data sources feed the model. No others (no Synoptic 1-min, no 
 | Column | Type | Description |
 |--------|------|-------------|
 | `station_code` | string | ICAO code |
-| `for_date` | string | Climate date (YYYY-MM-DD in LST) |
+| `for_date_lst` | string | Climate date (YYYY-MM-DD in LST) |
 | `received_ts_utc` | datetime[UTC] | When the CLI was received |
 | `high_f` | int64 | **Official NWS daily high in °F** — this is the label |
 | `high_c` | float64 | Official daily high in °C |

@@ -35,12 +35,12 @@ _EVENT_META: dict[str, dict] = {
         "sort": "observation_time_utc",
     },
     "dsm": {
-        "date_col": "for_date",
+        "date_col": "for_date_lst",
         "dedup": ["station_code", "received_ts_utc"],
         "sort": "received_ts_utc",
     },
     "cli": {
-        "date_col": "for_date",
+        "date_col": "for_date_lst",
         "dedup": ["station_code", "received_ts_utc"],
         "sort": "received_ts_utc",
     },
@@ -83,25 +83,32 @@ class WethrPushStorage(PerStationDayStore):
         if "live" not in df.columns:
             df["live"] = True
 
-        # Add LST columns
-        if date_col := meta.get("date_col"):
-            if date_col in df.columns:
-                # Group by station to apply correct timezone
-                for station in df["station_code"].unique():
-                    mask = df["station_code"] == station
-                    tz_name = _STATION_TZ.get(station)
-                    if not tz_name:
-                        continue
-                    
-                    # Convert to LST (ignoring DST as per instruction, using standard time)
-                    # Note: tz_convert handles the complexity of IANA zones, but user said "Careful there is no daylight saving".
-                    # For now we use the IANA zone which is the robust way to get local time for a city.
-                    ts_utc = pd.to_datetime(df.loc[mask, date_col], utc=True)
-                    ts_lst = ts_utc.dt.tz_convert(tz_name).dt.tz_localize(None)
-                    
-                    if date_col != "for_date":
-                        df.loc[mask, "observation_time_lst"] = ts_lst
-                        df.loc[mask, "observation_date_lst"] = ts_lst.dt.normalize()
+        # Add LST columns based on observation_time_utc if present
+        if "observation_time_utc" in df.columns:
+            # Group by station to apply correct timezone
+            for station in df["station_code"].unique():
+                mask = df["station_code"] == station
+                tz_name = _STATION_TZ.get(station)
+                if not tz_name:
+                    continue
+                
+                # Convert to LST (ignoring DST as per instruction, using standard time)
+                ts_utc = pd.to_datetime(df.loc[mask, "observation_time_utc"], utc=True)
+                ts_lst = ts_utc.dt.tz_convert(tz_name).dt.tz_localize(None)
+                
+                df.loc[mask, "observation_time_lst"] = ts_lst
+                
+                if event_type in ("dsm", "cli"):
+                    df.loc[mask, "for_date_lst"] = ts_lst.dt.strftime("%Y-%m-%d")
+                    if "high_time_utc" in df.columns:
+                        high_ts_utc = pd.to_datetime(df.loc[mask, "high_time_utc"], utc=True)
+                        # Avoid NaT errors during conversion if somehow empty or missing (though tz_convert works on Series with NaT)
+                        df.loc[mask, "high_time_lst"] = high_ts_utc.dt.tz_convert(tz_name).dt.tz_localize(None)
+                    if "low_time_utc" in df.columns:
+                        low_ts_utc = pd.to_datetime(df.loc[mask, "low_time_utc"], utc=True)
+                        df.loc[mask, "low_time_lst"] = low_ts_utc.dt.tz_convert(tz_name).dt.tz_localize(None)
+                else:
+                    df.loc[mask, "observation_date_lst"] = ts_lst.dt.normalize()
 
         date_col = meta["date_col"]
         event_dir = self._subdir(event_type)
