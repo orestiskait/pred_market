@@ -52,9 +52,21 @@ class PerStationDayStore:
         """
         path = directory / f"{station}_{day.isoformat()}.parquet"
 
+        def _enforce_schema(d: pd.DataFrame):
+            for col in d.columns:
+                if col.endswith("_utc") or col.endswith("_utc_ts"):
+                    d[col] = pd.to_datetime(d[col], errors="coerce", utc=True)
+                elif col.endswith("_lst"):
+                    d[col] = pd.to_datetime(d[col], errors="coerce").dt.tz_localize(None)
+
+        df = df.copy()
+        _enforce_schema(df)
+
         if path.exists():
             existing = pd.read_parquet(path)
-            # Ensure consistent timezones for concat and sort
+            _enforce_schema(existing)
+            
+            # Ensure consistent timezones for concat and sort, if they missed the suffix rule
             for col in sort_cols:
                 if col in existing.columns and pd.api.types.is_datetime64_any_dtype(existing[col]):
                     existing[col] = pd.to_datetime(existing[col], utc=True)

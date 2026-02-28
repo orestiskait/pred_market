@@ -97,11 +97,11 @@ class WethrPushStorage(PerStationDayStore):
                     # Note: tz_convert handles the complexity of IANA zones, but user said "Careful there is no daylight saving".
                     # For now we use the IANA zone which is the robust way to get local time for a city.
                     ts_utc = pd.to_datetime(df.loc[mask, date_col], utc=True)
-                    ts_lst = ts_utc.dt.tz_convert(tz_name)
+                    ts_lst = ts_utc.dt.tz_convert(tz_name).dt.tz_localize(None)
                     
                     if date_col != "for_date":
-                        df.loc[mask, "observation_time_lst"] = ts_lst.dt.strftime("%Y-%m-%d %H:%M:%S")
-                        df.loc[mask, "observation_date_lst"] = ts_lst.dt.date
+                        df.loc[mask, "observation_time_lst"] = ts_lst
+                        df.loc[mask, "observation_date_lst"] = ts_lst.dt.normalize()
 
         date_col = meta["date_col"]
         event_dir = self._subdir(event_type)

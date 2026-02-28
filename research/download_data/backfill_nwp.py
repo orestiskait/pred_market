@@ -220,8 +220,20 @@ def save_to_nwp_realtime(
     """
     path = _model_dir(model_name) / f"{station_icao}_{cycle_date.isoformat()}.parquet"
 
+    def _enforce_schema(d: pd.DataFrame):
+        for col in d.columns:
+            if col.endswith("_utc") or col.endswith("_utc_ts"):
+                d[col] = pd.to_datetime(d[col], errors="coerce", utc=True)
+            elif col.endswith("_lst"):
+                d[col] = pd.to_datetime(d[col], errors="coerce").dt.tz_localize(None)
+
+    df = df.copy()
+    _enforce_schema(df)
+
     if path.exists():
         existing = pd.read_parquet(path)
+        _enforce_schema(existing)
+        
         # Normalise UTC timestamps for safe concat
         for col in SORT_COLS:
             if col in existing.columns and pd.api.types.is_datetime64_any_dtype(existing[col]):
