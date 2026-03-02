@@ -58,12 +58,24 @@ class AsyncService:
             loop.add_signal_handler(sig, self.shutdown)
 
         logger.info("Starting %s...", self.__class__.__name__)
+
+        # Wrap each coroutine in an explicit Task so we can cancel them all on
+        # shutdown instead of relying on gather propagation (unreliable in Python ≤ 3.10).
+        self._child_tasks: list[asyncio.Task] = [
+            loop.create_task(coro) for coro in self._get_tasks()
+        ]
         self._main_task = asyncio.current_task()
         try:
-            await asyncio.gather(*self._get_tasks())
+            await asyncio.gather(*self._child_tasks)
         except asyncio.CancelledError:
             logger.info("%s run task cancelled for shutdown.", self.__class__.__name__)
         finally:
+            # Cancel any still-running child tasks and wait for them to finish
+            for t in self._child_tasks:
+                if not t.done():
+                    t.cancel()
+            if self._child_tasks:
+                await asyncio.gather(*self._child_tasks, return_exceptions=True)
             self._on_shutdown()
             logger.info("%s stopped.", self.__class__.__name__)
 
