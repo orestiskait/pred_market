@@ -49,4 +49,4 @@ VOLUME ["/app/data"]
 # Switch to the non-root user
 USER $USERNAME
 
-ENTRYPOINT ["docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
