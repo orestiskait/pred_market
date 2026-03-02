@@ -357,6 +357,10 @@ ssh ubuntu@129.158.203.11 '~/pred_market/scripts/oci_collector/maintenance/updat
 # 2. Probe VM and container status
 bash /home/kaitores/projects/pred_market/scripts/oci_collector/maintenance/probe_vm_and_container_status.sh
 
+# Fetch files
+bash /home/kaitores/projects/pred_market/scripts/oci_collector/maintenance/sync_collected_data_to_local.sh
+
+
 # 3. Or run locally from your machine (requires OCI CLI + SSH):
 cd scripts/oci_collector/maintenance
 ./update_code_and_restart_services.sh

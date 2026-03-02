@@ -66,8 +66,8 @@ P95_NOTIFICATION_LATENCY_S: dict[str, float] = {
 # python3 -m research.download_data.backfill_nwp
 
 MODELS = ["nbm", "rrfs"]           # "hrrr" | "nbm" | "rrfs" — or any combination
-START_DATE = date(2025, 5, 28)
-END_DATE = date(2026, 2, 27)  # inclusive
+START_DATE = date(2025, 12, 15)
+END_DATE = date(2025, 12, 17)  # inclusive
 STATIONS = ["KMDW"]           # ICAO codes; multi-station supported
 
 # Cycles to fetch (UTC hours). None = model default.
@@ -313,8 +313,19 @@ def fetch_cycle_parallel(
     fxx_range: range,
     max_workers: int,
 ) -> pd.DataFrame:
-    """Download all fxx values for one cycle concurrently."""
+    """Download all fxx values for one cycle concurrently.
 
+    For NBMCOGFetcher: defers to its highly-performant native flat-parallel
+    `fetch_cycle` method.
+    For other fetchers: submits one task per fxx into a thread pool.
+    """
+    from services.weather.nwp.nbm_cog import NBMCOGFetcher
+
+    # ── NBM natively supports flat-parallel execution across all fxx ──────
+    if isinstance(fetcher, NBMCOGFetcher):
+        return fetcher.fetch_cycle(cycle, stations, fxx_range, max_workers=max_workers)
+
+    # ── Generic path (HRRR, RRFS) ─────────────────────────────────────────
     def _fetch_one(fxx: int) -> pd.DataFrame:
         try:
             return fetcher.fetch_run(cycle, fxx, stations)
@@ -329,7 +340,7 @@ def fetch_cycle_parallel(
         for fut in as_completed(futures):
             try:
                 df = fut.result()
-                if not df.empty:
+                if df is not None and not df.empty:
                     frames.append(df)
             except Exception:
                 logger.warning("%s fxx=%02d raised an exception (cycle=%s)",
@@ -337,6 +348,7 @@ def fetch_cycle_parallel(
                                cycle.strftime("%Y-%m-%d %HZ"), exc_info=True)
 
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
 
 
 # ══════════════════════════════════════════════════════════════════════

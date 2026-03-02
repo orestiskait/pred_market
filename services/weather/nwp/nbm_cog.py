@@ -155,6 +155,12 @@ class NBMCOGFetcher:
 
         temp and tempstddev are independent S3 objects — fetch them
         concurrently so their network round-trips overlap.
+
+        Note: during backfill, ``_fetch_cycle_nbm_flat`` in backfill_nwp.py
+        bypasses this method entirely and calls ``_read_cog_point`` directly
+        so that all (fxx × variable) reads are submitted as one flat pool with
+        no nesting.  This method is still used by the live fetcher and
+        standalone callers.
         """
         from concurrent.futures import ThreadPoolExecutor
 
@@ -168,7 +174,7 @@ class NBMCOGFetcher:
 
         rows = []
         for stn in stations:
-            # Fire both S3 reads in parallel — they are completely independent.
+            # Standalone call: fire both S3 reads in parallel — they are completely independent.
             with ThreadPoolExecutor(max_workers=2) as _pool:
                 fut_temp = _pool.submit(self._read_cog_point, key_temp, stn.lat, stn.lon)
                 fut_std  = _pool.submit(self._read_cog_point, key_tempstddev, stn.lat, stn.lon)
@@ -177,15 +183,15 @@ class NBMCOGFetcher:
 
             if result_temp is None:
                 continue
-            
+
             temp_c, grid_lat, grid_lon = result_temp
             temp_f = _celsius_to_fahrenheit(temp_c)
-            
-            # standard deviation of temp (tempstddev is in K. delta T is same: 1K = 1C. 1C = 1.8F difference)
+
+            # standard deviation of temp (tempstddev in K; ΔK == ΔC; 1 °C = 1.8 °F)
             temp_std_f = None
             if result_std is not None:
                 temp_std_f = result_std[0] * 1.8
-                
+
             p10_std_f = None
             p90_std_f = None
             if temp_f is not None and temp_std_f is not None:
@@ -220,23 +226,99 @@ class NBMCOGFetcher:
         cycle: datetime,
         stations: list[NWPStation],
         fxx_range: range | None = None,
+        max_workers: int = 16,
     ) -> pd.DataFrame:
+        """Fetch all fxx values for a cycle with flat-parallel execution.
+
+        Submits all S3 point read requests (fxx × variable × station) to a
+        single pool simultaneously to maximize throughput, rather than
+        requesting one fxx at a time.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         if fxx_range is None:
             fxx_range = range(0, self.max_forecast_hour + 1)
-        frames = []
+
+        if cycle.tzinfo is None:
+            cycle = cycle.replace(tzinfo=timezone.utc)
+
+        # Build all (fxx, variable, stn) tasks up-front.
+        tasks = []
         for fxx in fxx_range:
-            try:
-                df = self.fetch_run(cycle, fxx, stations)
-                if not df.empty:
-                    frames.append(df)
-            except Exception:
-                logger.warning(
-                    "%s: skipping fxx=%02d for cycle %s (not available)",
-                    self.SOURCE_NAME, fxx, cycle.strftime("%Y-%m-%d %HZ"),
-                )
-        if not frames:
+            valid = cycle + timedelta(hours=fxx)
+            for stn in stations:
+                key_temp     = self._cog_key(cycle, valid, "temp")
+                key_tempstd  = self._cog_key(cycle, valid, "tempstddev")
+                tasks.append((fxx, "temp",        stn, key_temp,    valid))
+                tasks.append((fxx, "tempstddev",  stn, key_tempstd, valid))
+
+        if not tasks:
             return pd.DataFrame()
-        return pd.concat(frames, ignore_index=True)
+
+        # Submit all reads at once.
+        n_workers = min(max_workers, len(tasks))
+        results: dict[tuple[int, str, str], tuple[float, float, float] | None] = {}
+
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            future_map = {
+                pool.submit(self._read_cog_point, key, stn.lat, stn.lon): (fxx, var, stn.icao)
+                for fxx, var, stn, key, _ in tasks
+            }
+            for fut in as_completed(future_map):
+                fxx, var, icao = future_map[fut]
+                try:
+                    results[(fxx, var, icao)] = fut.result()
+                except Exception:
+                    logger.warning(
+                        "%s: read failed for fxx=%02d var=%s cycle=%s",
+                        self.SOURCE_NAME, fxx, var, cycle.strftime("%Y-%m-%d %HZ"),
+                        exc_info=True
+                    )
+                    results[(fxx, var, icao)] = None
+
+        # Assemble rows from collected results.
+        rows = []
+        for fxx in fxx_range:
+            valid = cycle + timedelta(hours=fxx)
+            for stn in stations:
+                result_temp = results.get((fxx, "temp",       stn.icao))
+                result_std  = results.get((fxx, "tempstddev", stn.icao))
+
+                if result_temp is None:
+                    continue
+
+                temp_c, grid_lat, grid_lon = result_temp
+                temp_f = _celsius_to_fahrenheit(temp_c)
+
+                temp_std_f = None
+                if result_std is not None:
+                    temp_std_f = result_std[0] * 1.8
+
+                p10_std_f = p90_std_f = None
+                if temp_f is not None and temp_std_f is not None:
+                    p10_std_f = temp_f - (1.28 * temp_std_f)
+                    p90_std_f = temp_f + (1.28 * temp_std_f)
+
+                rows.append({
+                    "station":                stn.icao,
+                    "city":                   stn.city,
+                    "model":                  self.SOURCE_NAME,
+                    "model_version":          self.MODEL_VERSION,
+                    "model_run_time_utc":     pd.Timestamp(cycle),
+                    "lead_time_minutes":      fxx * 60,
+                    "forecast_target_time_utc": pd.Timestamp(valid),
+                    "tmp_2m_f":               temp_f,
+                    "tmp_2m_std_f":           temp_std_f,
+                    "max_temp_p10_f_std":     p10_std_f,
+                    "max_temp_p90_f_std":     p90_std_f,
+                    "grid_lat":               round(grid_lat, 4),
+                    "grid_lon":               round(grid_lon, 4),
+                })
+
+        if not rows:
+            return pd.DataFrame()
+        df = pd.DataFrame(rows)
+        return _add_time_columns(df, stations)
 
     def fetch_latest(
         self,
