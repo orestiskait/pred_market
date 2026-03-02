@@ -24,7 +24,7 @@ case "$cmd" in
     $DOCKER stop -t 30 "$CONTAINER" 2>/dev/null || echo "(kalshi-listener not running)"
     
     echo "[start_stop_kalshi_listener] --- Last 20 lines of logs (checking for graceful shutdown) ---"
-    $DOCKER logs --tail 20 "$CONTAINER" 2>/dev/null || true
+    $DOCKER logs --tail 20 "$CONTAINER" 2>&1 || true
     echo "--------------------------------------------------------------------------------"
     ;;
 
@@ -48,7 +48,7 @@ case "$cmd" in
     $DOCKER stop -t 30 "$CONTAINER" 2>/dev/null || true
     
     echo "[start_stop_kalshi_listener] --- Last 20 lines of logs (checking for graceful shutdown) ---"
-    $DOCKER logs --tail 20 "$CONTAINER" 2>/dev/null || true
+    $DOCKER logs --tail 20 "$CONTAINER" 2>&1 || true
     echo "--------------------------------------------------------------------------------"
     
     $DOCKER rm -f "$CONTAINER" 2>/dev/null || true
