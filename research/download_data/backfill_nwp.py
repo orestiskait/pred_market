@@ -66,9 +66,9 @@ P95_NOTIFICATION_LATENCY_S: dict[str, float] = {
 # python3 -m research.download_data.check_backfill_nwp.py
 # python3 -m research.download_data.backfill_nwp
 
-MODELS = ["hrrr"]           # "hrrr" | "nbm" | "rrfs" — or any combination
-START_DATE = date(2025, 12, 15)
-END_DATE = date(2025, 12, 17)  # inclusive
+MODELS = ["rrfs", 'nbm']           # "hrrr" | "nbm" | "rrfs" — or any combination
+START_DATE = date(2026, 1, 31) # 2025,12,16
+END_DATE = date(2026, 2, 28)  # inclusive
 STATIONS = ["KMDW"]           # ICAO codes; multi-station supported
 
 # Cycles to fetch (UTC hours). None = model default.

@@ -45,8 +45,8 @@ logger = logging.getLogger(__name__)
 # python3 -m research.download_data.backfill_wethr
 
 STATIONS = ["KMDW"]
-START_DATE = date(2025, 12, 15)
-END_DATE = date(2025, 12, 17)
+START_DATE = date(2026, 1, 31)
+END_DATE = date(2026, 2, 28)
 
 RATE_LIMIT_SLEEP = 0.25  # seconds between requests — well within 300 req/min
 
@@ -243,6 +243,156 @@ def main():
         "Observations: %d | DSM: %d | CLI: %d",
         elapsed_min, total_obs, total_dsm, total_cli,
     )
+
+    _check_completeness(storage, data_dir, STATIONS)
+
+
+def _check_completeness(
+    storage: WethrPushStorage,
+    data_dir: Path,
+    stations: list[str],
+) -> None:
+    """Post-backfill QC: verify 5-min coverage and CLI at 23:59 LST.
+
+    For every (station, LST day) that was written:
+    - A *full* day must have its last 5-min observation at 23:5x LST.
+      Days that don't meet this (first/last edge day with partial data) are
+      dropped by deleting the parquet files for observations, dsm, and cli.
+    - For each remaining complete day, we check that a CLI report exists
+      with ``for_date_lst`` matching that day and log a warning if absent.
+    """
+    logger.info("=" * 60)
+    logger.info("POST-BACKFILL COMPLETENESS CHECK")
+    logger.info("=" * 60)
+
+    base = data_dir / "weather" / "wethr_push"
+    event_types = ["observations", "dsm", "cli"]
+
+    for station in stations:
+        tz_name = _STATION_TZ.get(station)
+        
+        # ----------------------------------------------------------------
+        # Load all observation rows for this station
+        # ----------------------------------------------------------------
+        obs_dir = base / "observations"
+        obs_files = sorted(obs_dir.glob(f"{station}_*.parquet"))
+        if not obs_files:
+            logger.warning("[%s] No observation files found — nothing to check.", station)
+            continue
+
+        frames = [pd.read_parquet(f) for f in obs_files]
+        obs_all = pd.concat(frames, ignore_index=True)
+
+        # Ensure observation_time_lst is parsed correctly
+        if "observation_time_lst" not in obs_all.columns:
+            logger.warning(
+                "[%s] 'observation_time_lst' column missing — skipping check.", station
+            )
+            continue
+
+        obs_all["observation_time_lst"] = pd.to_datetime(
+            obs_all["observation_time_lst"], errors="coerce"
+        )
+        obs_all["_date_lst"] = obs_all["observation_time_lst"].dt.normalize()
+
+        # ----------------------------------------------------------------
+        # Determine which days are complete (last obs at 23:5x)
+        # ----------------------------------------------------------------
+        day_stats = obs_all.groupby("_date_lst")["observation_time_lst"].agg(
+            last_obs="max"
+        )
+
+        complete_days: list[pd.Timestamp] = []
+        incomplete_days: list[pd.Timestamp] = []
+
+        for day_ts, row in day_stats.iterrows():
+            last_obs: pd.Timestamp = row["last_obs"]
+            # A full day's last 5-min slot falls in the 23:5x minute range
+            is_full = (
+                last_obs.hour == 23
+                and last_obs.minute >= 50
+            )
+            if is_full:
+                complete_days.append(day_ts)
+            else:
+                incomplete_days.append(day_ts)
+
+        # ----------------------------------------------------------------
+        # Drop incomplete days from every event-type parquet
+        # ----------------------------------------------------------------
+        if incomplete_days:
+            logger.warning(
+                "[%s] Incomplete days (not a full 5-min day) — removing from storage:",
+                station,
+            )
+            for day_ts in incomplete_days:
+                day_str = day_ts.date().isoformat()
+                last = day_stats.loc[day_ts, "last_obs"]
+                n_rows = int((obs_all["_date_lst"] == day_ts).sum())
+                logger.warning(
+                    "  %s  last_obs=%s  obs_count=%d → REMOVED",
+                    day_str,
+                    last.strftime("%H:%M"),
+                    n_rows,
+                )
+                for et in event_types:
+                    path = base / et / f"{station}_{day_str}.parquet"
+                    if path.exists():
+                        path.unlink()
+                        logger.info("  Deleted %s", path)
+        else:
+            logger.info("[%s] No incomplete days found.", station)
+
+        # ----------------------------------------------------------------
+        # Report complete days — check obs count and CLI at 23:59
+        # ----------------------------------------------------------------
+        if not complete_days:
+            logger.warning("[%s] No complete days remain after cleanup.", station)
+            continue
+
+        # Load CLI records for this station
+        cli_dir = base / "cli"
+        cli_files = sorted(cli_dir.glob(f"{station}_*.parquet"))
+        cli_dates: set[str] = set()
+        if cli_files:
+            cli_frames = [pd.read_parquet(f) for f in cli_files]
+            cli_all = pd.concat(cli_frames, ignore_index=True)
+            if "for_date_lst" in cli_all.columns:
+                # for_date_lst may be stored as date-string or datetime
+                cli_dates = set(
+                    pd.to_datetime(cli_all["for_date_lst"], errors="coerce")
+                    .dt.strftime("%Y-%m-%d")
+                    .dropna()
+                    .unique()
+                )
+
+        logger.info("[%s] Complete days (%d):", station, len(complete_days))
+        all_ok = True
+        for day_ts in sorted(complete_days):
+            day_str = day_ts.date().isoformat()
+            n_obs = int((obs_all["_date_lst"] == day_ts).sum())
+            last = day_stats.loc[day_ts, "last_obs"]
+            has_cli = day_str in cli_dates
+            cli_flag = "CLI ✓" if has_cli else "CLI MISSING ✗"
+            if not has_cli:
+                all_ok = False
+                logger.warning(
+                    "  %s  last_obs=%s  n_obs=%d  %s",
+                    day_str, last.strftime("%H:%M"), n_obs, cli_flag,
+                )
+            else:
+                logger.info(
+                    "  %s  last_obs=%s  n_obs=%d  %s",
+                    day_str, last.strftime("%H:%M"), n_obs, cli_flag,
+                )
+
+        if all_ok:
+            logger.info(
+                "[%s] All %d complete days have a CLI record at 23:59 LST. ✓",
+                station, len(complete_days),
+            )
+        logger.info("=" * 60)
+
 
 if __name__ == "__main__":
     main()
