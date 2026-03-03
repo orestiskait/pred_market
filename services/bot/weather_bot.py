@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Import rasterio first to ensure its bundled libcurl is loaded before pyarrow/pandas
@@ -257,7 +257,7 @@ class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
         self._wethr_buffers["observations"].append({
             "station_code": station,
             "observation_time_utc": ob_time,
-            "received_ts": received_ts,
+            "received_ts_utc": received_ts.astimezone(timezone.utc),
             "product": data.get("product", ""),
             "temperature_celsius": data.get("temperature_celsius"),
             "temperature_fahrenheit": temp_f,
@@ -281,7 +281,8 @@ class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
         row = {
             "station_code": data.get("station_code", ""),
             "for_date_lst": data.get("for_date", ""),
-            "received_ts": received_ts,
+            "received_ts_utc": received_ts.astimezone(timezone.utc),
+            "observation_time_utc": _parse_iso_ts(data.get("timestamp", "")),
             "high_f": data.get("high_f"),
             "high_c": data.get("high_c"),
             "high_time_utc": _parse_iso_ts(data.get("high_time_utc", "")),
@@ -301,7 +302,8 @@ class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
         row = {
             "station_code": data.get("station_code", ""),
             "for_date_lst": data.get("for_date", ""),
-            "received_ts": received_ts,
+            "received_ts_utc": received_ts.astimezone(timezone.utc),
+            "observation_time_utc": _parse_iso_ts(data.get("timestamp", "")),
             "high_f": data.get("high_f"),
             "high_c": data.get("high_c"),
             "high_time_utc": _parse_iso_ts(data.get("high_time_utc", "")),
@@ -322,7 +324,7 @@ class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
         row = {
             "station_code": data.get("station_code", ""),
             "observation_time_utc": ob_time,
-            "received_ts": received_ts,
+            "received_ts_utc": received_ts.astimezone(timezone.utc),
             "logic": data.get("logic", ""),
             "value_f": data.get("value_f"),
             "value_c": data.get("value_c"),

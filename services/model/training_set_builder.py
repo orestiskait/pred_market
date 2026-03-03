@@ -104,7 +104,12 @@ class TrainingSetBuilder:
     ) -> None:
         self._log_records.append({
             "station":              self.icao,
-            "observation_time_utc": pd.Timestamp(obs_time, tz="UTC") if obs_time else pd.NaT,
+            "observation_time_utc": (
+                pd.Timestamp(obs_time).tz_convert("UTC")
+                if obs_time is not None and getattr(obs_time, 'tzinfo', None) is not None
+                else pd.Timestamp(obs_time, tz="UTC") if obs_time is not None
+                else pd.NaT
+            ),
             "climate_date_lst":     climate_date,
             "log_level":            level,
             "reason_code":          reason_code,

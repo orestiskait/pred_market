@@ -295,16 +295,31 @@ def _extract_nwp_features(
 # 5-minute resampled timeline helpers (§5.2 micro-momentum)
 # ──────────────────────────────────────────────────────────────────────
 
-def _build_5min_grid(obs_df: pd.DataFrame, climate_date_str: str) -> pd.DataFrame:
+# How much prior-day tail to include in the 5-min grid so that momentum
+# features (max look-back = 60 min) are never starved at day boundaries.
+_MOMENTUM_LOOKBACK_MINUTES: int = 90
+
+
+def _build_5min_grid(
+    obs_df: pd.DataFrame,
+    climate_date_str: str,
+    prev_tail_df: Optional[pd.DataFrame] = None,
+) -> pd.DataFrame:
     """Build a 5-minute resampled temperature timeline for one climate day.
 
     Input: observations DataFrame (both ASOS-HFM and ASOS-HR), pre-filtered
            to the current climate_date_str.
+    prev_tail_df: optional slice of the *previous* climate day's observations
+                  to prepend as a warm-up tail (enables momentum features for
+                  the first hour of the new day).
 
     Returns a DataFrame indexed by 5-minute UTC timestamps with the column
     ``temperature_fahrenheit`` forward-filled (last observed value carries).
     """
     day_obs = obs_df[obs_df["_climate_date"] == climate_date_str].copy()
+    if prev_tail_df is not None and not prev_tail_df.empty:
+        day_obs = pd.concat([prev_tail_df, day_obs], ignore_index=True)
+
     if day_obs.empty:
         return pd.DataFrame(columns=["temperature_fahrenheit"])
 
@@ -478,30 +493,40 @@ class FeatureEngine:
             return pd.DataFrame()
 
         obs_df = obs_df.copy()
-        obs_df["observation_time_utc"] = pd.to_datetime(obs_df["observation_time_utc"], utc=True)
 
         # Tag each observation with its LST climate date
-        obs_df["_climate_date"] = obs_df["observation_time_utc"].apply(
-            lambda t: lst_climate_date(t.to_pydatetime(), self.tz).isoformat()
-        )
+        obs_df["_climate_date"] = obs_df['observation_date_lst']
 
         rows: list[dict] = []
 
+        # Process climate days in chronological order so we can carry state forward
+        sorted_dates = sorted(obs_df["_climate_date"].unique())
+
+        # Cross-day carry-over state (seeded as empty / None for the first day)
+        prev_advection_history: list[tuple[pd.Timestamp, float]] = []
+        prev_day_tail_df: Optional[pd.DataFrame] = None  # last ~90 min of prior day
+
         # Iterate climate day by climate day to build per-day state correctly
-        for climate_date_str, day_obs in obs_df.groupby("_climate_date"):
-            day_obs = day_obs.sort_values("observation_time_utc")
+        for climate_date_str in sorted_dates:
+            day_obs = (
+                obs_df[obs_df["_climate_date"] == climate_date_str]
+                .sort_values("observation_time_utc")
+            )
             climate_date = datetime.strptime(climate_date_str, "%Y-%m-%d").date()
             day_end = climate_day_end_utc(climate_date, self.tz)
 
-            # Build 5-minute rolling temperature grid from ALL obs on this day
-            grid_5min = _build_5min_grid(obs_df, climate_date_str)
+            # Build 5-minute rolling temperature grid — prepend previous-day tail
+            # so momentum windows never go NaN at the start of the day.
+            grid_5min = _build_5min_grid(obs_df, climate_date_str, prev_tail_df=prev_day_tail_df)
 
-            # Running state (reset per climate day)
+            # Running max resets each climate day — it tracks today's intraday high only.
+            # (The first observation of the day seeds it to its own temperature.)
             running_max_f: Optional[float] = None
             running_max_time: Optional[pd.Timestamp] = None
             prev_obs_time: Optional[pd.Timestamp] = None
-            # For advection gap trend: store previous nbm_advection values
-            advection_history: list[tuple[pd.Timestamp, float]] = []
+            # Advection history: carry entries from the end of the previous day that
+            # are still within the 2-hour look-back window (trend spans midnight).
+            advection_history: list[tuple[pd.Timestamp, float]] = list(prev_advection_history)
 
             # Process observations in chronological order
             for _, row in day_obs.iterrows():
@@ -524,10 +549,6 @@ class FeatureEngine:
 
                 if not is_hr:
                     # Still contribute to running state but skip feature row
-                    continue
-
-                if running_max_f is None or running_max_time is None:
-                    # No prior observations — skip (validity check 3 in builder)
                     continue
 
                 # ── §5.1 State of the Day ──
@@ -649,6 +670,21 @@ class FeatureEngine:
                     **calendar,
                 }
                 rows.append(feature_row)
+
+            # ── Carry end-of-day state into next day ──
+            # Keep only advection history entries within last 2 h of this day
+            # (the per-row trim already does this continuously, so we just copy)
+            prev_advection_history = list(advection_history)
+            # Build tail slice: last _MOMENTUM_LOOKBACK_MINUTES of obs for 5-min grid warm-up
+            if not day_obs.empty:
+                day_obs_sorted = day_obs.sort_values("observation_time_utc")
+                last_obs_time = day_obs_sorted["observation_time_utc"].iloc[-1]
+                tail_cutoff = last_obs_time - pd.Timedelta(minutes=_MOMENTUM_LOOKBACK_MINUTES)
+                prev_day_tail_df = day_obs_sorted[
+                    day_obs_sorted["observation_time_utc"] >= tail_cutoff
+                ].copy()
+            else:
+                prev_day_tail_df = None
 
         if not rows:
             logger.warning("[%s] No ASOS-HR rows found after feature engineering.", self.icao)

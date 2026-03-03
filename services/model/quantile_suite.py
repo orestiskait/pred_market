@@ -97,11 +97,14 @@ class QuantileSuite:
             params = {k: v for k, v in self._params.items() if k != "early_stopping_rounds"}
             params["quantile_alpha"] = alpha
 
+            # XGBoost ≥ 3.x: early_stopping_rounds goes on the constructor
+            if eval_set:
+                params["early_stopping_rounds"] = self._params.get("early_stopping_rounds", 50)
+
             model = XGBRegressor(**params)
 
             fit_kwargs: dict = {"eval_set": eval_set} if eval_set else {}
             if eval_set:
-                fit_kwargs["early_stopping_rounds"] = self._params.get("early_stopping_rounds", 50)
                 fit_kwargs["verbose"] = False
 
             model.fit(X_tr, y_tr, **fit_kwargs)

@@ -127,24 +127,34 @@ echo ""
 echo "── Data freshness ──"
 ssh -o ConnectTimeout=10 ubuntu@"$PUBLIC_IP" 'bash -s' <<'FRESH'
 DATA_DIR=/home/ubuntu/collector-data
-declare -A paths=(
+TODAY=$(date -u +%Y-%m-%d)
+
+# Real-time streams: freshness judged by file mtime (should update continuously)
+declare -A realtime_paths=(
   ["Kalshi Market"]="kalshi/market_snapshots"
   ["Kalshi Orderbook"]="kalshi/orderbook_snapshots"
   ["Wethr Push Obs"]="weather/wethr_push/observations"
-  ["Wethr Push DSM"]="weather/wethr_push/dsm"
-  ["Wethr Push CLI"]="weather/wethr_push/cli"
   ["HRRR (NWP)"]="weather/nwp_realtime/hrrr"
   ["NBM (NWP)"]="weather/nwp_realtime/nbm"
   ["RRFS (NWP)"]="weather/nwp_realtime/rrfs"
 )
-# Sort keys manually to ensure consistent display
-for label in "Kalshi Market" "Kalshi Orderbook" "Wethr Push Obs" "Wethr Push DSM" "Wethr Push CLI" "HRRR (NWP)" "NBM (NWP)" "RRFS (NWP)"; do
-  dir="$DATA_DIR/${paths[$label]}"
+
+# Once-per-day NWS bulletin sources: freshness judged by whether today's file
+# exists in the directory. DSM/CLI are published once in the morning and are
+# never re-written; mtime-based staleness is always misleading for these.
+declare -A daily_paths=(
+  ["Wethr Push DSM"]="weather/wethr_push/dsm"
+  ["Wethr Push CLI"]="weather/wethr_push/cli"
+)
+
+check_realtime() {
+  local label="$1" dir="$2"
+  local newest
   newest=$(find "$dir" -type f -name "*.parquet" -printf "%T@ %p\n" 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)
   if [[ -n "$newest" ]]; then
+    local mtime age_min status
     mtime=$(stat -c %Y "$newest")
     age_min=$(( ( $(date +%s) - mtime ) / 60 ))
-    # Color output: green if < 60 min, yellow if < 180 min, red otherwise
     if [[ $age_min -lt 60 ]]; then
       status="OK"
     elif [[ $age_min -lt 180 ]]; then
@@ -156,6 +166,38 @@ for label in "Kalshi Market" "Kalshi Orderbook" "Wethr Push Obs" "Wethr Push DSM
   else
     echo -e "$(printf "%-25s" "$label") : NO DATA"
   fi
+}
+
+check_daily() {
+  local label="$1" dir="$2"
+  # Find newest file for display (mtime shown for info, but NOT used for OK/STALE)
+  local newest
+  newest=$(find "$dir" -type f -name "*.parquet" -printf "%T@ %p\n" 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)
+  if [[ -n "$newest" ]]; then
+    local mtime age_min status
+    mtime=$(stat -c %Y "$newest")
+    age_min=$(( ( $(date +%s) - mtime ) / 60 ))
+    # For once-per-day bulletins: OK if today's date appears in ANY filename in the dir;
+    # MISSING if no file contains today's date (bulletin hasn't arrived yet).
+    local todays_file
+    todays_file=$(find "$dir" -type f -name "*${TODAY}*.parquet" 2>/dev/null | head -1)
+    if [[ -n "$todays_file" ]]; then
+      status="OK (today's bulletin received)"
+    else
+      status="MISSING today's bulletin (last: $age_min min ago)"
+    fi
+    echo -e "$(printf "%-25s" "$label") latest: $(basename "$newest") ($age_min min ago) - $status"
+  else
+    echo -e "$(printf "%-25s" "$label") : NO DATA"
+  fi
+}
+
+for label in "Kalshi Market" "Kalshi Orderbook" "Wethr Push Obs" "HRRR (NWP)" "NBM (NWP)" "RRFS (NWP)"; do
+  check_realtime "$label" "$DATA_DIR/${realtime_paths[$label]}"
+done
+
+for label in "Wethr Push DSM" "Wethr Push CLI"; do
+  check_daily "$label" "$DATA_DIR/${daily_paths[$label]}"
 done
 FRESH
 

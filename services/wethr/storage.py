@@ -99,7 +99,8 @@ class WethrPushStorage(PerStationDayStore):
                 df.loc[mask, "observation_time_lst"] = ts_lst
                 
                 if event_type in ("dsm", "cli"):
-                    df.loc[mask, "for_date_lst"] = ts_lst.dt.strftime("%Y-%m-%d")
+                    # Do NOT overwrite for_date_lst: API's for_date is the climate day.
+                    # observation_time_utc (timestamp) is when the message was issued (next day).
                     if "high_time_utc" in df.columns:
                         high_ts_utc = pd.to_datetime(df.loc[mask, "high_time_utc"], utc=True)
                         # Avoid NaT errors during conversion if somehow empty or missing (though tz_convert works on Series with NaT)

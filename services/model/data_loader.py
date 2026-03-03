@@ -22,6 +22,8 @@ from typing import Optional
 import pandas as pd
 import pyarrow.parquet as pq
 
+from services.model.time_utils import get_latest_record_per_date
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,6 +62,22 @@ def _read_icao_date_files(
         len(combined), len(files), base_dir.name, icao, start_str, end_str,
     )
     return combined
+
+
+def _merge_label_map(df: pd.DataFrame, label_map: dict[str, int]) -> None:
+    """Write ``{date_str: high_f}`` entries from *df* into *label_map* in-place.
+
+    *df* should already be deduplicated to one row per date.  Existing keys are
+    overwritten, which is the intended behaviour when CLI supersedes DSM.
+    Only rows where ``high_f`` is non-null are written.
+    """
+    if df.empty or "for_date_lst" not in df.columns or "high_f" not in df.columns:
+        return
+    for _, row in df.iterrows():
+        if pd.notna(row["high_f"]):
+            # Normalise to YYYY-MM-DD (str(Timestamp) may include a time component)
+            date_key = str(row["for_date_lst"])[:10]
+            label_map[date_key] = int(row["high_f"])
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -122,7 +140,8 @@ class ModelDataLoader:
             self.data_dir / self._CLI_SUBPATH, self.icao, start_date, end_date
         )
         if not df.empty and "received_ts_utc" in df.columns:
-            df["received_ts_utc"] = pd.to_datetime(df["received_ts_utc"], utc=True)
+            if not pd.api.types.is_datetime64_any_dtype(df["received_ts_utc"]):
+                logger.warning("load_cli: 'received_ts_utc' is not datetime in parquet — dtype: %s", df["received_ts_utc"].dtype)
         return df
 
     def load_dsm(self, start_date: date, end_date: date) -> pd.DataFrame:
@@ -133,6 +152,9 @@ class ModelDataLoader:
         df = _read_icao_date_files(
             self.data_dir / self._DSM_SUBPATH, self.icao, start_date, end_date
         )
+        if not df.empty and "received_ts_utc" in df.columns:
+            if not pd.api.types.is_datetime64_any_dtype(df["received_ts_utc"]):
+                logger.warning("load_dsm: 'received_ts_utc' is not datetime in parquet — dtype: %s", df["received_ts_utc"].dtype)
         return df
 
     def load_nbm(self, start_date: date, end_date: date) -> pd.DataFrame:
@@ -192,23 +214,22 @@ class ModelDataLoader:
     # ------------------------------------------------------------------
 
     def cli_label_map(self, start_date: date, end_date: date) -> dict[str, int]:
-        """Return {climate_date_str → high_f} mapping from CLI + DSM.
+        """Return {date_str → high_f} mapping built from DSM (fallback) + CLI (priority).
 
-        CLI takes priority over DSM when both exist for the same date.
+        When both sources carry a record for the same ``for_date_lst`` the CLI
+        value wins.  Within each source, if multiple rows share the same date
+        only the one with the latest ``received_ts_utc`` is kept.
+
         Returns integer °F values (NWS official high).
         """
         label_map: dict[str, int] = {}
 
-        # Load DSM first (lower priority — will be overwritten by CLI)
-        dsm = self.load_dsm(start_date, end_date)
-        if not dsm.empty and "for_date_lst" in dsm.columns and "high_f" in dsm.columns:
-            for _, row in dsm.iterrows():
-                label_map[str(row["for_date_lst"])] = int(row["high_f"])
+        # DSM first — lower priority; CLI will overwrite any shared dates below.
+        dsm = get_latest_record_per_date(self.load_dsm(start_date, end_date))
+        _merge_label_map(dsm, label_map)
 
-        # Load CLI second (higher priority)
-        cli = self.load_cli(start_date, end_date)
-        if not cli.empty and "for_date_lst" in cli.columns and "high_f" in cli.columns:
-            for _, row in cli.iterrows():
-                label_map[str(row["for_date_lst"])] = int(row["high_f"])
+        # CLI second — higher priority; overwrites DSM entries for the same date.
+        cli = get_latest_record_per_date(self.load_cli(start_date, end_date))
+        _merge_label_map(cli, label_map)
 
         return label_map

@@ -111,3 +111,27 @@ def series_to_lst_climate_date(
     # Remove tz info, add LST offset
     lst_naive = ts_series.dt.tz_convert("UTC").dt.tz_localize(None) + offset
     return lst_naive.dt.date.astype(str)
+
+
+def get_latest_record_per_date(df: "pd.DataFrame") -> "pd.DataFrame":
+    """Return one row per ``for_date_lst`` — the row with the latest ``received_ts_utc``.
+
+    Designed for CLI/DSM parquet DataFrames where multiple records may be
+    stored for the same LST date (e.g. a correction issued later in the day).
+    The row whose ``received_ts_utc`` is greatest is kept; all others are dropped.
+
+    Safe to call on an empty DataFrame or one missing either key column — the
+    original DataFrame is returned unchanged in those cases.
+    """
+    if (
+        df.empty
+        or "for_date_lst" not in df.columns
+        or "received_ts_utc" not in df.columns
+    ):
+        return df
+    # Sort ascending so drop_duplicates(keep="last") retains the most-recent row.
+    return (
+        df.sort_values("received_ts_utc")
+        .drop_duplicates("for_date_lst", keep="last")
+        .reset_index(drop=True)
+    )
