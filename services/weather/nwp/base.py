@@ -493,6 +493,7 @@ def _add_time_columns(df: pd.DataFrame, stations: list[NWPStation]) -> pd.DataFr
             except Exception:
                 logger.warning("_add_time_columns: unknown timezone %r for station %s", tz_name, icao)
 
+        group["model_run_time_lst"] = group["model_run_time_utc"].dt.tz_localize(None) + pd.Timedelta(hours=offset_hours)
         group["forecast_target_time_lst"] = group["forecast_target_time_utc"].dt.tz_localize(None) + pd.Timedelta(hours=offset_hours)
         group["forecast_target_date_lst"] = group["forecast_target_time_lst"].dt.date
         parts.append(group)

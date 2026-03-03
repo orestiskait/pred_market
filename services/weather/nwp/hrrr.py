@@ -23,9 +23,9 @@ from services.weather.nwp.base import NWPPointFetcher
 class HRRRFetcher(NWPPointFetcher):
     """HRRR 15-minute sub-hourly point fetcher."""
 
-    SOURCE_NAME = "hrrr"
+    SOURCE_NAME = "rrfs"
     HERBIE_MODEL = "hrrr"
     HERBIE_PRODUCT = "subh"
     DEFAULT_MAX_FXX = 18
     DEFAULT_CYCLES = list(range(24))
-    MODEL_VERSION = "v4.1"
+    MODEL_VERSION = "v4.1_hrrr"

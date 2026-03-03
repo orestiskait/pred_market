@@ -31,6 +31,7 @@ from __future__ import annotations
 import logging
 import math
 import sys
+import threading
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
@@ -65,7 +66,7 @@ P95_NOTIFICATION_LATENCY_S: dict[str, float] = {
 # python3 -m research.download_data.check_backfill_nwp.py
 # python3 -m research.download_data.backfill_nwp
 
-MODELS = ["nbm", "rrfs"]           # "hrrr" | "nbm" | "rrfs" — or any combination
+MODELS = ["hrrr"]           # "hrrr" | "nbm" | "rrfs" — or any combination
 START_DATE = date(2025, 12, 15)
 END_DATE = date(2025, 12, 17)  # inclusive
 STATIONS = ["KMDW"]           # ICAO codes; multi-station supported
@@ -135,7 +136,9 @@ def compute_max_useful_fxx(
     next_midnight_lst = datetime(climate_day.year, climate_day.month, climate_day.day) + timedelta(days=1)
     next_midnight_utc = next_midnight_lst - timedelta(hours=offset)
     hours_remaining = (next_midnight_utc - cycle_utc).total_seconds() / 3600
-    return max(0, min(math.ceil(hours_remaining), model_max_fxx))
+    # The user specifically requested: "If we are at the beginning of the day 
+    # (after previous days lst midnight keep all 18 hours of forecast)."
+    return max(0, min(math.ceil(hours_remaining), model_max_fxx, 18))
 
 
 def filter_to_lst_day(
@@ -202,9 +205,22 @@ def add_backfill_metadata(
 # ══════════════════════════════════════════════════════════════════════
 
 def _model_dir(model_name: str) -> Path:
-    d = NWP_REALTIME_DIR / model_name
+    # HRRR production fetcher uses SOURCE_NAME = "rrfs"
+    # To match live system storage, we must map "hrrr" to "rrfs" directory
+    actual_dir_name = "rrfs" if model_name == "hrrr" else model_name
+    d = NWP_REALTIME_DIR / actual_dir_name
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+_save_lock = threading.Lock()
+_file_locks: dict[Path, threading.Lock] = {}
+
+def get_file_lock(p: Path) -> threading.Lock:
+    with _save_lock:
+        if p not in _file_locks:
+            _file_locks[p] = threading.Lock()
+        return _file_locks[p]
 
 
 def save_to_nwp_realtime(
@@ -230,28 +246,30 @@ def save_to_nwp_realtime(
     df = df.copy()
     _enforce_schema(df)
 
-    if path.exists():
-        existing = pd.read_parquet(path)
-        _enforce_schema(existing)
-        
-        # Normalise UTC timestamps for safe concat
-        for col in SORT_COLS:
-            if col in existing.columns and pd.api.types.is_datetime64_any_dtype(existing[col]):
-                existing[col] = pd.to_datetime(existing[col], utc=True)
-            if col in df.columns and pd.api.types.is_datetime64_any_dtype(df[col]):
-                df[col] = pd.to_datetime(df[col], utc=True)
-        combined = pd.concat([existing, df], ignore_index=True)
-        dedup = [c for c in DEDUP_COLS if c in combined.columns]
-        if dedup:
-            combined = combined.drop_duplicates(subset=dedup, keep="last")
-    else:
-        combined = df
+    with get_file_lock(path):
+        if path.exists():
+            existing = pd.read_parquet(path)
+            _enforce_schema(existing)
+            
+            # Normalise UTC timestamps for safe concat
+            for col in SORT_COLS:
+                if col in existing.columns and pd.api.types.is_datetime64_any_dtype(existing[col]):
+                    existing[col] = pd.to_datetime(existing[col], utc=True)
+                if col in df.columns and pd.api.types.is_datetime64_any_dtype(df[col]):
+                    df[col] = pd.to_datetime(df[col], utc=True)
+            combined = pd.concat([existing, df], ignore_index=True)
+            dedup = [c for c in DEDUP_COLS if c in combined.columns]
+            if dedup:
+                combined = combined.drop_duplicates(subset=dedup, keep="last")
+        else:
+            combined = df
 
-    sort = [c for c in SORT_COLS if c in combined.columns]
-    if sort:
-        combined = combined.sort_values(sort, ignore_index=True)
+        sort = [c for c in SORT_COLS if c in combined.columns]
+        if sort:
+            combined = combined.sort_values(sort, ignore_index=True)
 
-    combined.to_parquet(path, index=False)
+        combined.to_parquet(path, index=False)
+    
     logger.debug("Saved %d rows → %s", len(combined), path)
     return path
 
@@ -390,11 +408,12 @@ def backfill_model(
     t0 = time.time()
 
     def _process_day(current_date: date) -> tuple[int, int, int, int]:
-        """Download all cycles for one day and write ONE parquet at the end.
+        """Download all cycles for one day and write to parquet after each cycle.
 
-        Accumulating frames in memory and flushing once avoids the N×24
-        read-concat-dedup-write pattern that was hammering the parquet file
-        on every cycle.
+        Saves incrementally — each completed cycle is immediately appended to
+        the parquet file so progress is never lost if the run is interrupted.
+        Resume logic (`skip_existing`) reads cycle timestamps from the existing
+        file before starting, so re-runs skip already-completed cycles.
         """
         d_completed = d_skipped = d_errors = d_total_rows = 0
 
@@ -402,15 +421,28 @@ def backfill_model(
         existing_by_stn: dict[str, set[str]] = {}
         if skip_existing:
             for stn in stations:
-                existing_by_stn[stn.icao] = get_existing_cycles(
-                    model_name, stn.icao, current_date
-                )
+                # Need to load multiple parquet files since UTC cycles for an LST day can span multiple UTC days
+                existing_by_stn[stn.icao] = set()
+                for d_offset in [-1, 0, 1]:
+                    utc_date = current_date + timedelta(days=d_offset)
+                    existing_by_stn[stn.icao].update(get_existing_cycles(model_name, stn.icao, utc_date))
 
-        # Accumulate new frames per station; write parquet ONCE at end of day.
-        day_frames: dict[str, list[pd.DataFrame]] = {stn.icao: [] for stn in stations}
+        # Determine unique UTC cycles needed for this LST day across all stations
+        needed_cycles_utc: set[datetime] = set()
+        for stn in stations:
+            offset = lst_offset_hours(stn.tz)
+            window_start = datetime(current_date.year, current_date.month, current_date.day) - timedelta(days=2)
+            for d in range(4):
+                curr_utc_date = window_start + timedelta(days=d)
+                for h in cycle_hours:
+                    cycle_utc = curr_utc_date + timedelta(hours=h)
+                    cycle_lst = cycle_utc + timedelta(hours=offset)
+                    if cycle_lst.date() == current_date:
+                        needed_cycles_utc.add(cycle_utc)
+        
+        sorted_cycles = sorted(list(needed_cycles_utc))
 
-        for cycle_hour in cycle_hours:
-            cycle_dt = datetime(current_date.year, current_date.month, current_date.day, cycle_hour)
+        for cycle_dt in sorted_cycles:
             d_completed += 1
 
             if skip_existing:
@@ -431,9 +463,12 @@ def backfill_model(
                 continue
 
             fxx_range = range(0, max_useful + 1)
+            # Log with both UTC and LST info
             logger.info(
-                "%s [%s] | fxx 0–%d",
-                model_name.upper(), cycle_dt.strftime("%Y-%m-%d %HZ"), max_useful,
+                "%s [%sLST / %sZ] | fxx 0–%d",
+                model_name.upper(), 
+                (cycle_dt + timedelta(hours=lst_offset_hours(stations[0].tz))).strftime("%Y-%m-%d %H:%M"),
+                cycle_dt.strftime("%H"), max_useful,
             )
 
             try:
@@ -447,6 +482,7 @@ def backfill_model(
             if df.empty:
                 continue
 
+            # ── Save immediately after each cycle ─────────────────────────
             for stn in stations:
                 stn_df = df[df["station"] == stn.icao].copy()
                 if stn_df.empty:
@@ -455,20 +491,10 @@ def backfill_model(
                 if stn_df.empty:
                     continue
                 stn_df = add_backfill_metadata(stn_df, model_name, cycle_dt)
-                day_frames[stn.icao].append(stn_df)
-                logger.debug("Queued %d rows (cycle %02d) for %s",
-                             len(stn_df), cycle_hour, stn.icao)
-
-        # --- Single write per station per day --------------------------------
-        for stn in stations:
-            frames = day_frames[stn.icao]
-            if not frames:
-                continue
-            combined_new = pd.concat(frames, ignore_index=True)
-            path = save_to_nwp_realtime(combined_new, model_name, stn.icao, current_date)
-            n = len(combined_new)
-            d_total_rows += n
-            logger.info("Wrote %d rows → %s", n, path.name)
+                path = save_to_nwp_realtime(stn_df, model_name, stn.icao, cycle_dt.date())
+                n = len(stn_df)
+                d_total_rows += n
+                logger.debug("Saved %d rows (cycle %02dZ) → %s", n, cycle_dt.hour, path.name)
 
         print(
             f"  [{model_name.upper()}] {current_date}  "
@@ -477,6 +503,7 @@ def backfill_model(
             flush=True,
         )
         return d_completed, d_skipped, d_errors, d_total_rows
+
 
     days_to_process = []
     curr = start_date

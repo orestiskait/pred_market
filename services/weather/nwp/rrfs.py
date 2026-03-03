@@ -62,5 +62,5 @@ class RRFSFetcher(NWPPointFetcher):
     HERBIE_PRODUCT = "prslev.3km.subh"
     HERBIE_KWARGS = {"member": "control", "domain": "conus"}
     DEFAULT_MAX_FXX = 18
-    DEFAULT_CYCLES = [0, 6, 12, 18]
+    DEFAULT_CYCLES = list(range(24))
     MODEL_VERSION = "v1 poc"

@@ -25,7 +25,6 @@ from botocore.config import Config
 import rasterio
 import rasterio.windows as rwin
 from pyproj import Transformer
-from rasterio.env import Env
 
 from services.weather.station_registry import NWPStation
 from services.weather.nwp.base import _add_time_columns
@@ -65,10 +64,12 @@ class NBMCOGFetcher:
             max_forecast_hour if max_forecast_hour is not None else self.DEFAULT_MAX_FXX
         )
         # Cache S3 client — reused across all fetch calls (avoids per-call construction).
+        # max_pool_connections must be >= actual thread concurrency to avoid
+        # "connection pool full" warnings: max_parallel_days(6) × workers(32) = 192.
         self._s3 = boto3.client(
             "s3",
             region_name=REGION,
-            config=Config(signature_version=UNSIGNED),
+            config=Config(signature_version=UNSIGNED, max_pool_connections=256),
         )
         # pyproj Transformer cache: populated lazily per CRS.
         # Transformers are NOT thread-safe, so we must use a thread-local cache.
@@ -105,20 +106,37 @@ class NBMCOGFetcher:
     ) -> tuple[float, float, float] | None:
         """Read one COG and extract value at (lat, lon).
 
+        Uses boto3 to download the file in a single GetObject call into a
+        MemoryFile, then reads just the 3×3 pixel window via rasterio.
+        This avoids GDAL VSIS3's 3-round-trip overhead (HEAD + IFD GET +
+        data GET) and replaces it with a single HTTP call.
+
         Returns (value, grid_lat, grid_lon) or None on failure.
-        Re-uses the cached pyproj Transformer per CRS to avoid rebuilding it
-        on every call.
+        Re-uses the cached pyproj Transformer per CRS (thread-local).
         """
-        env_kwargs = {"AWS_S3_ENDPOINT": "s3.us-east-1.amazonaws.com", "AWS_NO_SIGN_REQUEST": "YES"}
-        url = f"s3://{BUCKET}/{key}"
         try:
-            with Env(**env_kwargs):
-                with rasterio.open(url) as src:
+            obj = self._s3.get_object(Bucket=BUCKET, Key=key)
+            body = obj["Body"].read()
+        except self._s3.exceptions.NoSuchKey:
+            logger.debug("NBM COG key does not exist: %s", key)
+            return None
+        except Exception as e:
+            if "NoSuchKey" in str(e) or "does not exist" in str(e):
+                logger.debug("NBM COG key does not exist: %s", key)
+            else:
+                import traceback
+                logger.warning("NBM S3 download failed %s: %s\n%s", key, e, traceback.format_exc())
+            return None
+
+        try:
+            from rasterio.io import MemoryFile
+            with MemoryFile(body) as memfile:
+                with memfile.open() as src:
                     crs_str = str(src.crs)
                     # Reuse transformer safely per thread
                     if not hasattr(self._local, "transformer_cache"):
                         self._local.transformer_cache = {}
-                        
+
                     if crs_str not in self._local.transformer_cache:
                         self._local.transformer_cache[crs_str] = (
                             Transformer.from_crs("EPSG:4326", src.crs, always_xy=True),
@@ -138,12 +156,10 @@ class NBMCOGFetcher:
                         glon, glat = inv.transform(gx, gy)
                         return (val, glat, glon)
         except Exception as e:
-            if "does not exist" in str(e):
-                logger.debug("NBM COG key does not exist: %s", key)
-            else:
-                import traceback
-                logger.warning("NBM COG read failed %s: %s\n%s", key, e, traceback.format_exc())
+            import traceback
+            logger.warning("NBM COG parse failed %s: %s\n%s", key, e, traceback.format_exc())
         return None
+
 
     def fetch_run(
         self,
