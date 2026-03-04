@@ -215,6 +215,12 @@ class XGBoostEVStrategy(TradingStrategy):
 
     def fit(self, X_train: pd.DataFrame, y_train: pd.Series) -> None:
         """Train the quantile suite + calibrator on training data."""
+        # Ensure chronological order (oldest first) for correct train/val split
+        sort_cols = ["climate_date_lst", "observation_time_utc"]
+        if all(c in X_train.columns for c in sort_cols):
+            idx = X_train.sort_values(sort_cols).index
+            X_train = X_train.loc[idx]
+            y_train = y_train.loc[idx]
         # Split: 80% for XGBoost, 20% for early stopping validation
         n = len(X_train)
         es_split = max(1, int(n * 0.8))
@@ -424,23 +430,27 @@ def _find_closest_snapshot(
     observation_time: pd.Timestamp,
     event_ticker: str,
     lookback_minutes: int = 5,
+    execution_delay_seconds: int = 10,
 ) -> pd.DataFrame:
-    """Find the closest market snapshot BEFORE the observation time.
+    """Find the closest market snapshot BEFORE the effective execution time.
 
+    We use observation_time + execution_delay_seconds as the effective time
+    when we would actually place the trade (model inference, feature gen, etc.).
     Returns the subset of snapshot rows for all strikes at that point.
-    We look for the most recent snapshot within `lookback_minutes` of the obs.
+    We look for the most recent snapshot within `lookback_minutes` of that time.
     """
-    cutoff = observation_time - pd.Timedelta(minutes=lookback_minutes)
+    effective_time = observation_time + pd.Timedelta(seconds=execution_delay_seconds)
+    cutoff = effective_time - pd.Timedelta(minutes=lookback_minutes)
     filtered = snapshots[
         (snapshots["event_ticker"] == event_ticker)
-        & (snapshots["snapshot_ts_utc"] <= observation_time)
+        & (snapshots["snapshot_ts_utc"] <= effective_time)
         & (snapshots["snapshot_ts_utc"] >= cutoff)
     ]
     if filtered.empty:
-        # Expand search: any snapshot before obs time for this event
+        # Expand search: any snapshot before effective execution time for this event
         filtered = snapshots[
             (snapshots["event_ticker"] == event_ticker)
-            & (snapshots["snapshot_ts_utc"] <= observation_time)
+            & (snapshots["snapshot_ts_utc"] <= effective_time)
         ]
     if filtered.empty:
         return pd.DataFrame()

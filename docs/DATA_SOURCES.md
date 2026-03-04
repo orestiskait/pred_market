@@ -138,7 +138,7 @@ Code: `services/wethr/listener.py`, `services/wethr/sse.py`, `services/wethr/sto
 | `relative_humidity` | float | Relative humidity (%) |
 | `wind_direction` | string | Wind direction (e.g. `270`, `VRB`) |
 | `wind_speed_mph` | float | Wind speed in mph |
-| `wind_gust_mph` | float | Wind gust in mph (null if calm) |
+| `wind_gust_mph` | float | Wind gust in mph (null if calm). Not used as a model feature. |
 | `visibility_miles` | float | Visibility in statute miles |
 | `altimeter_inhg` | float | Altimeter setting in inHg |
 | `anomaly` | bool | Wethr flag: observation is anomalous / suspect |
