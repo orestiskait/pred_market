@@ -19,8 +19,8 @@ LST-day clamping:
 
 P95 notification latency constants (measured from live production data):
   HRRR : 5135s  (~85 min after cycle init — S3 notification to SQS arrival)
-  NBM  : 4048s  (~67 min)
-  RRFS : ~3600s (~60 min, estimated — insufficient live data to measure precisely)
+  NBM  : 4852.28s (1h 20m 52.28s, P95)
+  RRFS : 7290.76s (2h 1m 30.76s, for backtest)
 
 Usage:
   python -m research.download_data.backfill_nwp
@@ -56,8 +56,8 @@ logger = logging.getLogger(__name__)
 
 P95_NOTIFICATION_LATENCY_S: dict[str, float] = {
     "hrrr": 5135.0,   # measured: P95 of (notification_ts - cycle_time) over ~6800 live rows
-    "nbm":  4048.0,   # measured: P95 over ~197 live rows
-    "rrfs": 3600.0,   # estimated: insufficient live data (RRFS paused Dec 2024)
+    "nbm":  4852.275262900,   # 1h 20m 52.28s (P95)
+    "rrfs": 7290.764944800,   # 2h 1m 30.76s (P95 for backtest)
 }
 
 # ══════════════════════════════════════════════════════════════════════

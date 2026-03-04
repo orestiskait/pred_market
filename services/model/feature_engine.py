@@ -575,16 +575,17 @@ def _parse_altimeter(raw: object) -> float:
 def _compute_smart_max(
     hr_anchor_max_f: Optional[float],
     hfm_spike_max_c: Optional[float],
-    dsm_floor_max_f: float,
+    official_floor_max_f: float,
 ) -> tuple[float, str, int, float, int]:
     """Synthesize custom_intraday_max_f from three sources.
 
     Protects against ASOS-HFM upward rounding bias (integer °C, 0.5 rounds up).
+    official_floor_max_f is max(DSM high_f, CLI high_f) from NWS updates received by obs_time.
     Returns (custom_intraday_max_f, peak_source, max_source_is_hfm, hfm_hr_divergence_f, dsm_update_received).
     """
     nan = float("nan")
     hr_f = hr_anchor_max_f if hr_anchor_max_f is not None else nan
-    dsm_valid = pd.notna(dsm_floor_max_f)
+    dsm_valid = pd.notna(official_floor_max_f)
 
     # HFM lower bound: T°C implies true temp in [T-0.5, T+0.5); conservative bound
     if hfm_spike_max_c is not None and not math.isnan(hfm_spike_max_c):
@@ -597,12 +598,12 @@ def _compute_smart_max(
     hfm_hr_divergence_f = (hfm_raw_f - hr_f) if pd.notna(hfm_raw_f) and pd.notna(hr_f) else nan
     dsm_update_received = 1 if dsm_valid else 0
 
-    # Priority 1: DSM floor (official NWS intraday update)
-    if dsm_valid and dsm_floor_max_f > max(
+    # Priority 1: Official NWS floor (DSM or CLI received by obs_time)
+    if dsm_valid and official_floor_max_f > max(
         hr_f if pd.notna(hr_f) else -float("inf"),
         hfm_lower_bound_f if pd.notna(hfm_lower_bound_f) else -float("inf"),
     ):
-        return (dsm_floor_max_f, "DSM", 0, hfm_hr_divergence_f, dsm_update_received)
+        return (official_floor_max_f, "NWS", 0, hfm_hr_divergence_f, dsm_update_received)
 
     # Priority 2: HFM spike (inter-hour spike that HR missed)
     if pd.notna(hfm_lower_bound_f) and (pd.isna(hr_f) or hfm_lower_bound_f > hr_f):
@@ -620,24 +621,24 @@ def _compute_smart_max(
     return (nan, "NONE", 0, nan, dsm_update_received)
 
 
-def _dsm_floor_max_for_time(
-    dsm_day: pd.DataFrame,
+def _nws_floor_max_for_time(
+    df: pd.DataFrame,
     obs_time: pd.Timestamp,
     climate_date_str: str,
 ) -> float:
-    """Max high_f from DSM rows for this climate day with received_ts_utc <= obs_time."""
-    if dsm_day.empty:
+    """Max high_f from NWS rows (DSM or CLI) for this climate day with received_ts_utc <= obs_time."""
+    if df.empty:
         return float("nan")
-    if "received_ts_utc" not in dsm_day.columns or "high_f" not in dsm_day.columns:
+    if "received_ts_utc" not in df.columns or "high_f" not in df.columns:
         return float("nan")
-    if "for_date_lst" not in dsm_day.columns:
+    if "for_date_lst" not in df.columns:
         return float("nan")
 
     mask = (
-        (dsm_day["for_date_lst"].astype(str) == climate_date_str)
-        & (pd.to_datetime(dsm_day["received_ts_utc"], utc=True) <= obs_time)
+        (df["for_date_lst"].astype(str) == climate_date_str)
+        & (pd.to_datetime(df["received_ts_utc"], utc=True) <= obs_time)
     )
-    eligible = dsm_day.loc[mask, "high_f"].dropna()
+    eligible = df.loc[mask, "high_f"].dropna()
     if eligible.empty:
         return float("nan")
     return float(eligible.max())
@@ -649,6 +650,7 @@ def _process_climate_day(
     nbm_df: pd.DataFrame,
     rrfs_df: pd.DataFrame,
     dsm_df: pd.DataFrame,
+    cli_df: pd.DataFrame,
     prev_advection_history: list[tuple[pd.Timestamp, float]],
     prev_pressure_history: list[tuple[pd.Timestamp, float]],
     prev_day_tail_df: Optional[pd.DataFrame],
@@ -718,12 +720,19 @@ def _process_climate_day(
             if hfm_spike_max_c is None or tc > hfm_spike_max_c:
                 hfm_spike_max_c = tc
 
-        # DSM floor: max(high_f) from DSMs received before obs_time
-        dsm_floor_max_f = _dsm_floor_max_for_time(dsm_df, obs_time, climate_date_str)
+        # Official NWS floor: max(high_f) from DSM and CLI received before obs_time
+        dsm_floor_max_f = _nws_floor_max_for_time(dsm_df, obs_time, climate_date_str)
+        cli_floor_max_f = _nws_floor_max_for_time(cli_df, obs_time, climate_date_str)
+        official_floor_max_f = max(
+            dsm_floor_max_f if pd.notna(dsm_floor_max_f) else -float("inf"),
+            cli_floor_max_f if pd.notna(cli_floor_max_f) else -float("inf"),
+        )
+        if official_floor_max_f == -float("inf"):
+            official_floor_max_f = float("nan")
 
         # Smart Max synthesis
         smart_max, _peak_source, max_source_is_hfm, hfm_hr_divergence_f, dsm_update_received = _compute_smart_max(
-            hr_anchor_max_f, hfm_spike_max_c, dsm_floor_max_f
+            hr_anchor_max_f, hfm_spike_max_c, official_floor_max_f
         )
 
         if pd.notna(smart_max):
@@ -862,6 +871,7 @@ class FeatureEngine:
         nbm_df: pd.DataFrame,
         rrfs_df: pd.DataFrame,
         dsm_df: Optional[pd.DataFrame] = None,
+        cli_df: Optional[pd.DataFrame] = None,
     ) -> pd.DataFrame:
         """Build the feature DataFrame from raw DataFrames.
 
@@ -871,7 +881,9 @@ class FeatureEngine:
         nbm_df :  NBM forecast data.
         rrfs_df : RRFS forecast data.
         dsm_df :  DSM (Daily Summary Message) data for Tri-Factor Max floor.
-                  Optional; if empty/None, dsm_floor_max_f is always NaN.
+                  Optional; if empty/None, DSM floor is NaN.
+        cli_df :  CLI (NWS Daily Climate Report) data for Tri-Factor Max floor.
+                  Optional; if empty/None, CLI floor is NaN. Official ground truth for Kalshi.
 
         Returns
         -------
@@ -885,6 +897,7 @@ class FeatureEngine:
 
         obs_df = obs_df.copy()
         dsm_df = dsm_df if dsm_df is not None and not dsm_df.empty else pd.DataFrame()
+        cli_df = cli_df if cli_df is not None and not cli_df.empty else pd.DataFrame()
 
         # Tag each observation with its LST climate date (computed from UTC, not storage)
         obs_df["_climate_date"] = pd.to_datetime(
@@ -907,6 +920,7 @@ class FeatureEngine:
                 nbm_df=nbm_df,
                 rrfs_df=rrfs_df,
                 dsm_df=dsm_df,
+                cli_df=cli_df,
                 prev_advection_history=prev_advection_history,
                 prev_pressure_history=prev_pressure_history,
                 prev_day_tail_df=prev_day_tail_df,
