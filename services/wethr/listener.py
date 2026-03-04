@@ -228,10 +228,20 @@ class WethrPushCollector(AsyncService, WethrSSEMixin, MetarCollectorMixin):
 
     def _flush(self) -> None:
         """Write all buffered data to parquet and clear buffers."""
+        sizes = {et: len(buf) for et, buf in self._buffers.items()}
+        total = sum(sizes.values())
+        if total > 0:
+            logger.info(
+                "Wethr flush: obs=%d dsm=%d cli=%d new_high=%d new_low=%d",
+                sizes.get("observations", 0),
+                sizes.get("dsm", 0),
+                sizes.get("cli", 0),
+                sizes.get("new_high", 0),
+                sizes.get("new_low", 0),
+            )
         for event_type, buf in self._buffers.items():
             if buf:
                 df = pd.DataFrame(buf)
-                logger.info("Flushing %d Wethr %s rows to parquet", len(buf), event_type)
                 self.storage.save(df, event_type)
                 buf.clear()
 

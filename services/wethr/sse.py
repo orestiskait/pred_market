@@ -156,6 +156,13 @@ class WethrSSEMixin:
         }.get(event_type)
 
         if handler:
+            if event_type in ("dsm", "cli"):
+                logger.info(
+                    "Wethr %s %s for_date=%s",
+                    event_type.upper(),
+                    data.get("station_code", "?"),
+                    data.get("for_date", "?"),
+                )
             try:
                 handler(data, received_ts)
             except Exception:
@@ -165,4 +172,4 @@ class WethrSSEMixin:
         elif event_type == "connected":
             logger.info("Wethr connected event: %s", data)
         else:
-            logger.debug("Unknown Wethr event type: %s", event_type)
+            logger.debug("Wethr event %s", event_type)

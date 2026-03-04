@@ -61,7 +61,7 @@ class ExecutionManager:
         self._data_dir = data_dir
         self._parquet_storage = ParquetStorage(str(data_dir))
 
-        logger.info("ExecutionManager initialized (paper_mode is per-strategy)")
+        logger.debug("ExecutionManager ready")
 
     def _log_trade(self, intent: OrderIntent, filled: int, avg_price: float, total_cost: int):
         key = (intent.strategy_id, intent.event_ticker)
@@ -120,8 +120,9 @@ class ExecutionManager:
             return
 
         logger.info(
-            "[%s] Received intent for %s %s up to %d¢",
-            intent.strategy_id, intent.market_ticker, intent.side.upper(), intent.max_price_cents,
+            "[%s] Intent %s %s max %d¢",
+            intent.strategy_id, intent.market_ticker, intent.side.upper(),
+            intent.max_price_cents,
         )
 
         ob = self.orderbooks.get(intent.market_ticker)
@@ -169,8 +170,8 @@ class ExecutionManager:
                 total_contracts_bought += affordable_qty
                 cost = affordable_qty * price
                 total_cost += cost
-                logger.info(
-                    "   [%s] Filled: %d contracts @ %d¢",
+                logger.debug(
+                    "[%s] Fill %d @ %d¢",
                     intent.strategy_id, affordable_qty, price,
                 )
 
@@ -182,20 +183,19 @@ class ExecutionManager:
             cap_str = "$%.2f" % (intent.max_spend_cents / 100) if intent.max_spend_cents > 0 else "uncapped"
             mode_tag = "PAPER" if intent.paper_mode else "LIVE"
             logger.info(
-                "✅ [%s] %s TRADE COMPLETED: Bought %d %s (%s) at avg %.2f¢",
+                "[%s] %s filled %d %s @ %.2f¢",
                 intent.strategy_id, mode_tag, total_contracts_bought,
-                intent.market_ticker, intent.side.upper(), avg_price,
+                intent.market_ticker, avg_price,
             )
-            logger.info(
-                "   Cost: $%.2f | %s / %s spent: $%.2f/%s",
-                total_cost / 100,
-                intent.strategy_id, intent.event_ticker,
+            logger.debug(
+                "[%s] Cost $%.2f, spent $%.2f/%s",
+                intent.strategy_id, total_cost / 100,
                 self._spent[key] / 100, cap_str,
             )
 
             self._log_trade(intent, total_contracts_bought, avg_price, total_cost)
         else:
             logger.warning(
-                "❌ [%s] PAPER TRADE FAILED: No liquidity under %d¢ or budget capped.",
+                "[%s] No fill: no liquidity under %d¢ or budget capped",
                 intent.strategy_id, intent.max_price_cents,
             )

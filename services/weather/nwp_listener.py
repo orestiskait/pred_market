@@ -507,12 +507,9 @@ class NWPSNSListener(AsyncService):
             self._events_skipped += 1
             return
 
-        logger.info(
-            "Processing NWP %s: cycle=%s fxx=%02d key=%s",
-            model,
-            event.cycle.strftime("%Y-%m-%d %HZ"),
-            event.fxx,
-            event.key[-60:],
+        logger.debug(
+            "NWP %s cycle=%s fxx=%02d",
+            model, event.cycle.strftime("%Y-%m-%d %HZ"), event.fxx,
         )
 
         try:
@@ -528,10 +525,10 @@ class NWPSNSListener(AsyncService):
                     lambda: self.nwp_storage.save(df, model, event.notification_ts)
                 )
                 self._events_processed += 1
+                n = len(df)
                 logger.info(
-                    "%s: saved %d rows for cycle=%s fxx=%02d "
-                    "(notification_lag=%.0fs)",
-                    model, len(df),
+                    "%s: %d %s cycle=%s fxx=%02d lag=%.0fs",
+                    model, n, "row" if n == 1 else "rows",
                     event.cycle.strftime("%Y-%m-%d %HZ"), event.fxx,
                     (event.notification_ts - event.cycle).total_seconds(),
                 )
@@ -592,13 +589,12 @@ class NWPSNSListener(AsyncService):
             if self._running:
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, self._save_sqs_stats)
-                logger.info(
-                    "Listener stats: processed=%d skipped=%d sqs_msgs=%d stations=%d",
-                    self._events_processed,
-                    self._events_skipped,
-                    self._sqs_message_count,
-                    len(self.stations),
-                )
+        logger.debug(
+            "NWP stats: processed=%d skipped=%d sqs_msgs=%d",
+            self._events_processed,
+            self._events_skipped,
+            self._sqs_message_count,
+        )
 
     def _save_sqs_stats(self) -> None:
         """Save daily SQS message counts to parquet."""
@@ -607,7 +603,7 @@ class NWPSNSListener(AsyncService):
 
         # Reset counts at midnight UTC
         if today != self._last_stats_date:
-            logger.info("New day (%s). Resetting SQS message counters.", today)
+            logger.info("New day %s: SQS counters reset", today)
             self._sqs_message_count = 0
             self._model_message_counts.clear()
             self._last_stats_date = today

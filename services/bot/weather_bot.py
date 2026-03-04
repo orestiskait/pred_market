@@ -183,23 +183,14 @@ class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
             return None
 
     def _log_startup_banner(self):
-        logger.info("=" * 60)
-        logger.info("WEATHER BOT STARTUP")
-        logger.info("=" * 60)
-        logger.info("Target series (%d): %s", len(self._target_series), self._target_series)
-        logger.info("Wethr stations: %s", self.wethr_stations)
         nwp_status = "enabled" if self._nwp_listener else "disabled"
-        logger.info("NWP ingest: %s", nwp_status)
-        logger.info("-" * 60)
-        logger.info("Strategies (%d):", len(self.strategy_manager.strategies))
+        logger.info(
+            "WeatherBot: series=%s stations=%s NWP=%s",
+            self._target_series, self.wethr_stations, nwp_status,
+        )
         for sid, strat in self.strategy_manager.strategies.items():
-            params_str = ", ".join(f"{k}={v}" for k, v in strat.params.items())
-            mode_str = "PAPER" if strat.params.get("paper_mode", True) else "LIVE"
-            logger.info(
-                "  • %s [%s]: class=%s, targets=%s, params={%s}",
-                sid, mode_str, strat.__class__.__name__, strat.targets, params_str,
-            )
-        logger.info("=" * 60)
+            mode = "PAPER" if strat.params.get("paper_mode", True) else "LIVE"
+            logger.info("  %s [%s]: %s", sid, mode, strat.targets)
 
     # -------------------------------------------------------------------------
     # Market discovery
@@ -244,7 +235,7 @@ class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
                 if not ob_time_str.endswith("Z") and "+" not in ob_time_str:
                     ob_time_str += "Z"
                 ob_time = datetime.fromisoformat(ob_time_str.replace("Z", "+00:00"))
-                logger.info("[%s] %.1f°F at %s", station, temp_f, ob_time_str)
+                logger.info("Obs %s %.1f°F %s", station, temp_f, ob_time_str.replace(" ", "T"))
                 self.event_bus.publish(WeatherObservationEvent(
                     station=station,
                     temp=temp_f,
@@ -369,10 +360,20 @@ class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
 
     def _flush(self) -> None:
         """Write all buffered wethr data to parquet (runs in thread executor)."""
+        sizes = {et: len(buf) for et, buf in self._wethr_buffers.items()}
+        total = sum(sizes.values())
+        if total > 0:
+            logger.info(
+                "Wethr flush: persisting obs=%d dsm=%d cli=%d new_high=%d new_low=%d",
+                sizes.get("observations", 0),
+                sizes.get("dsm", 0),
+                sizes.get("cli", 0),
+                sizes.get("new_high", 0),
+                sizes.get("new_low", 0),
+            )
         for event_type, buf in self._wethr_buffers.items():
             if buf:
                 df = pd.DataFrame(buf)
-                logger.info("Flushing %d wethr %s rows to parquet", len(buf), event_type)
                 self._wethr_storage.save(df, event_type)
                 buf.clear()
 
@@ -439,7 +440,7 @@ class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
 
     def _on_shutdown(self) -> None:
         self._flush()
-        logger.info("Wethr buffers flushed.")
+        logger.info("Wethr flush complete.")
         if self._nwp_listener is not None:
             self._nwp_listener._on_shutdown()
 
@@ -448,7 +449,7 @@ class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
         if self._nwp_listener is not None:
             self._nwp_listener._running = True
         self._discover()
-        logger.info("Bot fully initialized and entering event loop.")
+        logger.info("WeatherBot ready.")
         await super().run()
 
     def shutdown(self):

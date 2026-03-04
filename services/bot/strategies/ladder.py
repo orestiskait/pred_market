@@ -57,7 +57,7 @@ class LadderStrategy(BaseStrategy):
         self.ladder: dict[str, dict] = {}
 
         logger.info(
-            "[%s] Initialized — targets=%s, consecutive_obs=%d, max_price=%d¢",
+            "[%s] targets=%s consecutive=%d max_price=%d¢",
             self.strategy_id, self.targets, self.consecutive_obs_required, self.max_price_cents,
         )
 
@@ -81,10 +81,7 @@ class LadderStrategy(BaseStrategy):
         for mc in self._market_configs.values():
             if mc.synoptic_station:
                 self.weather_history[mc.synoptic_station] = deque(maxlen=10)
-        logger.info(
-            "[%s] Weather history cleared for new event day — stations: %s",
-            self.strategy_id, list(self.weather_history.keys()),
-        )
+        logger.debug("[%s] Cleared weather history for new event day", self.strategy_id)
 
         for tk in event.market_tickers:
             info = event.market_info.get(tk, {})
@@ -115,13 +112,13 @@ class LadderStrategy(BaseStrategy):
                 "nws_start": nws_start_utc,
                 "nws_end": nws_end_utc,
             }
-            logger.info(
-                "  [%s] Tracking: %s '%s' triggers at >= %.1f°F",
-                self.strategy_id, tk, info.get("subtitle"), trigger_temp,
+            logger.debug(
+                "[%s] %s trigger >= %.1f°F",
+                self.strategy_id, tk, trigger_temp,
             )
 
         if self.ladder:
-            logger.info("[%s] Ladder built with %d contracts", self.strategy_id, len(self.ladder))
+            logger.info("[%s] %d contracts tracked", self.strategy_id, len(self.ladder))
 
     async def on_orderbook_update(self, event: OrderbookUpdateEvent):
         # Ladder evaluation is purely weather-driven; no OB processing needed.
@@ -147,6 +144,12 @@ class LadderStrategy(BaseStrategy):
             nws_end = info["nws_end"]
 
             valid_obs = [t for (dt, t) in history if nws_start <= dt <= nws_end]
+            if len(valid_obs) == self.consecutive_obs_required - 1:
+                logger.debug(
+                    "[%s] %s: %d/%d obs, last=%.1f°F (>=%.1f°F)",
+                    self.strategy_id, tk, len(valid_obs), self.consecutive_obs_required,
+                    valid_obs[-1], threshold,
+                )
             if len(valid_obs) < self.consecutive_obs_required:
                 continue
 
@@ -154,13 +157,9 @@ class LadderStrategy(BaseStrategy):
 
             if all(t >= threshold for t in recent_valid):
                 logger.warning(
-                    "🚨 [%s] TRIGGERED! [%s] Last %d valid obs: %s >= %.1f°F!",
+                    "[%s] TRIGGER %s: %d obs >= %.1f°F → %s",
                     self.strategy_id, station, self.consecutive_obs_required,
-                    recent_valid, threshold,
-                )
-                logger.warning(
-                    "   [%s] Targeting contract: %s ('%s')",
-                    self.strategy_id, tk, info["subtitle"],
+                    threshold, tk,
                 )
                 self.ladder[tk]["executed"] = True
 

@@ -62,7 +62,7 @@ def _select_event_for_series(
         if candidates:
             candidates.sort(key=lambda x: (x[1], x[0].get("event_ticker", "")))
             chosen = candidates[0][0]["event_ticker"]
-            logger.info("  [next] %s → %s (strike_date >= %s)", series, chosen, today_local)
+            logger.debug("[next] %s → %s (strike_date >= %s)", series, chosen, today_local)
             return chosen
         # Fall through to active if no future events
 
@@ -108,14 +108,14 @@ def resolve_event_tickers(
 
     series_list = get_event_series(config, consumer or "default")
     for series in series_list:
-        logger.info("Resolving series %s → open events (strategy=%s)", series, strategy)
+        logger.debug("Resolving series %s (strategy=%s)", series, strategy)
         events = rest_client.get_events_for_series(series, status="open")
         if not events:
-            logger.warning("  No open events found for series %s", series)
+            logger.warning("No open events for series %s", series)
             continue
         chosen = _select_event_for_series(events, series, strategy)
         if chosen:
-            logger.info("  → %s (%d open event(s) found)", chosen, len(events))
+            logger.debug("%s → %s", series, chosen)
             tickers.append(chosen)
 
     # Allow explicit overrides
@@ -136,7 +136,7 @@ def discover_markets(
     market_info: dict[str, dict] = {}
 
     for event_ticker in event_tickers:
-        logger.info("Discovering markets for %s", event_ticker)
+        logger.debug("Discovering markets for %s", event_ticker)
         markets = rest_client.get_markets_for_event(event_ticker)
         for m in markets:
             tk = m["ticker"]
@@ -195,9 +195,9 @@ def discover_markets(
                 "cap_strike": m.get("cap_strike"),
             }
 
-        logger.info("  %d contracts found", len(markets))
+        logger.debug("%d contracts for %s", len(markets), event_ticker)
 
-    logger.info("Tracking %d total contracts", len(market_tickers))
+    logger.info("Markets: %d contracts across %d events", len(market_tickers), len(event_tickers))
     return market_tickers, market_info
 
 

@@ -98,18 +98,30 @@ def hours_since_midnight_lst(dt_utc: datetime, tz: str) -> float:
     return lst_dt.hour + lst_dt.minute / 60.0 + lst_dt.second / 3600.0
 
 
+def series_utc_to_lst(ts_series: "pd.Series", tz: str) -> "pd.Series":
+    """Vectorised: convert UTC datetime Series to naive LST datetime.
+
+    Accepts timezone-aware (UTC) or timezone-naive (assumed UTC) Series.
+    Returns naive datetime representing LST wall-clock time.
+    """
+    offset = pd.Timedelta(hours=lst_offset_hours(tz))
+    if ts_series.dt.tz is not None:
+        utc_naive = ts_series.dt.tz_convert("UTC").dt.tz_localize(None)
+    else:
+        utc_naive = ts_series
+    return utc_naive + offset
+
+
 def series_to_lst_climate_date(
     ts_series: "pd.Series",
     tz: str,
 ) -> "pd.Series":
-    """Vectorised: convert a UTC-aware pandas Series to LST climate date strings.
+    """Vectorised: convert a UTC datetime Series to LST climate date strings.
 
+    Accepts timezone-aware (UTC) or timezone-naive (assumed UTC) Series.
     Returns a Series of date strings (YYYY-MM-DD) in LST.
     """
-    offset = pd.Timedelta(hours=lst_offset_hours(tz))
-    lst_series = ts_series.dt.tz_localize(None) if ts_series.dt.tz is not None else ts_series
-    # Remove tz info, add LST offset
-    lst_naive = ts_series.dt.tz_convert("UTC").dt.tz_localize(None) + offset
+    lst_naive = series_utc_to_lst(ts_series, tz)
     return lst_naive.dt.date.astype(str)
 
 

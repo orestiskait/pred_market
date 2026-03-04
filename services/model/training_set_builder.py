@@ -54,7 +54,7 @@ _DROP_LOG_SCHEMA = pa.schema([
 ])
 
 # Core observation columns required for a valid training row
-_CORE_OBS_COLS: tuple[str, ...] = ("current_temp_f", "dew_point_f")
+_CORE_OBS_COLS: tuple[str, ...] = ("distance_from_max_f", "dew_point_f")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -178,6 +178,7 @@ class TrainingSetBuilder:
         obs_df  = data["obs"]
         nbm_df  = data["nbm"]
         rrfs_df = data["rrfs"]
+        dsm_df  = data["dsm"]
 
         if obs_df.empty:
             logger.warning("[%s] No observations found — empty training set.", self.icao)
@@ -188,7 +189,7 @@ class TrainingSetBuilder:
         logger.info("[%s] Found CLI/DSM labels for %d climate days.", self.icao, len(label_map))
 
         # ── Run feature engineering ──
-        feat_df = self._feature_engine.build(obs_df, nbm_df, rrfs_df)
+        feat_df = self._feature_engine.build(obs_df, nbm_df, rrfs_df, dsm_df=dsm_df)
         if feat_df.empty:
             return pd.DataFrame(), pd.Series(dtype=float)
 

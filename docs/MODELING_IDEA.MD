@@ -179,7 +179,7 @@ $$Y_t = \text{Final\_CLI\_High\_F} - \text{Custom\_Intraday\_Max}_t$$
 
 where:
 - **$\text{Final\_CLI\_High\_F}$** = `high_f` from `wethr_push/cli` for the current LST climate day. This is the NWS official daily high in whole °F. Source of truth for Kalshi settlement.
-- **$\text{Custom\_Intraday\_Max}_t$** = the running maximum of `temperature_fahrenheit` from **all** `wethr_push/observations` (both `ASOS-HFM` and `ASOS-HR`) observed up to time $t$ within the current LST climate day.
+- **$\text{Custom\_Intraday\_Max}_t$** = the **Tri-Factor Max** (Smart Max) — a synthesized best estimate from three sources: ASOS-HR precision, ASOS-HFM inter-hour spikes, and DSM floor. See [§5.1 Tri-Factor Max](#51-state-of-the-day-from-wethr_push-observations).
 
 ### Interpretation
 
@@ -225,7 +225,7 @@ This gives approximately **24–30 training rows per station per climate day** (
 
 1. The observation has `product == "ASOS-HR"`.
 2. The CLI label exists for this LST climate day.
-3. Core observation features are non-NaN (`current_temp_f`, `dew_point_f`).
+3. Core observation features are non-NaN (`distance_from_max_f`, `dew_point_f`).
 4. The computed `custom_intraday_max` is valid (at least one observation exists prior to this row in the climate day).
 
 **NWP availability is NOT a row validity requirement.** If NBM or RRFS data is missing, the corresponding features are set to `NaN` and handled by XGBoost's native missing-value support. The `cycle_age_minutes` features act as implicit decay weights (see [§6](#6-latency--future-seeing-prevention)).
@@ -242,12 +242,24 @@ All features are computed at the observation time $t$ of each `ASOS-HR` row. The
 
 | Feature | Description | Source |
 |---------|-------------|--------|
-| `current_temp_f` | Temperature at time $t$ from the ASOS-HR observation | `temperature_fahrenheit` |
-| `custom_intraday_max_f` | Running max of all observation temps in current LST climate day up to $t$ | Derived: `max(temperature_fahrenheit)` over all obs ≤ $t$ |
-| `distance_from_max_f` | `custom_intraday_max_f - current_temp_f` | Derived |
+| `custom_intraday_max_f` | Tri-Factor Max (Smart Max) — synthesized best estimate of daily high so far | Derived — see Tri-Factor Max below |
+| `distance_from_max_f` | `custom_intraday_max_f - temperature_at_t` (degrees below today's observed peak) | Derived |
+| `distance_from_max_ratio` | `distance_from_max_f / max(custom_intraday_max_f, 1)` — relative distance from peak | Derived |
 | `hours_since_midnight_lst` | Decimal hours since midnight LST | `observation_time_utc` → LST conversion |
-| `hours_remaining_in_climate_day` | `24.0 - hours_since_midnight_lst` | Derived |
 | `t_max_lag_minutes` | Minutes since `custom_intraday_max_f` was last set or updated | Derived — see below |
+| `max_source_is_hfm` | 1 if the max was set by an inter-hour HFM spike (rounding bias possible) | Derived |
+| `hfm_hr_divergence_f` | `(hfm_spike_max_c × 1.8 + 32) - hr_anchor_max_f` — size of inter-hour spike | Derived |
+| `dsm_update_received` | 1 if an official intraday DSM/CLI max has been parsed today | Derived |
+
+**Tri-Factor Max (Smart Max)** — guards against ASOS-HFM upward rounding bias:
+
+ASOS METARs report integer °C (0.5 rounds up). A naive max over all observations inflates the peak by up to ~0.9°F when HFM rounds 25.5°C → 26°C → 78.8°F. The Smart Max synthesizes three anchors:
+
+1. **hr_anchor_max_f**: max of `temperature_fahrenheit` from ASOS-HR only (0.1°C precision).
+2. **hfm_spike_max_c**: max of `temperature_celsius` from ASOS-HFM only (high frequency, low precision).
+3. **dsm_floor_max_f**: max of `high_f` from DSM rows with `received_ts_utc ≤ t` for this climate day (official NWS floor).
+
+Algorithm: (a) If DSM floor > max(hr_anchor, hfm_lower_bound) → use DSM. (b) Else if `hfm_lower_bound_f = (hfm_spike_max_c - 0.5) × 1.8 + 32` > hr_anchor → use HFM raw (flag via `max_source_is_hfm`). (c) Else → use hr_anchor. The lower bound protects against upward rounding; XGBoost learns bias correction via `max_source_is_hfm` and `hfm_hr_divergence_f`.
 
 **`t_max_lag_minutes` — the "Stale Max" Signal**:
 This feature encodes a critical physical insight: a *stale* intraday maximum (set hours ago) is much harder to break than a *fresh* maximum (set minutes ago). When `t_max_lag_minutes` is large AND `distance_from_max_f` is also large, the temperature is falling away from an old peak — the remaining delta is likely near zero. When `t_max_lag_minutes` is small, the atmosphere is actively pushing into new highs, and further warming is plausible.
@@ -272,16 +284,18 @@ This feature encodes a critical physical insight: a *stale* intraday maximum (se
 | Feature | Description | Source |
 |---------|-------------|--------|
 | `dew_point_f` | Dew point at observation time | `dew_point_fahrenheit` |
-| `dew_point_depression_f` | `current_temp_f - dew_point_f` | Derived |
+| `dew_point_depression_f` | `temperature_at_t - dew_point_f` | Derived |
 | `wind_speed_mph` | Wind speed | Direct column |
 | `wind_gust_mph` | Wind gust (0 if null/calm) | Direct column, null → 0 |
 | `wind_dir_sin` | `sin(wind_direction_deg × π/180)` | Encoded from `wind_direction` |
 | `wind_dir_cos` | `cos(wind_direction_deg × π/180)` | Encoded from `wind_direction` |
 | `altimeter_inhg` | Barometric pressure | Direct column |
+| `visibility_miles` | Visibility in statute miles (proxy for cloud/fog; low = reduced solar heating) | `visibility_miles` |
+| `pressure_tendency_1h_inhg` | Change in altimeter over last ~60 minutes | `altimeter(t) - altimeter(t-60min)` — falling pressure often precedes warming |
 
 **Wind direction encoding**: If `wind_direction = "VRB"` (variable), set both `wind_dir_sin = 0` and `wind_dir_cos = 0`. If `wind_direction` is null or non-numeric, the row may be dropped (handled in validity rules).
 
-**Rationale**: Dew point depression is a strong proxy for air mass type and cloud cover. High depression = dry, clear sky = stronger solar heating. Wind direction captures lake-breeze effects (critical for KMDW near Lake Michigan — NE winds bring cooler air).
+**Rationale**: Dew point depression is a strong proxy for air mass type and cloud cover. High depression = dry, clear sky = stronger solar heating. Wind direction captures lake-breeze effects (critical for KMDW near Lake Michigan — NE winds bring cooler air). Pressure tendency captures approaching systems: falling pressure often precedes warm advection and further heating; rising pressure suggests clearing and a lower ceiling for additional warming.
 
 ### 5.4 NBM Forecast Features (from latest available NBM cycle)
 
@@ -299,7 +313,7 @@ Extract forecast rows from the selected cycle whose `forecast_target_time_utc` f
 |---------|-------------|------------|
 | `nbm_max_remaining_f` | Highest NBM-forecasted temp for the remainder of the climate day | `max(tmp_2m_f)` where `forecast_target_time_utc > t` and same LST climate day |
 | `nbm_expected_delta_f` | Model-predicted remaining heating | `nbm_max_remaining_f - custom_intraday_max_f` |
-| `nbm_current_error_f` | Current model bias | `current_temp_f - nbm_forecast_valid_at_t` (interpolated from nearest lead time) |
+| `nbm_current_error_f` | Current model bias | `temperature_at_t - nbm_forecast_valid_at_t` (interpolated from nearest lead time) |
 | `nbm_hours_of_forecast_remaining` | How many hourly forecast steps remain in the climate day | Count of remaining valid-time rows |
 | `nbm_cycle_age_minutes` | **Decay weight**: how old the NBM cycle is relative to $t$ | `(t - latest_nbm_cycle).total_seconds() / 60` |
 | `nbm_heating_trend_f` | Max remaining forecast minus current forecast | `nbm_max_remaining_f - nbm_forecast_valid_at_t` |
@@ -320,9 +334,10 @@ Note: RRFS cycles are only 4x daily (00Z, 06Z, 12Z, 18Z), so `rrfs_cycle_age_min
 |---------|-------------|------------|
 | `rrfs_max_remaining_f` | Highest RRFS-forecasted temp for the remainder of the climate day | `max(tmp_2m_f)` where `forecast_target_time_utc > t` and same LST climate day |
 | `rrfs_expected_delta_f` | RRFS-predicted remaining heating | `rrfs_max_remaining_f - custom_intraday_max_f` |
-| `rrfs_current_error_f` | Current RRFS bias | `current_temp_f - rrfs_forecast_valid_at_t` (interpolated from nearest 15-min lead) |
+| `rrfs_current_error_f` | Current RRFS bias | `temperature_at_t - rrfs_forecast_valid_at_t` (interpolated from nearest 15-min lead) |
 | `rrfs_cycle_age_minutes` | **Decay weight**: age of the RRFS cycle | `(t - latest_rrfs_cycle).total_seconds() / 60` |
-| `rrfs_nbm_delta_divergence_f` | Disagreement between models | `rrfs_expected_delta_f - nbm_expected_delta_f` |
+| `rrfs_nbm_delta_divergence_f` | Disagreement between models on expected delta | `rrfs_expected_delta_f - nbm_expected_delta_f` |
+| `nbm_rrfs_max_spread_f` | Absolute disagreement on max remaining temp | `|nbm_max_remaining_f - rrfs_max_remaining_f|` — NaN if either missing |
 
 **Rationale**: RRFS provides complementary forecast information from a different dynamical core. The divergence between RRFS and NBM is itself informative — large disagreement signals higher forecast uncertainty. Because RRFS has 15-minute resolution (vs NBM hourly), it captures finer intra-hour heating dynamics. The `rrfs_cycle_age_minutes` decay weight is especially important for RRFS because cycles are 6 hours apart — the model learns that a 5-hour-old RRFS forecast carries less weight than a 70-minute-old NBM forecast.
 
@@ -332,12 +347,10 @@ The **advection gap** measures how much the actual atmosphere has diverged from 
 
 | Feature | Description | Derivation |
 |---------|-------------|------------|
-| `nbm_advection_gap_f` | NBM forecast bias at time $t$ (positive = warmer than expected) | `current_temp_f - nbm_forecast_valid_at_t` (same as `nbm_current_error_f`) |
-| `rrfs_advection_gap_f` | RRFS forecast bias at time $t$ | `current_temp_f - rrfs_forecast_valid_at_t` (same as `rrfs_current_error_f`) |
-| `advection_gap_trend_60m_f` | Change in advection gap over last 60 minutes | `nbm_advection_gap(t) - nbm_advection_gap(t-60min)` |
-| `nwp_consensus_advection_f` | Average advection gap across both models | `mean(nbm_advection_gap, rrfs_advection_gap)` — NaN-tolerant |
+| `advection_gap_trend_60m_f` | Change in NBM advection gap over last 60 minutes | `nbm_current_error_f(t) - nbm_current_error_f(t-60min)` |
+| `nwp_consensus_advection_f` | Average advection gap across both models | `mean(nbm_current_error_f, rrfs_current_error_f)` — NaN-tolerant |
 
-> **Note**: `nbm_advection_gap_f` is algebraically identical to `nbm_current_error_f` — they are the same column. The distinction is conceptual: in §5.4 we frame it as "model bias," here we frame it as "advection signal." They share the same underlying value; no duplication in the feature vector.
+> **Note**: The advection gap at time $t$ is the same as `nbm_current_error_f` / `rrfs_current_error_f` (observed temp minus NWP forecast). §5.4 and §5.5 define those; here we use them for the trend and consensus.
 
 **Rationale**: If both NWP models predicted 72°F for this hour but the actual temperature is 75°F, the +3°F advection gap indicates a warm air mass is being advected into the station. This gap tends to persist and amplifies the remaining heating potential beyond what the NWP alone predicts. The `advection_gap_trend_60m_f` captures whether the divergence is growing (accelerating advection) or shrinking (models catching up).
 
@@ -350,7 +363,6 @@ The **solar elevation angle** is a physically-motivated feature that captures th
 | `solar_elevation_deg` | Sun elevation angle above the horizon (degrees) | Computed from station `(lat, lon)` and `observation_time_utc` using standard solar position equations |
 | `solar_azimuth_deg` | Sun azimuth (0°=N, 90°=E, 180°=S, 270°=W) | Same computation |
 | `hours_until_solar_noon` | Hours remaining until solar noon (max elevation) | `solar_noon_utc - observation_time_utc` (negative if past solar noon) |
-| `is_post_solar_noon` | Binary: 1 if past solar noon, 0 if before | Derived from `hours_until_solar_noon` |
 
 **Computation**: Use the standard astronomical solar position algorithm (e.g. `pvlib.solarposition.get_solarposition()` or equivalent). Inputs are station latitude/longitude from `KALSHI_MARKET_REGISTRY` and the observation UTC timestamp. No external API needed — this is a deterministic calculation.
 
@@ -369,15 +381,15 @@ The **solar elevation angle** is a physically-motivated feature that captures th
 
 | Group | Count | Features |
 |-------|-------|----------|
-| State of the Day | 6 | `current_temp_f`, `custom_intraday_max_f`, `distance_from_max_f`, `hours_since_midnight_lst`, `hours_remaining_in_climate_day`, `t_max_lag_minutes` |
+| State of the Day | 8 | `custom_intraday_max_f`, `distance_from_max_f`, `distance_from_max_ratio`, `hours_since_midnight_lst`, `t_max_lag_minutes`, `max_source_is_hfm`, `hfm_hr_divergence_f`, `dsm_update_received` |
 | Micro-Momentum | 6 | `velocity_15m_f`, `velocity_30m_f`, `velocity_60m_f`, `acceleration_15m_f`, `temp_volatility_30m_f`, `temp_volatility_60m_f` |
-| Meteorological | 7 | `dew_point_f`, `dew_point_depression_f`, `wind_speed_mph`, `wind_gust_mph`, `wind_dir_sin`, `wind_dir_cos`, `altimeter_inhg` |
+| Meteorological | 9 | `dew_point_f`, `dew_point_depression_f`, `wind_speed_mph`, `wind_gust_mph`, `wind_dir_sin`, `wind_dir_cos`, `altimeter_inhg`, `visibility_miles`, `pressure_tendency_1h_inhg` |
 | NBM Forecast | 6 | `nbm_max_remaining_f`, `nbm_expected_delta_f`, `nbm_current_error_f`, `nbm_hours_of_forecast_remaining`, `nbm_cycle_age_minutes`, `nbm_heating_trend_f` |
-| RRFS Forecast | 5 | `rrfs_max_remaining_f`, `rrfs_expected_delta_f`, `rrfs_current_error_f`, `rrfs_cycle_age_minutes`, `rrfs_nbm_delta_divergence_f` |
-| Advection Gap | 2 | `advection_gap_trend_60m_f`, `nwp_consensus_advection_f` (note: `nbm_advection_gap_f` = `nbm_current_error_f`, shared) |
-| Solar Geometry | 4 | `solar_elevation_deg`, `solar_azimuth_deg`, `hours_until_solar_noon`, `is_post_solar_noon` |
+| RRFS Forecast | 6 | `rrfs_max_remaining_f`, `rrfs_expected_delta_f`, `rrfs_current_error_f`, `rrfs_cycle_age_minutes`, `rrfs_nbm_delta_divergence_f`, `nbm_rrfs_max_spread_f` |
+| Advection Gap | 2 | `advection_gap_trend_60m_f`, `nwp_consensus_advection_f` |
+| Solar Geometry | 3 | `solar_elevation_deg`, `solar_azimuth_deg`, `hours_until_solar_noon` |
 | Calendar | 2 | `day_of_year`, `month` |
-| **Total** | **~36** | Unique features (some shared across groups) |
+| **Total** | **~39** | Unique features |
 
 ---
 
@@ -453,7 +465,7 @@ With the decay-weight approach from §6, NWP cycle availability is **no longer a
 | 1 | `product != "ASOS-HR"` | `NOT_METAR` | Pre-filter (not logged) |
 | 2 | CLI label missing for this LST climate day | `NO_CLI_LABEL` | Critical — drop |
 | 3 | `custom_intraday_max_f` is NaN (no prior observations in climate day) | `NO_PRIOR_OBS` | Critical — drop |
-| 4 | Core observation features are NaN (`current_temp_f`, `dew_point_f`) | `OBS_FEATURE_NAN:{col}` | Critical — drop |
+| 4 | Core observation features are NaN (`distance_from_max_f`, `dew_point_f`) | `OBS_FEATURE_NAN:{col}` | Critical — drop |
 | 5 | `Y_t < 0` (target is negative) | `NEGATIVE_TARGET` | Warning — clip to 0, do NOT drop |
 | 6 | No NBM cycle available at all for the climate day | `NBM_ALL_MISSING` | Warning — logged, row kept with NaN features |
 | 7 | No RRFS cycle available at all for the climate day | `RRFS_ALL_MISSING` | Warning — logged, row kept with NaN features |
@@ -765,10 +777,12 @@ The initial model is **one model per station**. A future extension is a **global
 
 ### Kalshi Fee Structure
 
-Ensure backtesting P&L accounts for Kalshi trading fees:
-- Exchange fee: currently $0.01 per contract per side (verify current fee schedule)
-- Factor fees into simulated EV calculations
+Backtesting P&L accounts for Kalshi's formula-based fees (as of early 2026). We simulate **taker** fills (executing at the ask):
+
+- **Taker fee**: $\text{round up}(0.07 \times C \times P \times (1 - P))$ where $C$ = contracts, $P$ = price in dollars
+- Fee peaks at 50¢ (max uncertainty) and drops toward 0 at 0¢ or 100¢
+- EV calculations and P&L settlement both subtract this fee
 
 ---
 
-*Last updated: 2026-02-27. This document covers the full inference pipeline (Weather Brain stages 1–5 + Execution Brain stage 6).*
+*Last updated: 2026-03-02. This document covers the full inference pipeline (Weather Brain stages 1–5 + Execution Brain stage 6).*

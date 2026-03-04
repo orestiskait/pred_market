@@ -85,11 +85,8 @@ class StrategyManager:
                     full_config=self.config,
                 )
                 self.strategies[s_id] = instance
-                logger.info(
-                    "✅ Loaded strategy: id=%s class=%s targets=%s",
-                    s_id, class_name, targets,
-                )
+                logger.info("Strategy %s loaded: %s targets=%s", s_id, class_name, targets)
             except Exception as e:
                 logger.exception("Failed to instantiate strategy '%s': %s", s_id, e)
 
-        logger.info("Strategy Manager: %d strategies loaded", len(self.strategies))
+        logger.debug("StrategyManager: %d strategies", len(self.strategies))

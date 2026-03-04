@@ -35,6 +35,7 @@ Usage (no CLI arguments — all config is hardcoded below):
 from __future__ import annotations
 
 import logging
+import math
 import re
 import sys
 from abc import ABC, abstractmethod
@@ -74,11 +75,24 @@ END_DATE = date(2026, 2, 27)               # Latest available obs
 MIN_TRAINING_DAYS = 20                     # Train on first 20 days
 EV_THRESHOLD_CENTS = 3                     # Min EV to place a trade
 MAX_CONTRACTS_PER_SIGNAL = 10000             # Max contracts per trade
+TAKER_FEE_RATE = 0.07                       # Kalshi taker fee: 7% of P*(1-P) per contract
 MARKET_SNAPSHOTS_DIR = None                # Auto-detected from config
 LOG_LEVEL = "INFO"
 
 # XGBoost hyperparameter overrides (or None for defaults)
 XGB_OVERRIDES: Optional[dict] = None
+
+
+def _kalshi_taker_fee_cents(contracts: int, price_cents: float, rate: float = TAKER_FEE_RATE) -> int:
+    """Kalshi taker fee: round_up(rate × C × P × (1-P)), where P is price in dollars.
+
+    Fee peaks at 50¢ (max uncertainty) and drops toward 0 at 0¢ or 100¢.
+    """
+    if price_cents <= 0 or price_cents >= 100:
+        return 0
+    p = price_cents / 100.0
+    fee_dollars = rate * contracts * p * (1 - p)
+    return int(math.ceil(fee_dollars * 100))
 
 
 # =====================================================================
@@ -281,9 +295,11 @@ class XGBoostEVStrategy(TradingStrategy):
             no_ask = float(row.get("no_ask", 100))
             market_ticker = str(row.get("market_ticker", ""))
 
-            # EV calculations (in cents)
-            ev_yes = (p * 100) - yes_ask
-            ev_no = ((1 - p) * 100) - no_ask
+            # EV calculations (in cents) — subtract Kalshi taker fee (formula-based)
+            fee_yes = _kalshi_taker_fee_cents(1, yes_ask)
+            fee_no = _kalshi_taker_fee_cents(1, no_ask)
+            ev_yes = (p * 100) - yes_ask - fee_yes
+            ev_no = ((1 - p) * 100) - no_ask - fee_no
 
             # Pick the better side if EV > threshold
             if ev_yes >= self.ev_threshold and ev_yes >= ev_no:
@@ -456,7 +472,7 @@ def _settle_fills(
     For each fill:
       - YES side: wins (payout=100) if CLI_High >= strike, loses (payout=0) otherwise
       - NO side:  wins (payout=100) if CLI_High < strike, loses (payout=0) otherwise
-      - P&L per contract = payout - cost
+      - P&L = (payout - cost) × contracts - Kalshi taker fee (formula-based)
     """
     for f in fills:
         cli_high = cli_labels.get(f.climate_date)
@@ -470,7 +486,8 @@ def _settle_fills(
         else:  # "no"
             f.settlement_value = 100 if cli_high < f.strike_f else 0
 
-        f.pnl_cents = (f.settlement_value - f.avg_price_cents) * f.contracts
+        fee_cents = _kalshi_taker_fee_cents(f.contracts, f.avg_price_cents)
+        f.pnl_cents = (f.settlement_value - f.avg_price_cents) * f.contracts - fee_cents
 
     return fills
 
@@ -672,6 +689,7 @@ def run_backtest(
 
                 contracts = min(signal.max_contracts, 1)  # Conservative: 1 contract
 
+                fee_cents = _kalshi_taker_fee_cents(contracts, exec_price)
                 fill = SimulatedFill(
                     climate_date=test_date_str,
                     observation_time_utc=obs_time,
@@ -681,7 +699,7 @@ def run_backtest(
                     side=signal.side,
                     contracts=contracts,
                     avg_price_cents=exec_price,
-                    total_cost_cents=exec_price * contracts,
+                    total_cost_cents=exec_price * contracts + fee_cents,
                     p_cal=signal.p_cal,
                     ev_cents=signal.ev_cents,
                 )

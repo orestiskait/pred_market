@@ -21,6 +21,7 @@ import pandas as pd
 
 from services.core.parquet_store import PerStationDayStore
 from services.markets.kalshi_registry import KALSHI_MARKET_REGISTRY
+from services.model.time_utils import series_utc_to_lst
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,7 @@ class WethrPushStorage(PerStationDayStore):
 
     def save(self, df: pd.DataFrame, event_type: str) -> None:
         if df.empty:
+            logger.debug("Wethr save: skipping empty %s dataframe", event_type)
             return
 
         meta = _EVENT_META.get(event_type)
@@ -83,36 +85,46 @@ class WethrPushStorage(PerStationDayStore):
         if "live" not in df.columns:
             df["live"] = True
 
-        # Add LST columns based on observation_time_utc if present
+        # Add LST columns based on observation_time_utc if present.
+        # LST ignores DST (matches Kalshi/NWS climate day boundary).
         if "observation_time_utc" in df.columns:
-            # Group by station to apply correct timezone
             for station in df["station_code"].unique():
                 mask = df["station_code"] == station
                 tz_name = _STATION_TZ.get(station)
                 if not tz_name:
                     continue
-                
-                # Convert to LST (ignoring DST as per instruction, using standard time)
+
                 ts_utc = pd.to_datetime(df.loc[mask, "observation_time_utc"], utc=True)
-                ts_lst = ts_utc.dt.tz_convert(tz_name).dt.tz_localize(None)
-                
+                ts_lst = series_utc_to_lst(ts_utc, tz_name)
+
                 df.loc[mask, "observation_time_lst"] = ts_lst
-                
+
                 if event_type in ("dsm", "cli"):
                     # Do NOT overwrite for_date_lst: API's for_date is the climate day.
-                    # observation_time_utc (timestamp) is when the message was issued (next day).
                     if "high_time_utc" in df.columns:
                         high_ts_utc = pd.to_datetime(df.loc[mask, "high_time_utc"], utc=True)
-                        # Avoid NaT errors during conversion if somehow empty or missing (though tz_convert works on Series with NaT)
-                        df.loc[mask, "high_time_lst"] = high_ts_utc.dt.tz_convert(tz_name).dt.tz_localize(None)
+                        df.loc[mask, "high_time_lst"] = series_utc_to_lst(high_ts_utc, tz_name)
                     if "low_time_utc" in df.columns:
                         low_ts_utc = pd.to_datetime(df.loc[mask, "low_time_utc"], utc=True)
-                        df.loc[mask, "low_time_lst"] = low_ts_utc.dt.tz_convert(tz_name).dt.tz_localize(None)
+                        df.loc[mask, "low_time_lst"] = series_utc_to_lst(low_ts_utc, tz_name)
                 else:
                     df.loc[mask, "observation_date_lst"] = ts_lst.dt.normalize()
 
         date_col = meta["date_col"]
         event_dir = self._subdir(event_type)
+
+        # For dsm/cli, for_date_lst must be valid; drop and warn if missing
+        if event_type in ("dsm", "cli") and date_col in df.columns:
+            parsed = pd.to_datetime(df[date_col], errors="coerce")
+            bad = parsed.isna()
+            if bad.any():
+                logger.warning(
+                    "Wethr %s: dropping %d rows with missing/invalid for_date_lst: %s",
+                    event_type, bad.sum(), df.loc[bad, date_col].head(3).tolist(),
+                )
+                df = df[~bad].copy()
+        if df.empty:
+            return
 
         for station in df["station_code"].unique():
             stn_df = df[df["station_code"] == station]
@@ -133,7 +145,11 @@ class WethrPushStorage(PerStationDayStore):
                     dedup_cols=meta["dedup"],
                     sort_cols=[meta["sort"]],
                 )
-                logger.info("Wethr %s: saved %d rows -> %s", event_type, len(day_df), path)
+                n = len(day_df)
+                logger.info(
+                    "Wethr %s: saved %d %s → %s",
+                    event_type, n, "row" if n == 1 else "rows", path,
+                )
 
     def read(
         self,

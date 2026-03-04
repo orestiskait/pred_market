@@ -25,8 +25,8 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -37,11 +37,9 @@ from services.model.constants import (
     CYCLE_AGE_CAP_MINUTES,
 )
 from services.model.time_utils import (
-    utc_to_lst,
-    lst_climate_date,
-    lst_midnight_utc,
     climate_day_end_utc,
     hours_since_midnight_lst,
+    series_to_lst_climate_date,
 )
 
 logger = logging.getLogger(__name__)
@@ -109,7 +107,6 @@ def _solar_position(dt_utc: datetime, lat: float, lon: float) -> dict[str, float
         "solar_elevation_deg": elevation_deg,
         "solar_azimuth_deg": azimuth_deg,
         "hours_until_solar_noon": hours_until_noon,
-        "is_post_solar_noon": 1.0 if hours_until_noon < 0 else 0.0,
     }
 
 
@@ -302,13 +299,13 @@ _MOMENTUM_LOOKBACK_MINUTES: int = 90
 
 def _build_5min_grid(
     obs_df: pd.DataFrame,
-    climate_date_str: str,
+    climate_date: date,
     prev_tail_df: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Build a 5-minute resampled temperature timeline for one climate day.
 
     Input: observations DataFrame (both ASOS-HFM and ASOS-HR), pre-filtered
-           to the current climate_date_str.
+           to the current climate_date.
     prev_tail_df: optional slice of the *previous* climate day's observations
                   to prepend as a warm-up tail (enables momentum features for
                   the first hour of the new day).
@@ -316,7 +313,7 @@ def _build_5min_grid(
     Returns a DataFrame indexed by 5-minute UTC timestamps with the column
     ``temperature_fahrenheit`` forward-filled (last observed value carries).
     """
-    day_obs = obs_df[obs_df["_climate_date"] == climate_date_str].copy()
+    day_obs = obs_df[obs_df["_climate_date"] == climate_date].copy()
     if prev_tail_df is not None and not prev_tail_df.empty:
         day_obs = pd.concat([prev_tail_df, day_obs], ignore_index=True)
 
@@ -390,6 +387,390 @@ def _momentum_features(
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Feature row builder (single ASOS-HR observation)
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _build_feature_row_for_hr_obs(
+    row: Any,
+    climate_date: date,
+    day_end: pd.Timestamp,
+    grid_5min: pd.DataFrame,
+    nbm_df: pd.DataFrame,
+    rrfs_df: pd.DataFrame,
+    custom_intraday_max_f: float,
+    running_max_time: pd.Timestamp,
+    advection_history: list[tuple[pd.Timestamp, float]],
+    lat: float,
+    lon: float,
+    tz: str,
+    max_source_is_hfm: int = 0,
+    hfm_hr_divergence_f: float = float("nan"),
+    dsm_update_received: int = 0,
+) -> tuple[dict[str, Any], list[tuple[pd.Timestamp, float]]]:
+    """Build the feature dict for one ASOS-HR observation.
+
+    Returns (feature_row_dict, updated_advection_history).
+    """
+    obs_time = row.observation_time_utc
+    obs_dt = obs_time.to_pydatetime()
+    temp_f = float(row.temperature_fahrenheit)
+
+    # §5.1 State of the Day
+    hours_since_midnight = hours_since_midnight_lst(obs_dt, tz)
+    t_max_lag = (obs_time - running_max_time).total_seconds() / 60.0
+
+    distance_from_max = custom_intraday_max_f - temp_f
+    state = {
+        "custom_intraday_max_f": custom_intraday_max_f,
+        "distance_from_max_f": distance_from_max,
+        "distance_from_max_ratio": distance_from_max / max(custom_intraday_max_f, 1.0),
+        "hours_since_midnight_lst": hours_since_midnight,
+        "t_max_lag_minutes": t_max_lag,
+        "max_source_is_hfm": max_source_is_hfm,
+        "hfm_hr_divergence_f": hfm_hr_divergence_f,
+        "dsm_update_received": dsm_update_received,
+    }
+
+    # §5.2 Micro-Momentum
+    momentum = _momentum_features(grid_5min, obs_time)
+
+    # §5.3 Meteorological Context
+    dew_f = getattr(row, "dew_point_fahrenheit", float("nan"))
+    wind_s = float(getattr(row, "wind_speed_mph", 0) or 0)
+    wind_g = float(getattr(row, "wind_gust_mph", 0) or 0)
+    altimeter = getattr(row, "altimeter_inhg", float("nan"))
+    wind_sin, wind_cos = _wind_dir_sincos(getattr(row, "wind_direction", None))
+
+    # visibility_miles: parse from string (e.g. "10" or "1.5"); null/missing → NaN
+    vis_raw = getattr(row, "visibility_miles", None)
+    if vis_raw is None or (isinstance(vis_raw, float) and math.isnan(vis_raw)):
+        visibility_mi = float("nan")
+    else:
+        try:
+            visibility_mi = float(str(vis_raw).strip())
+        except (ValueError, TypeError):
+            visibility_mi = float("nan")
+
+    met = {
+        "dew_point_f": float(dew_f) if pd.notna(dew_f) else float("nan"),
+        "dew_point_depression_f": (temp_f - float(dew_f)) if pd.notna(dew_f) else float("nan"),
+        "wind_speed_mph": wind_s,
+        "wind_gust_mph": wind_g,
+        "wind_dir_sin": wind_sin,
+        "wind_dir_cos": wind_cos,
+        "altimeter_inhg": float(altimeter) if pd.notna(altimeter) else float("nan"),
+        "visibility_miles": visibility_mi,
+    }
+
+    # §5.4 NBM features
+    nbm_feats = _extract_nwp_features(
+        nwp_df=nbm_df,
+        prefix="nbm",
+        observation_time=obs_dt,
+        custom_intraday_max_f=custom_intraday_max_f,
+        current_temp_f=temp_f,
+        day_end_utc=day_end,
+        latency_seconds=NBM_LATENCY_SECONDS,
+        extra_features=True,
+    )
+
+    # §5.5 RRFS features
+    rrfs_feats = _extract_nwp_features(
+        nwp_df=rrfs_df,
+        prefix="rrfs",
+        observation_time=obs_dt,
+        custom_intraday_max_f=custom_intraday_max_f,
+        current_temp_f=temp_f,
+        day_end_utc=day_end,
+        latency_seconds=RRFS_LATENCY_SECONDS,
+        extra_features=False,
+    )
+
+    rrfs_feats["rrfs_nbm_delta_divergence_f"] = (
+        rrfs_feats.get("rrfs_expected_delta_f", float("nan"))
+        - nbm_feats.get("nbm_expected_delta_f", float("nan"))
+    )
+    nbm_max = nbm_feats.get("nbm_max_remaining_f", float("nan"))
+    rrfs_max = rrfs_feats.get("rrfs_max_remaining_f", float("nan"))
+    rrfs_feats["nbm_rrfs_max_spread_f"] = (
+        abs(nbm_max - rrfs_max)
+        if pd.notna(nbm_max) and pd.notna(rrfs_max)
+        else float("nan")
+    )
+
+    # §5.6 Advection Gap
+    nbm_adv = nbm_feats.get("nbm_current_error_f", float("nan"))
+    rrfs_adv = rrfs_feats.get("rrfs_current_error_f", float("nan"))
+
+    cutoff_60 = obs_time - pd.Timedelta(minutes=60)
+    recent_adv = [
+        v for ts, v in advection_history
+        if ts >= cutoff_60 and not math.isnan(v)
+    ]
+    adv_trend_60m = (
+        nbm_adv - recent_adv[0]
+        if recent_adv and not math.isnan(nbm_adv)
+        else float("nan")
+    )
+    adv_values = [v for v in [nbm_adv, rrfs_adv] if not math.isnan(v)]
+    consensus_adv = float(np.mean(adv_values)) if adv_values else float("nan")
+
+    adv_feats = {
+        "advection_gap_trend_60m_f": adv_trend_60m,
+        "nwp_consensus_advection_f": consensus_adv,
+    }
+
+    # Update advection history for next iteration
+    new_history = list(advection_history)
+    if not math.isnan(nbm_adv):
+        new_history.append((obs_time, nbm_adv))
+    new_history = [
+        (ts, v) for ts, v in new_history
+        if ts >= obs_time - pd.Timedelta(hours=2)
+    ]
+
+    # §5.7 Solar Geometry
+    solar = _solar_position(obs_dt, lat, lon)
+
+    # §5.8 Calendar
+    calendar = {
+        "day_of_year": obs_dt.timetuple().tm_yday,
+        "month": obs_dt.month,
+    }
+
+    feature_row = {
+        "observation_time_utc": obs_time,
+        "climate_date_lst": str(climate_date),
+        **state,
+        **momentum,
+        **met,
+        **nbm_feats,
+        **rrfs_feats,
+        **adv_feats,
+        **solar,
+        **calendar,
+    }
+    return (feature_row, new_history)
+
+
+def _parse_altimeter(raw: object) -> float:
+    """Parse altimeter_inhg to float; return NaN if invalid."""
+    if raw is None or (isinstance(raw, float) and math.isnan(raw)):
+        return float("nan")
+    try:
+        return float(str(raw).strip())
+    except (ValueError, TypeError):
+        return float("nan")
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Tri-Factor Max (Smart Max) — guards against ASOS-HFM rounding bias
+# ──────────────────────────────────────────────────────────────────────
+
+def _compute_smart_max(
+    hr_anchor_max_f: Optional[float],
+    hfm_spike_max_c: Optional[float],
+    dsm_floor_max_f: float,
+) -> tuple[float, str, int, float, int]:
+    """Synthesize custom_intraday_max_f from three sources.
+
+    Protects against ASOS-HFM upward rounding bias (integer °C, 0.5 rounds up).
+    Returns (custom_intraday_max_f, peak_source, max_source_is_hfm, hfm_hr_divergence_f, dsm_update_received).
+    """
+    nan = float("nan")
+    hr_f = hr_anchor_max_f if hr_anchor_max_f is not None else nan
+    dsm_valid = pd.notna(dsm_floor_max_f)
+
+    # HFM lower bound: T°C implies true temp in [T-0.5, T+0.5); conservative bound
+    if hfm_spike_max_c is not None and not math.isnan(hfm_spike_max_c):
+        hfm_lower_bound_f = (float(hfm_spike_max_c) - 0.5) * 1.8 + 32.0
+        hfm_raw_f = float(hfm_spike_max_c) * 1.8 + 32.0
+    else:
+        hfm_lower_bound_f = nan
+        hfm_raw_f = nan
+
+    hfm_hr_divergence_f = (hfm_raw_f - hr_f) if pd.notna(hfm_raw_f) and pd.notna(hr_f) else nan
+    dsm_update_received = 1 if dsm_valid else 0
+
+    # Priority 1: DSM floor (official NWS intraday update)
+    if dsm_valid and dsm_floor_max_f > max(
+        hr_f if pd.notna(hr_f) else -float("inf"),
+        hfm_lower_bound_f if pd.notna(hfm_lower_bound_f) else -float("inf"),
+    ):
+        return (dsm_floor_max_f, "DSM", 0, hfm_hr_divergence_f, dsm_update_received)
+
+    # Priority 2: HFM spike (inter-hour spike that HR missed)
+    if pd.notna(hfm_lower_bound_f) and (pd.isna(hr_f) or hfm_lower_bound_f > hr_f):
+        return (hfm_raw_f, "HFM_SPIKE", 1, hfm_hr_divergence_f, dsm_update_received)
+
+    # Priority 3: HR anchor (precise 0.1°C reading)
+    if pd.notna(hr_f):
+        return (hr_f, "HR_ANCHOR", 0, hfm_hr_divergence_f, dsm_update_received)
+
+    # Fallback: HFM raw if no HR yet (e.g. very early in day)
+    if pd.notna(hfm_raw_f):
+        return (hfm_raw_f, "HFM_SPIKE", 1, hfm_hr_divergence_f, dsm_update_received)
+
+    # No valid source
+    return (nan, "NONE", 0, nan, dsm_update_received)
+
+
+def _dsm_floor_max_for_time(
+    dsm_day: pd.DataFrame,
+    obs_time: pd.Timestamp,
+    climate_date_str: str,
+) -> float:
+    """Max high_f from DSM rows for this climate day with received_ts_utc <= obs_time."""
+    if dsm_day.empty:
+        return float("nan")
+    if "received_ts_utc" not in dsm_day.columns or "high_f" not in dsm_day.columns:
+        return float("nan")
+    if "for_date_lst" not in dsm_day.columns:
+        return float("nan")
+
+    mask = (
+        (dsm_day["for_date_lst"].astype(str) == climate_date_str)
+        & (pd.to_datetime(dsm_day["received_ts_utc"], utc=True) <= obs_time)
+    )
+    eligible = dsm_day.loc[mask, "high_f"].dropna()
+    if eligible.empty:
+        return float("nan")
+    return float(eligible.max())
+
+
+def _process_climate_day(
+    day_obs: pd.DataFrame,
+    climate_date: date,
+    obs_df: pd.DataFrame,
+    nbm_df: pd.DataFrame,
+    rrfs_df: pd.DataFrame,
+    dsm_df: pd.DataFrame,
+    prev_advection_history: list[tuple[pd.Timestamp, float]],
+    prev_pressure_history: list[tuple[pd.Timestamp, float]],
+    prev_day_tail_df: Optional[pd.DataFrame],
+    lat: float,
+    lon: float,
+    tz: str,
+) -> tuple[list[dict[str, Any]], list[tuple[pd.Timestamp, float]], list[tuple[pd.Timestamp, float]], Optional[pd.DataFrame]]:
+    """Process one climate day's observations into feature rows.
+
+    Uses Tri-Factor Max (Smart Max) to guard against ASOS-HFM rounding bias.
+    Returns (rows, updated_advection_history, updated_pressure_history, prev_day_tail_df for next day).
+    """
+    day_end = climate_day_end_utc(climate_date, tz)
+    grid_5min = _build_5min_grid(obs_df, climate_date, prev_tail_df=prev_day_tail_df)
+    climate_date_str = str(climate_date)
+
+    # Tri-Factor Max: track hr_anchor (ASOS-HR) and hfm_spike (ASOS-HFM) separately
+    hr_anchor_max_f: Optional[float] = None
+    hfm_spike_max_c: Optional[float] = None
+    custom_intraday_max_f: Optional[float] = None
+    running_max_time: Optional[pd.Timestamp] = None
+    advection_history: list[tuple[pd.Timestamp, float]] = list(prev_advection_history)
+    pressure_history: list[tuple[pd.Timestamp, float]] = list(prev_pressure_history)
+    rows: list[dict[str, Any]] = []
+
+    for row in day_obs.itertuples(index=False):
+        obs_time = row.observation_time_utc
+        temp_f = getattr(row, "temperature_fahrenheit", None)
+        temp_c = getattr(row, "temperature_celsius", None)
+        product_str = str(getattr(row, "product", "") or "").upper()
+
+        # Update pressure history from all observations (ASOS-HFM + ASOS-HR)
+        altimeter_raw = getattr(row, "altimeter_inhg", None)
+        altimeter_val = _parse_altimeter(altimeter_raw)
+        if not math.isnan(altimeter_val):
+            pressure_history.append((obs_time, altimeter_val))
+        pressure_history = [
+            (ts, p) for ts, p in pressure_history
+            if ts >= obs_time - pd.Timedelta(hours=2)
+        ]
+
+        # Pressure tendency: change over last ~60 min (falling = often warming)
+        cutoff = obs_time - pd.Timedelta(minutes=55)
+        candidates = [(ts, p) for ts, p in pressure_history if ts <= cutoff and not math.isnan(p)]
+        pressure_60m_ago = max(candidates, key=lambda x: x[0])[1] if candidates else float("nan")
+        pressure_tendency = (
+            altimeter_val - pressure_60m_ago
+            if not math.isnan(altimeter_val) and not math.isnan(pressure_60m_ago)
+            else float("nan")
+        )
+
+        if pd.isna(temp_f):
+            continue
+
+        temp_f = float(temp_f)
+
+        # Update Tri-Factor anchors by product type
+        if product_str == "ASOS-HR":
+            if hr_anchor_max_f is None or temp_f > hr_anchor_max_f:
+                hr_anchor_max_f = temp_f
+        elif product_str == "ASOS-HFM":
+            # Use temperature_celsius when available; else derive from Fahrenheit
+            if temp_c is not None and not (isinstance(temp_c, float) and math.isnan(temp_c)):
+                tc = float(temp_c)
+            else:
+                tc = (temp_f - 32.0) / 1.8
+            if hfm_spike_max_c is None or tc > hfm_spike_max_c:
+                hfm_spike_max_c = tc
+
+        # DSM floor: max(high_f) from DSMs received before obs_time
+        dsm_floor_max_f = _dsm_floor_max_for_time(dsm_df, obs_time, climate_date_str)
+
+        # Smart Max synthesis
+        smart_max, _peak_source, max_source_is_hfm, hfm_hr_divergence_f, dsm_update_received = _compute_smart_max(
+            hr_anchor_max_f, hfm_spike_max_c, dsm_floor_max_f
+        )
+
+        if pd.notna(smart_max):
+            prev_custom = custom_intraday_max_f
+            custom_intraday_max_f = smart_max
+            if prev_custom is None or smart_max > prev_custom:
+                running_max_time = obs_time
+
+        # Only generate feature rows from ASOS-HR observations
+        if product_str != "ASOS-HR":
+            continue
+
+        if custom_intraday_max_f is None or math.isnan(custom_intraday_max_f):
+            continue
+
+        feature_row, advection_history = _build_feature_row_for_hr_obs(
+            row=row,
+            climate_date=climate_date,
+            day_end=day_end,
+            grid_5min=grid_5min,
+            nbm_df=nbm_df,
+            rrfs_df=rrfs_df,
+            custom_intraday_max_f=custom_intraday_max_f,
+            running_max_time=running_max_time,
+            advection_history=advection_history,
+            lat=lat,
+            lon=lon,
+            tz=tz,
+            max_source_is_hfm=max_source_is_hfm,
+            hfm_hr_divergence_f=hfm_hr_divergence_f,
+            dsm_update_received=dsm_update_received,
+        )
+        feature_row["pressure_tendency_1h_inhg"] = pressure_tendency
+        rows.append(feature_row)
+
+    # Build tail for next day
+    if not day_obs.empty:
+        day_obs_sorted = day_obs.sort_values("observation_time_utc")
+        last_obs_time = day_obs_sorted["observation_time_utc"].iloc[-1]
+        tail_cutoff = last_obs_time - pd.Timedelta(minutes=_MOMENTUM_LOOKBACK_MINUTES)
+        next_tail_df = day_obs_sorted[
+            day_obs_sorted["observation_time_utc"] >= tail_cutoff
+        ].copy()
+    else:
+        next_tail_df = None
+
+    return (rows, advection_history, pressure_history, next_tail_df)
+
+
+# ──────────────────────────────────────────────────────────────────────
 # FeatureEngine — main class
 # ──────────────────────────────────────────────────────────────────────
 
@@ -408,12 +789,14 @@ class FeatureEngine:
     #: column ordering, schema checks, etc.)
     FEATURE_COLUMNS: tuple[str, ...] = (
         # §5.1 State of the Day
-        "current_temp_f",
         "custom_intraday_max_f",
         "distance_from_max_f",
+        "distance_from_max_ratio",
         "hours_since_midnight_lst",
-        "hours_remaining_in_climate_day",
         "t_max_lag_minutes",
+        "max_source_is_hfm",
+        "hfm_hr_divergence_f",
+        "dsm_update_received",
         # §5.2 Micro-Momentum
         "velocity_15m_f",
         "velocity_30m_f",
@@ -429,6 +812,8 @@ class FeatureEngine:
         "wind_dir_sin",
         "wind_dir_cos",
         "altimeter_inhg",
+        "visibility_miles",
+        "pressure_tendency_1h_inhg",
         # §5.4 NBM Forecast
         "nbm_max_remaining_f",
         "nbm_expected_delta_f",
@@ -442,6 +827,7 @@ class FeatureEngine:
         "rrfs_current_error_f",
         "rrfs_cycle_age_minutes",
         "rrfs_nbm_delta_divergence_f",
+        "nbm_rrfs_max_spread_f",
         # §5.6 Advection Gap (unique; aliases share values with §5.4/5.5)
         "advection_gap_trend_60m_f",
         "nwp_consensus_advection_f",
@@ -449,7 +835,6 @@ class FeatureEngine:
         "solar_elevation_deg",
         "solar_azimuth_deg",
         "hours_until_solar_noon",
-        "is_post_solar_noon",
         # §5.8 Calendar
         "day_of_year",
         "month",
@@ -473,6 +858,7 @@ class FeatureEngine:
         obs_df: pd.DataFrame,
         nbm_df: pd.DataFrame,
         rrfs_df: pd.DataFrame,
+        dsm_df: Optional[pd.DataFrame] = None,
     ) -> pd.DataFrame:
         """Build the feature DataFrame from raw DataFrames.
 
@@ -481,6 +867,8 @@ class FeatureEngine:
         obs_df :  Combined observations (ASOS-HFM + ASOS-HR).
         nbm_df :  NBM forecast data.
         rrfs_df : RRFS forecast data.
+        dsm_df :  DSM (Daily Summary Message) data for Tri-Factor Max floor.
+                  Optional; if empty/None, dsm_floor_max_f is always NaN.
 
         Returns
         -------
@@ -493,198 +881,38 @@ class FeatureEngine:
             return pd.DataFrame()
 
         obs_df = obs_df.copy()
+        dsm_df = dsm_df if dsm_df is not None and not dsm_df.empty else pd.DataFrame()
 
-        # Tag each observation with its LST climate date
-        obs_df["_climate_date"] = obs_df['observation_date_lst']
+        # Tag each observation with its LST climate date (computed from UTC, not storage)
+        obs_df["_climate_date"] = pd.to_datetime(
+            series_to_lst_climate_date(obs_df["observation_time_utc"], self.tz)
+        ).dt.date
 
-        rows: list[dict] = []
+        # Sort once by date then time; groupby with sort=True yields chronological days
+        obs_sorted = obs_df.sort_values(["_climate_date", "observation_time_utc"])
 
-        # Process climate days in chronological order so we can carry state forward
-        sorted_dates = sorted(obs_df["_climate_date"].unique())
-
-        # Cross-day carry-over state (seeded as empty / None for the first day)
+        rows: list[dict[str, Any]] = []
         prev_advection_history: list[tuple[pd.Timestamp, float]] = []
-        prev_day_tail_df: Optional[pd.DataFrame] = None  # last ~90 min of prior day
+        prev_pressure_history: list[tuple[pd.Timestamp, float]] = []
+        prev_day_tail_df: Optional[pd.DataFrame] = None
 
-        # Iterate climate day by climate day to build per-day state correctly
-        for climate_date_str in sorted_dates:
-            day_obs = (
-                obs_df[obs_df["_climate_date"] == climate_date_str]
-                .sort_values("observation_time_utc")
+        for climate_date, day_obs in obs_sorted.groupby("_climate_date", sort=True):
+            day_obs = day_obs.copy()
+            day_rows, prev_advection_history, prev_pressure_history, prev_day_tail_df = _process_climate_day(
+                day_obs=day_obs,
+                climate_date=climate_date,
+                obs_df=obs_df,
+                nbm_df=nbm_df,
+                rrfs_df=rrfs_df,
+                dsm_df=dsm_df,
+                prev_advection_history=prev_advection_history,
+                prev_pressure_history=prev_pressure_history,
+                prev_day_tail_df=prev_day_tail_df,
+                lat=self.lat,
+                lon=self.lon,
+                tz=self.tz,
             )
-            climate_date = datetime.strptime(climate_date_str, "%Y-%m-%d").date()
-            day_end = climate_day_end_utc(climate_date, self.tz)
-
-            # Build 5-minute rolling temperature grid — prepend previous-day tail
-            # so momentum windows never go NaN at the start of the day.
-            grid_5min = _build_5min_grid(obs_df, climate_date_str, prev_tail_df=prev_day_tail_df)
-
-            # Running max resets each climate day — it tracks today's intraday high only.
-            # (The first observation of the day seeds it to its own temperature.)
-            running_max_f: Optional[float] = None
-            running_max_time: Optional[pd.Timestamp] = None
-            prev_obs_time: Optional[pd.Timestamp] = None
-            # Advection history: carry entries from the end of the previous day that
-            # are still within the 2-hour look-back window (trend spans midnight).
-            advection_history: list[tuple[pd.Timestamp, float]] = list(prev_advection_history)
-
-            # Process observations in chronological order
-            for _, row in day_obs.iterrows():
-                obs_time = row["observation_time_utc"]
-                obs_dt = obs_time.to_pydatetime()
-                temp_f = row.get("temperature_fahrenheit")
-
-                if pd.isna(temp_f):
-                    continue
-
-                # Update running max
-                if running_max_f is None or temp_f > running_max_f:
-                    running_max_f = float(temp_f)
-                    running_max_time = obs_time
-
-                # Only generate training rows from ASOS-HR observations
-                product_str = str(row.get("product", "") or "")
-                is_hr = product_str.upper() == "ASOS-HR"
-                prev_obs_time = obs_time  # update before continue
-
-                if not is_hr:
-                    # Still contribute to running state but skip feature row
-                    continue
-
-                # ── §5.1 State of the Day ──
-                hours_since_midnight = hours_since_midnight_lst(obs_dt, self.tz)
-                t_max_lag = (obs_time - running_max_time).total_seconds() / 60.0
-
-                state = {
-                    "current_temp_f":              float(temp_f),
-                    "custom_intraday_max_f":        running_max_f,
-                    "distance_from_max_f":          running_max_f - float(temp_f),
-                    "hours_since_midnight_lst":     hours_since_midnight,
-                    "hours_remaining_in_climate_day": 24.0 - hours_since_midnight,
-                    "t_max_lag_minutes":            t_max_lag,
-                }
-
-                # ── §5.2 Micro-Momentum ──
-                momentum = _momentum_features(grid_5min, obs_time)
-
-                # ── §5.3 Meteorological Context ──
-                dew_f = row.get("dew_point_fahrenheit", float("nan"))
-                wind_s = float(row.get("wind_speed_mph", 0) or 0)
-                wind_g = float(row.get("wind_gust_mph", 0) or 0)
-                altimeter = row.get("altimeter_inhg", float("nan"))
-                wind_sin, wind_cos = _wind_dir_sincos(row.get("wind_direction"))
-
-                met = {
-                    "dew_point_f":           float(dew_f) if pd.notna(dew_f) else float("nan"),
-                    "dew_point_depression_f": (float(temp_f) - float(dew_f))
-                                              if pd.notna(dew_f) else float("nan"),
-                    "wind_speed_mph":        wind_s,
-                    "wind_gust_mph":         wind_g,
-                    "wind_dir_sin":          wind_sin,
-                    "wind_dir_cos":          wind_cos,
-                    "altimeter_inhg":        float(altimeter) if pd.notna(altimeter) else float("nan"),
-                }
-
-                # ── §5.4 NBM features ──
-                nbm_feats = _extract_nwp_features(
-                    nwp_df=nbm_df,
-                    prefix="nbm",
-                    observation_time=obs_dt,
-                    custom_intraday_max_f=running_max_f,
-                    current_temp_f=float(temp_f),
-                    day_end_utc=day_end,
-                    latency_seconds=NBM_LATENCY_SECONDS,
-                    extra_features=True,
-                )
-
-                # ── §5.5 RRFS features ──
-                rrfs_feats = _extract_nwp_features(
-                    nwp_df=rrfs_df,
-                    prefix="rrfs",
-                    observation_time=obs_dt,
-                    custom_intraday_max_f=running_max_f,
-                    current_temp_f=float(temp_f),
-                    day_end_utc=day_end,
-                    latency_seconds=RRFS_LATENCY_SECONDS,
-                    extra_features=False,
-                )
-
-                # RRFS–NBM divergence
-                rrfs_feats["rrfs_nbm_delta_divergence_f"] = (
-                    rrfs_feats.get("rrfs_expected_delta_f", float("nan"))
-                    - nbm_feats.get("nbm_expected_delta_f", float("nan"))
-                )
-
-                # ── §5.6 Advection Gap ──
-                nbm_adv = nbm_feats.get("nbm_current_error_f", float("nan"))
-                rrfs_adv = rrfs_feats.get("rrfs_current_error_f", float("nan"))
-
-                # Trend: current advection gap minus gap 60 min ago
-                cutoff_60 = obs_time - pd.Timedelta(minutes=60)
-                recent_adv = [
-                    v for ts, v in advection_history
-                    if ts >= cutoff_60 and not math.isnan(v)
-                ]
-                adv_trend_60m = (
-                    nbm_adv - recent_adv[0]
-                    if recent_adv and not math.isnan(nbm_adv)
-                    else float("nan")
-                )
-                adv_values = [v for v in [nbm_adv, rrfs_adv] if not math.isnan(v)]
-                consensus_adv = float(np.mean(adv_values)) if adv_values else float("nan")
-
-                adv_feats = {
-                    "advection_gap_trend_60m_f": adv_trend_60m,
-                    "nwp_consensus_advection_f": consensus_adv,
-                }
-
-                # Remember advection for next iteration's trend
-                if not math.isnan(nbm_adv):
-                    advection_history.append((obs_time, nbm_adv))
-                # Trim old history (keep only last 2 hours)
-                advection_history = [
-                    (ts, v) for ts, v in advection_history
-                    if ts >= obs_time - pd.Timedelta(hours=2)
-                ]
-
-                # ── §5.7 Solar Geometry ──
-                solar = _solar_position(obs_dt, self.lat, self.lon)
-
-                # ── §5.8 Calendar ──
-                calendar = {
-                    "day_of_year": obs_dt.timetuple().tm_yday,
-                    "month":       obs_dt.month,
-                }
-
-                # ── Assemble ──
-                feature_row = {
-                    "observation_time_utc": obs_time,
-                    "climate_date_lst":     climate_date_str,
-                    **state,
-                    **momentum,
-                    **met,
-                    **nbm_feats,
-                    **rrfs_feats,
-                    **adv_feats,
-                    **solar,
-                    **calendar,
-                }
-                rows.append(feature_row)
-
-            # ── Carry end-of-day state into next day ──
-            # Keep only advection history entries within last 2 h of this day
-            # (the per-row trim already does this continuously, so we just copy)
-            prev_advection_history = list(advection_history)
-            # Build tail slice: last _MOMENTUM_LOOKBACK_MINUTES of obs for 5-min grid warm-up
-            if not day_obs.empty:
-                day_obs_sorted = day_obs.sort_values("observation_time_utc")
-                last_obs_time = day_obs_sorted["observation_time_utc"].iloc[-1]
-                tail_cutoff = last_obs_time - pd.Timedelta(minutes=_MOMENTUM_LOOKBACK_MINUTES)
-                prev_day_tail_df = day_obs_sorted[
-                    day_obs_sorted["observation_time_utc"] >= tail_cutoff
-                ].copy()
-            else:
-                prev_day_tail_df = None
+            rows.extend(day_rows)
 
         if not rows:
             logger.warning("[%s] No ASOS-HR rows found after feature engineering.", self.icao)

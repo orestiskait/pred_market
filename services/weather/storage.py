@@ -41,12 +41,7 @@ def _add_metadata_columns(
 
 
 def _log_save(label: str, n_rows: int, path: Path) -> None:
-    logger.info(
-        "%s: saved %d rows → %s",
-        label,
-        n_rows,
-        path,
-    )
+    logger.debug("%s → %s (%d %s)", label, path, n_rows, "row" if n_rows == 1 else "rows")
 
 
 class NWPRealtimeStorage(PerStationDayStore):
