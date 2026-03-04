@@ -421,7 +421,6 @@ def _build_feature_row_for_hr_obs(
     # §5.3 Meteorological Context
     dew_f = getattr(row, "dew_point_fahrenheit", float("nan"))
     wind_s = float(getattr(row, "wind_speed_mph", 0) or 0)
-    wind_g = float(getattr(row, "wind_gust_mph", 0) or 0)
     altimeter = getattr(row, "altimeter_inhg", float("nan"))
     wind_sin, wind_cos = _wind_dir_sincos(getattr(row, "wind_direction", None))
 
@@ -439,7 +438,6 @@ def _build_feature_row_for_hr_obs(
         "dew_point_f": float(dew_f) if pd.notna(dew_f) else float("nan"),
         "dew_point_depression_f": (temp_f - float(dew_f)) if pd.notna(dew_f) else float("nan"),
         "wind_speed_mph": wind_s,
-        "wind_gust_mph": wind_g,
         "wind_dir_sin": wind_sin,
         "wind_dir_cos": wind_cos,
         "altimeter_inhg": float(altimeter) if pd.notna(altimeter) else float("nan"),
@@ -797,7 +795,6 @@ class FeatureEngine:
         "dew_point_f",
         "dew_point_depression_f",
         "wind_speed_mph",
-        "wind_gust_mph",
         "wind_dir_sin",
         "wind_dir_cos",
         "altimeter_inhg",

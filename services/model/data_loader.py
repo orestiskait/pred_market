@@ -114,8 +114,7 @@ class ModelDataLoader:
         """Load wethr_push observations (both ASOS-HFM and ASOS-HR).
 
         Key columns: observation_time_utc, product, temperature_fahrenheit,
-        dew_point_fahrenheit, wind_speed_mph, wind_gust_mph, wind_direction,
-        altimeter_inhg.
+        dew_point_fahrenheit, wind_speed_mph, wind_direction, altimeter_inhg.
         """
         df = _read_icao_date_files(
             self.data_dir / self._OBS_SUBPATH, self.icao, start_date, end_date

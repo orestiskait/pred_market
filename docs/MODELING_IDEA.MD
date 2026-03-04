@@ -74,7 +74,7 @@ Exactly **three** data sources feed the model. No others (no Synoptic 1-min, no 
 | `relative_humidity` | string/null | Relative humidity (%) — may be null for HFM |
 | `wind_direction` | string | Wind direction (degrees or `VRB`) |
 | `wind_speed_mph` | int64 | Wind speed in mph |
-| `wind_gust_mph` | string/null | Wind gust in mph |
+| `wind_gust_mph` | string/null | Wind gust in mph (not used as model feature) |
 | `visibility_miles` | string/null | Visibility in statute miles |
 | `altimeter_inhg` | string/null | Altimeter setting in inHg |
 | `wethr_high_nws_f` | int64 | Wethr's running NWS high estimate in °F |
@@ -286,7 +286,6 @@ This feature encodes a critical physical insight: a *stale* intraday maximum (se
 | `dew_point_f` | Dew point at observation time | `dew_point_fahrenheit` |
 | `dew_point_depression_f` | `temperature_at_t - dew_point_f` | Derived |
 | `wind_speed_mph` | Wind speed | Direct column |
-| `wind_gust_mph` | Wind gust (0 if null/calm) | Direct column, null → 0 |
 | `wind_dir_sin` | `sin(wind_direction_deg × π/180)` | Encoded from `wind_direction` |
 | `wind_dir_cos` | `cos(wind_direction_deg × π/180)` | Encoded from `wind_direction` |
 | `altimeter_inhg` | Barometric pressure | Direct column |
@@ -383,13 +382,13 @@ The **solar elevation angle** is a physically-motivated feature that captures th
 |-------|-------|----------|
 | State of the Day | 8 | `custom_intraday_max_f`, `distance_from_max_f`, `distance_from_max_ratio`, `hours_since_midnight_lst`, `t_max_lag_minutes`, `max_source_is_hfm`, `hfm_hr_divergence_f`, `dsm_update_received` |
 | Micro-Momentum | 6 | `velocity_15m_f`, `velocity_30m_f`, `velocity_60m_f`, `acceleration_15m_f`, `temp_volatility_30m_f`, `temp_volatility_60m_f` |
-| Meteorological | 9 | `dew_point_f`, `dew_point_depression_f`, `wind_speed_mph`, `wind_gust_mph`, `wind_dir_sin`, `wind_dir_cos`, `altimeter_inhg`, `visibility_miles`, `pressure_tendency_1h_inhg` |
+| Meteorological | 8 | `dew_point_f`, `dew_point_depression_f`, `wind_speed_mph`, `wind_dir_sin`, `wind_dir_cos`, `altimeter_inhg`, `visibility_miles`, `pressure_tendency_1h_inhg` |
 | NBM Forecast | 6 | `nbm_max_remaining_f`, `nbm_expected_delta_f`, `nbm_current_error_f`, `nbm_hours_of_forecast_remaining`, `nbm_cycle_age_minutes`, `nbm_heating_trend_f` |
 | RRFS Forecast | 6 | `rrfs_max_remaining_f`, `rrfs_expected_delta_f`, `rrfs_current_error_f`, `rrfs_cycle_age_minutes`, `rrfs_nbm_delta_divergence_f`, `nbm_rrfs_max_spread_f` |
 | Advection Gap | 2 | `advection_gap_trend_60m_f`, `nwp_consensus_advection_f` |
 | Solar Geometry | 3 | `solar_elevation_deg`, `solar_azimuth_deg`, `hours_until_solar_noon` |
 | Calendar | 2 | `day_of_year`, `month` |
-| **Total** | **42** | Unique features |
+| **Total** | **41** | Unique features |
 
 ---
 
