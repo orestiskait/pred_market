@@ -56,6 +56,7 @@ from services.model.constants import QUANTILE_ALPHAS
 from services.model.data_loader import ModelDataLoader
 from services.model.training_set_builder import TrainingSetBuilder
 from services.model.quantile_suite import QuantileSuite
+from services.model.mean_regressor import MeanRegressor
 from services.model.monotonic_mapper import MonotonicMapper
 from services.model.strike_pricer import StrikePricer
 from services.model.calibrator import IsotonicCalibrator
@@ -213,6 +214,7 @@ class XGBoostEVStrategy(TradingStrategy):
         self.ev_threshold = ev_threshold_cents
         self.max_contracts = max_contracts
         self.suite: Optional[QuantileSuite] = None
+        self.mean_model: Optional[MeanRegressor] = None
         self.calibrator: Optional[IsotonicCalibrator] = None
         self._mapper = MonotonicMapper(alphas)
         self._pricer = StrikePricer(alphas)
@@ -233,6 +235,10 @@ class XGBoostEVStrategy(TradingStrategy):
 
         self.suite = QuantileSuite(alphas=self.alphas, xgb_params=self.xgb_params)
         self.suite.fit(X_tr, y_tr, X_v, y_v)
+
+        # Mean model for temperature point-forecast evaluation
+        self.mean_model = MeanRegressor(xgb_params=self.xgb_params)
+        self.mean_model.fit(X_tr, y_tr, X_v, y_v)
 
         # Calibrator: use validation set predictions as calibration data
         if len(X_v) > 5:
