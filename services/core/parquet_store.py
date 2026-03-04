@@ -19,6 +19,25 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
+def enforce_utc_lst_schema(df: pd.DataFrame) -> None:
+    """Normalise datetime columns in-place by naming convention.
+
+    - Columns ending in ``_utc`` or ``_utc_ts`` → timezone-aware UTC
+    - Columns ending in ``_lst`` → timezone-naive (Local Standard Time)
+
+    Used by NWP parquet storage and backfill to ensure consistent types
+    before concat/dedup. Modifies *df* in place.
+    """
+    for col in df.columns:
+        if col.endswith("_utc") or col.endswith("_utc_ts"):
+            df[col] = pd.to_datetime(df[col], errors="coerce", utc=True)
+        elif col.endswith("_lst"):
+            s = pd.to_datetime(df[col], errors="coerce")
+            if s.dt.tz is not None:
+                s = s.dt.tz_localize(None)
+            df[col] = s
+
+
 class PerStationDayStore:
     """Base class for per-station, per-day parquet storage with append + dedup."""
 
@@ -52,19 +71,12 @@ class PerStationDayStore:
         """
         path = directory / f"{station}_{day.isoformat()}.parquet"
 
-        def _enforce_schema(d: pd.DataFrame):
-            for col in d.columns:
-                if col.endswith("_utc") or col.endswith("_utc_ts"):
-                    d[col] = pd.to_datetime(d[col], errors="coerce", utc=True)
-                elif col.endswith("_lst"):
-                    d[col] = pd.to_datetime(d[col], errors="coerce").dt.tz_localize(None)
-
         df = df.copy()
-        _enforce_schema(df)
+        enforce_utc_lst_schema(df)
 
         if path.exists():
             existing = pd.read_parquet(path)
-            _enforce_schema(existing)
+            enforce_utc_lst_schema(existing)
             
             # Ensure consistent timezones for concat and sort, if they missed the suffix rule
             for col in sort_cols:
@@ -87,8 +99,15 @@ class PerStationDayStore:
         if cols:
             combined = combined.sort_values(cols, ignore_index=True)
 
+        combined = self._prepare_combined(combined, directory, station, day)
         combined.to_parquet(path, index=False)
         return path
+
+    def _prepare_combined(
+        self, combined: pd.DataFrame, directory: Path, station: str, day: date
+    ) -> pd.DataFrame:
+        """Override in subclasses to transform combined df before write. Default: no-op."""
+        return combined
 
     # ------------------------------------------------------------------
     # Read

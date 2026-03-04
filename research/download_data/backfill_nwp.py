@@ -44,6 +44,7 @@ _project_root = Path(__file__).resolve().parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+from services.core.parquet_store import enforce_utc_lst_schema
 from services.weather.station_registry import NWPStation, nwp_station_for_icao
 
 logger = logging.getLogger(__name__)
@@ -236,20 +237,13 @@ def save_to_nwp_realtime(
     """
     path = _model_dir(model_name) / f"{station_icao}_{cycle_date.isoformat()}.parquet"
 
-    def _enforce_schema(d: pd.DataFrame):
-        for col in d.columns:
-            if col.endswith("_utc") or col.endswith("_utc_ts"):
-                d[col] = pd.to_datetime(d[col], errors="coerce", utc=True)
-            elif col.endswith("_lst"):
-                d[col] = pd.to_datetime(d[col], errors="coerce").dt.tz_localize(None)
-
     df = df.copy()
-    _enforce_schema(df)
+    enforce_utc_lst_schema(df)
 
     with get_file_lock(path):
         if path.exists():
             existing = pd.read_parquet(path)
-            _enforce_schema(existing)
+            enforce_utc_lst_schema(existing)
             
             # Normalise UTC timestamps for safe concat
             for col in SORT_COLS:
@@ -267,6 +261,9 @@ def save_to_nwp_realtime(
         sort = [c for c in SORT_COLS if c in combined.columns]
         if sort:
             combined = combined.sort_values(sort, ignore_index=True)
+
+        from services.weather.storage import _backfill_model_run_time_lst
+        combined = _backfill_model_run_time_lst(combined)
 
         combined.to_parquet(path, index=False)
     

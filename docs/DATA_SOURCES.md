@@ -400,7 +400,7 @@ NOAA uploads RRFS GRIB2 to S3
 
 ### Latency
 
-Similar to HRRR (~45–90 minutes from cycle start to availability). Real-time SNS-to-disk latency tracked via the same `notification_latency_s` / `total_latency_s` columns. Note: as of early 2026, RRFS data generation is paused; historical data is available for research.
+Similar to HRRR (~45–90 minutes from cycle start to availability). Latency can be derived from `notification_ts_utc` and `saved_ts_utc` relative to `model_run_time_utc`. Note: as of early 2026, RRFS data generation is paused; historical data is available for research.
 
 ### Storage
 
@@ -412,26 +412,26 @@ Code: `services/weather/nwp/rrfs.py`, `services/weather/nwp_listener.py`
 
 ### Schema
 
-Identical structure to HRRR and NBM:
+RRFS uses a different schema than HRRR/NBM (includes `model_version`, LST date, and `is_live`):
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `station` | string | ICAO station identifier |
 | `city` | string | City name |
 | `model` | string | `"rrfs"` |
-| `cycle_utc` | datetime[UTC] | Model initialization time |
-| `forecast_minutes` | int | Minutes of forecast lead time |
-| `valid_utc` | datetime[UTC] | Valid time of the forecast |
-| `valid_local` | datetime[tz] | Valid time in station's local timezone |
-| `tmp_2m_k` | float | 2 m air temperature in Kelvin |
+| `model_version` | string | Model version (e.g. `"v1 poc"`) |
+| `model_run_time_utc` | datetime[UTC] | Model initialization time |
+| `lead_time_minutes` | int | Minutes of forecast lead time |
+| `forecast_target_time_utc` | datetime[UTC] | Valid time of the forecast |
 | `tmp_2m_f` | float | 2 m air temperature in Fahrenheit |
 | `grid_lat` | float | Grid cell latitude used for point extraction |
 | `grid_lon` | float | Grid cell longitude used for point extraction |
-| `notification_ts` | datetime[UTC] | When the SNS notification was received |
-| `saved_ts` | datetime[UTC] | Wall-clock time this row was written to disk |
-| `notification_latency_s` | float | Seconds from `cycle_utc` to `notification_ts` |
-| `ingest_latency_s` | float | Seconds from `notification_ts` to `saved_ts` |
-| `total_latency_s` | float | Seconds from `cycle_utc` to `saved_ts` |
+| `forecast_target_time_lst` | datetime[tz] | Valid time in station's local timezone |
+| `forecast_target_date_lst` | date | Climate date in LST (YYYY-MM-DD) |
+| `notification_ts_utc` | datetime[UTC] | When the SNS notification was received |
+| `saved_ts_utc` | datetime[UTC] | Wall-clock time this row was written to disk |
+| `is_live` | bool | `True` for live ingest; `False` for backfill |
+| `model_run_time_lst` | datetime[tz] | Model run time in station's local timezone |
 
 ---
 
