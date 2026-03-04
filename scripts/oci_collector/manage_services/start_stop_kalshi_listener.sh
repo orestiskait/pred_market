@@ -53,11 +53,16 @@ case "$cmd" in
     
     $DOCKER rm -f "$CONTAINER" 2>/dev/null || true
 
+    # Resolve libcurl path inside the container (host may not have libcurl, so glob won't expand)
+    LIB_CURL_PATH=$($DOCKER run --rm --entrypoint sh "$IMAGE" -c 'ls /usr/lib/*/libcurl.so.4 2>/dev/null | head -1' || true)
+    LD_PRELOAD_ENV=""
+    [[ -n "$LIB_CURL_PATH" ]] && LD_PRELOAD_ENV="-e LD_PRELOAD=$LIB_CURL_PATH"
+
     echo "[start_stop_kalshi_listener] Starting Kalshi listener..."
     $DOCKER run -d \
       --name "$CONTAINER" \
       -e CREDENTIALS_DIR=/app/credentials \
-      -e LD_PRELOAD=/usr/lib/*/libcurl.so.4 \
+      $LD_PRELOAD_ENV \
       -v "$CREDS_DIR:/app/credentials:ro" \
       -v "$DATA_DIR:/app/data" \
       --restart unless-stopped \

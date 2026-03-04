@@ -19,6 +19,9 @@ services:
     restart: unless-stopped
     env_file:
       - ${SHARED_ENV_FILE:-.env}
+    environment:
+      # Preload system libcurl to avoid rasterio/pyarrow version mismatch (override on ARM: LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libcurl.so.4)
+      - LD_PRELOAD=${LD_PRELOAD:-/usr/lib/x86_64-linux-gnu/libcurl.so.4}
     volumes:
       - ${DATA_DIR:-../data}:/app/data
     networks:
