@@ -61,6 +61,10 @@ from services.model.strike_pricer import StrikePricer
 from services.model.calibrator import IsotonicCalibrator
 from services.model.feature_engine import FeatureEngine
 from services.model.time_utils import lst_climate_date
+from services.model.backtest_temperature import (
+    run_temperature_backtest,
+    print_temperature_report,
+)
 
 logger = logging.getLogger("backtest_pnl")
 
@@ -723,6 +727,17 @@ def run_backtest(
 
     # ── Step 8: Compute and display P&L ───────────────────────────────
     summary_df = _build_summary(all_fills, cli_labels, test_dates)
+
+    # ── Step 9: Temperature prediction accuracy backtest ─────────────
+    temp_metrics, temp_predictions = run_temperature_backtest(
+        strategy=strategy,
+        X_full=X_full,
+        test_dates=test_dates,
+        cli_labels=cli_labels,
+        use_last_obs_per_day=True,
+    )
+    if temp_metrics:
+        print_temperature_report(temp_metrics, temp_predictions)
 
     return all_fills, summary_df
 
