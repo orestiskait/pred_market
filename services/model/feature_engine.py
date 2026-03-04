@@ -1,19 +1,19 @@
 """Stage 1 — Feature Engine.
 
-Transforms raw observations + NWP data into the ~36-dimensional feature
+Transforms raw observations + NWP data into the 42-dimensional feature
 vector described in MODELING_IDEA.MD §5.
 
 Feature groups (DRY — every feature defined exactly once here):
-  §5.1  State of the Day         (6 features)
+  §5.1  State of the Day         (8 features)
   §5.2  Micro-Momentum           (6 features)
-  §5.3  Meteorological Context   (7 features)
+  §5.3  Meteorological Context   (9 features)
   §5.4  NBM Forecast             (6 features)
-  §5.5  RRFS Forecast            (5 features)
-  §5.6  Advection Gap            (2 unique + 2 aliases from §5.4/5.5)
-  §5.7  Solar Geometry           (4 features)
+  §5.5  RRFS Forecast            (6 features)
+  §5.6  Advection Gap            (2 features; uses nbm/rrfs_current_error_f from §5.4/5.5)
+  §5.7  Solar Geometry           (3 features)
   §5.8  Calendar / Seasonal      (2 features)
 
-Total: ~36 unique features (some conceptually shared between groups).
+Total: 42 features.
 
 Latency model (§6):
   We implement the DECAY-WEIGHT approach, NOT strict-drop.
@@ -72,10 +72,10 @@ def _solar_position(dt_utc: datetime, lat: float, lon: float) -> dict[str, float
     )
 
     # Local Solar Time (decimal hours)
+    # LST = UTC_decimal + longitude/15 + EoT/60  (longitude in degrees, EoT in minutes)
+    # Do NOT add 4*(lon-lstm) — that would double-count longitude (4 min/deg = 1/15 hr/deg).
     utc_decimal = dt_utc.hour + dt_utc.minute / 60.0 + dt_utc.second / 3600.0
-    lstm = 15 * round(lon / 15)  # local standard time meridian (degrees)
-    time_correction = eot + 4 * (lon - lstm)  # minutes
-    lst_decimal = utc_decimal + lon / 15 + time_correction / 60.0
+    lst_decimal = utc_decimal + lon / 15.0 + eot / 60.0
 
     # Hour angle (degrees): negative in morning, positive in afternoon
     hour_angle_deg = 15 * (lst_decimal - 12.0)
@@ -101,7 +101,7 @@ def _solar_position(dt_utc: datetime, lat: float, lon: float) -> dict[str, float
         azimuth_deg = 360 - azimuth_deg
 
     # Solar noon (decimal UTC hour when hour_angle = 0)
-    solar_noon_utc_hour = 12.0 - lon / 15.0 - time_correction / 60.0
+    solar_noon_utc_hour = 12.0 - lon / 15.0 - eot / 60.0
     hours_until_noon = solar_noon_utc_hour - utc_decimal
 
     return {
@@ -283,7 +283,10 @@ def _extract_nwp_features(
     result[f"{prefix}_current_error_f"] = current_temp_f - nwp_at_t
 
     if extra_features:
-        result[f"{prefix}_hours_of_forecast_remaining"] = float(len(remaining))
+        last_forecast_ts = remaining["forecast_target_time_utc"].max()
+        result[f"{prefix}_hours_of_forecast_remaining"] = (
+            last_forecast_ts - obs_ts
+        ).total_seconds() / 3600.0
         result[f"{prefix}_heating_trend_f"] = max_remaining - nwp_at_t
 
     return result
@@ -299,14 +302,14 @@ _MOMENTUM_LOOKBACK_MINUTES: int = 90
 
 
 def _build_5min_grid(
-    obs_df: pd.DataFrame,
-    climate_date: date,
+    day_obs: pd.DataFrame,
     prev_tail_df: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Build a 5-minute resampled temperature timeline for one climate day.
 
-    Input: observations DataFrame (both ASOS-HFM and ASOS-HR), pre-filtered
-           to the current climate_date.
+    Input: day_obs — observations for the current climate day (both ASOS-HFM
+           and ASOS-HR). Caller must pass pre-filtered data from groupby;
+           do NOT pass full obs_df to avoid O(N²) filtering.
     prev_tail_df: optional slice of the *previous* climate day's observations
                   to prepend as a warm-up tail (enables momentum features for
                   the first hour of the new day).
@@ -314,7 +317,7 @@ def _build_5min_grid(
     Returns a DataFrame indexed by 5-minute UTC timestamps with the column
     ``temperature_fahrenheit`` forward-filled (last observed value carries).
     """
-    day_obs = obs_df[obs_df["_climate_date"] == climate_date].copy()
+    day_obs = day_obs.copy()
     if prev_tail_df is not None and not prev_tail_df.empty:
         day_obs = pd.concat([prev_tail_df, day_obs], ignore_index=True)
 
@@ -643,7 +646,6 @@ def _dsm_floor_max_for_time(
 def _process_climate_day(
     day_obs: pd.DataFrame,
     climate_date: date,
-    obs_df: pd.DataFrame,
     nbm_df: pd.DataFrame,
     rrfs_df: pd.DataFrame,
     dsm_df: pd.DataFrame,
@@ -660,7 +662,7 @@ def _process_climate_day(
     Returns (rows, updated_advection_history, updated_pressure_history, prev_day_tail_df for next day).
     """
     day_end = climate_day_end_utc(climate_date, tz)
-    grid_5min = _build_5min_grid(obs_df, climate_date, prev_tail_df=prev_day_tail_df)
+    grid_5min = _build_5min_grid(day_obs, prev_tail_df=prev_day_tail_df)
     climate_date_str = str(climate_date)
 
     # Tri-Factor Max: track hr_anchor (ASOS-HR) and hfm_spike (ASOS-HFM) separately
@@ -776,7 +778,7 @@ def _process_climate_day(
 # ──────────────────────────────────────────────────────────────────────
 
 class FeatureEngine:
-    """Stage 1: Convert raw data → ~36-dimensional feature vector.
+    """Stage 1: Convert raw data → 42-dimensional feature vector.
 
     One FeatureEngine instance is tied to one station.  The ``build()``
     method accepts pre-loaded DataFrames (output of ModelDataLoader) for
@@ -902,7 +904,6 @@ class FeatureEngine:
             day_rows, prev_advection_history, prev_pressure_history, prev_day_tail_df = _process_climate_day(
                 day_obs=day_obs,
                 climate_date=climate_date,
-                obs_df=obs_df,
                 nbm_df=nbm_df,
                 rrfs_df=rrfs_df,
                 dsm_df=dsm_df,

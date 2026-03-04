@@ -314,7 +314,7 @@ Extract forecast rows from the selected cycle whose `forecast_target_time_utc` f
 | `nbm_max_remaining_f` | Highest NBM-forecasted temp for the remainder of the climate day | `max(tmp_2m_f)` where `forecast_target_time_utc > t` and same LST climate day |
 | `nbm_expected_delta_f` | Model-predicted remaining heating | `nbm_max_remaining_f - custom_intraday_max_f` |
 | `nbm_current_error_f` | Current model bias | `temperature_at_t - nbm_forecast_valid_at_t` (interpolated from nearest lead time) |
-| `nbm_hours_of_forecast_remaining` | How many hourly forecast steps remain in the climate day | Count of remaining valid-time rows |
+| `nbm_hours_of_forecast_remaining` | Hours of forecast remaining until last valid-time in climate day | `(last_forecast_target_time_utc - t).total_seconds() / 3600` |
 | `nbm_cycle_age_minutes` | **Decay weight**: how old the NBM cycle is relative to $t$ | `(t - latest_nbm_cycle).total_seconds() / 60` |
 | `nbm_heating_trend_f` | Max remaining forecast minus current forecast | `nbm_max_remaining_f - nbm_forecast_valid_at_t` |
 
@@ -389,7 +389,7 @@ The **solar elevation angle** is a physically-motivated feature that captures th
 | Advection Gap | 2 | `advection_gap_trend_60m_f`, `nwp_consensus_advection_f` |
 | Solar Geometry | 3 | `solar_elevation_deg`, `solar_azimuth_deg`, `hours_until_solar_noon` |
 | Calendar | 2 | `day_of_year`, `month` |
-| **Total** | **~39** | Unique features |
+| **Total** | **42** | Unique features |
 
 ---
 
@@ -530,7 +530,7 @@ The full inference pipeline has **6 stages**. Stages 1–5 are the Weather Brain
 
 | Stage | Component | Input | Output |
 |-------|-----------|-------|--------|
-| 1 | **Feature Engine** | Raw observations + NWP parquet | ~36-dimensional feature vector $\mathbf{x}_t$ |
+| 1 | **Feature Engine** | Raw observations + NWP parquet | 42-dimensional feature vector $\mathbf{x}_t$ |
 | 2 | **Quantile Suite** | Feature vector $\mathbf{x}_t$ | 7 raw quantile predictions: $\hat{q}_{0.05}, ..., \hat{q}_{0.95}$ |
 | 3 | **Monotonic Mapper** | Raw quantile predictions | Monotonically sorted quantiles (ensures $\hat{q}_{0.90} \geq \hat{q}_{0.75} \geq ...$) |
 | 4 | **Strike Pricing** | Sorted quantiles + active Kalshi strikes | Raw probability $P_{\text{raw}}(\text{CLI\_High} \geq S)$ per strike |
@@ -539,7 +539,7 @@ The full inference pipeline has **6 stages**. Stages 1–5 are the Weather Brain
 
 ### 8.1 Stage 1 — Feature Engine
 
-See [§5 Feature Engineering](#5-feature-engineering). Produces the ~36-dimensional feature vector described above.
+See [§5 Feature Engineering](#5-feature-engineering). Produces the 42-dimensional feature vector described above.
 
 ### 8.2 Stage 2 — Quantile Suite (7 × XGBoost)
 

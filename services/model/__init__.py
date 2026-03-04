@@ -2,7 +2,7 @@
 
 6-stage inference pipeline (Stages 1–5 = Weather Brain, Stage 6 = Execution Brain):
 
-  Stage 1  FeatureEngine          — raw data → ~36-dimensional feature vector
+  Stage 1  FeatureEngine          — raw data → 42-dimensional feature vector
   Stage 2  QuantileSuite          — feature vector → 7 raw quantile predictions
   Stage 3  MonotonicMapper        — enforce q₀₅ ≤ q₁₀ ≤ … ≤ q₉₅
   Stage 4  StrikePricer           — CDF interpolation → P(CLI_High ≥ strike)
