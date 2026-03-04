@@ -31,11 +31,7 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
-from services.model.constants import (
-    NBM_LATENCY_SECONDS,
-    RRFS_LATENCY_SECONDS,
-    CYCLE_AGE_CAP_MINUTES,
-)
+from services.model.constants import CYCLE_AGE_CAP_MINUTES
 from services.weather.units import celsius_to_fahrenheit, fahrenheit_to_celsius
 from services.model.time_utils import (
     climate_day_end_utc,
@@ -143,33 +139,18 @@ def _wind_dir_sincos(wind_direction: object) -> tuple[float, float]:
 def _find_latest_safe_cycle(
     nwp_df: pd.DataFrame,
     observation_time: datetime,
-    fallback_latency_seconds: int,
 ) -> Optional[pd.Timestamp]:
-    """Return the most recent model_run_time_utc that satisfies the latency constraint.
+    """Return the most recent model_run_time_utc whose notification_ts_utc <= observation_time.
 
-    If 'notification_ts_utc' exists in the df, use it directly (ground truth
-    of when the data arrived). If missing/NaN, fall back to adding back the
-    P95 latency to the model run time.
+    Requires 'notification_ts_utc' in the df. Returns None if column is missing
+    or no rows satisfy the constraint.
     """
-    if nwp_df.empty:
+    if nwp_df.empty or "notification_ts_utc" not in nwp_df.columns:
         return None
 
     obs_ts = pd.Timestamp(observation_time)
-    
-    if "notification_ts_utc" in nwp_df.columns:
-        # Use exact Parquet timestamps when available
-        valid_rows = nwp_df[nwp_df["notification_ts_utc"] <= obs_ts]
-        # For legacy rows backfilled without notification_ts_utc, use the fallback
-        missing_ts = nwp_df["notification_ts_utc"].isna()
-        fallback_rows = nwp_df[
-            missing_ts & ((nwp_df["model_run_time_utc"] + pd.Timedelta(seconds=fallback_latency_seconds)) <= obs_ts)
-        ]
-        qualifying = pd.concat([valid_rows, fallback_rows])["model_run_time_utc"]
-    else:
-        # Pure fallback
-        safe_horizon = obs_ts - pd.Timedelta(seconds=fallback_latency_seconds)
-        cycles = nwp_df["model_run_time_utc"]
-        qualifying = cycles[cycles <= safe_horizon]
+    valid_rows = nwp_df[nwp_df["notification_ts_utc"] <= obs_ts]
+    qualifying = valid_rows["model_run_time_utc"]
 
     if qualifying.empty:
         return None
@@ -207,7 +188,6 @@ def _extract_nwp_features(
     custom_intraday_max_f: float,
     current_temp_f: float,
     day_end_utc: datetime,
-    latency_seconds: int,
     extra_features: bool = False,
 ) -> dict[str, float]:
     """Extract NWP forecast features for a single observation.
@@ -223,15 +203,14 @@ def _extract_nwp_features(
     custom_intraday_max_f: Running max temp at observation time.
     current_temp_f:       Current observation temperature.
     day_end_utc:          UTC end of the LST climate day.
-    latency_seconds:      NWP-model-specific P95 latency.
     extra_features:       If True, also compute NBM-specific features
                           (nbm_heating_trend_f, nbm_hours_of_forecast_remaining).
     """
     nan = float("nan")
     result: dict[str, float] = {}
 
-    # Identify best available cycle (preferring exact notification_ts_utc)
-    cycle_time = _find_latest_safe_cycle(nwp_df, observation_time, latency_seconds)
+    # Identify best available cycle (notification_ts_utc <= obs_ts)
+    cycle_time = _find_latest_safe_cycle(nwp_df, observation_time)
     age = _cycle_age_minutes(observation_time, cycle_time)
 
     if age is None:
@@ -475,7 +454,6 @@ def _build_feature_row_for_hr_obs(
         custom_intraday_max_f=custom_intraday_max_f,
         current_temp_f=temp_f,
         day_end_utc=day_end,
-        latency_seconds=NBM_LATENCY_SECONDS,
         extra_features=True,
     )
 
@@ -487,7 +465,6 @@ def _build_feature_row_for_hr_obs(
         custom_intraday_max_f=custom_intraday_max_f,
         current_temp_f=temp_f,
         day_end_utc=day_end,
-        latency_seconds=RRFS_LATENCY_SECONDS,
         extra_features=False,
     )
 
