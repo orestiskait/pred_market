@@ -19,17 +19,12 @@ import requests
 from research.download_data.fetcher_base import WeatherFetcherBase
 from research.weather.iem_awc_station_registry import StationInfo
 from services.weather.metar_parser import MetarParser
+from services.weather.units import celsius_to_fahrenheit
 
 logger = logging.getLogger(__name__)
 
 AWC_METAR_URL = "https://aviationweather.gov/api/data/metar"
 MAX_HOURS_BACK = 360
-
-
-def _c_to_f(celsius: float | None) -> float | None:
-    if celsius is None:
-        return None
-    return celsius * 9.0 / 5.0 + 32.0
 
 
 class AWCMETARFetcher(WeatherFetcherBase):
@@ -94,9 +89,9 @@ class AWCMETARFetcher(WeatherFetcherBase):
                 "valid_utc": report_time,
                 "temp_high_accuracy": temp_high_accuracy,
                 "temp_c": temp_c,
-                "temp_f": _c_to_f(temp_c),
+                "temp_f": celsius_to_fahrenheit(temp_c),
                 "dewp_c": obs.get("dewp"),
-                "dewp_f": _c_to_f(obs.get("dewp")),
+                "dewp_f": celsius_to_fahrenheit(obs.get("dewp")),
             }
             rows.append(row)
 
@@ -130,8 +125,8 @@ class AWCMETARFetcher(WeatherFetcherBase):
             "valid_utc": report_time,
             "temp_high_accuracy": temp_high_accuracy,
             "temp_c": temp_c,
-            "temp_f": _c_to_f(temp_c),
+            "temp_f": celsius_to_fahrenheit(temp_c),
             "dewp_c": obs.get("dewp"),
-            "dewp_f": _c_to_f(obs.get("dewp")),
+            "dewp_f": celsius_to_fahrenheit(obs.get("dewp")),
         }
         return pd.DataFrame([row])

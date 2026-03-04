@@ -35,6 +35,7 @@ if str(_project_root) not in sys.path:
 
 from services.core.config import load_config, _read_credential
 from services.wethr.storage import WethrPushStorage, _STATION_TZ
+from services.weather.units import celsius_to_fahrenheit
 
 logger = logging.getLogger(__name__)
 
@@ -99,13 +100,13 @@ def fetch_and_split_day(station: str, target_date: date, api_key: str):
 
         # NWS Logic / probable extremes
         sh_c = _f(item.get("six_hour_high"))
-        sh_f = (sh_c * 9 / 5 + 32) if sh_c is not None else None
+        sh_f = celsius_to_fahrenheit(sh_c)
         sl_c = _f(item.get("six_hour_low"))
-        sl_f = (sl_c * 9 / 5 + 32) if sl_c is not None else None
+        sl_f = celsius_to_fahrenheit(sl_c)
 
         alt = _f(item.get("altimeter"))
         dp_c = item.get("dew_point")
-        dp_f = (dp_c * 9 / 5 + 32) if dp_c is not None else None
+        dp_f = celsius_to_fahrenheit(dp_c)
 
         obs_row = {
             "station_code":          item.get("station_code", ""),

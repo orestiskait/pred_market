@@ -37,8 +37,7 @@ COG_VERSION = "blendv4.3"
 VARIABLE = "temp"
 
 
-def _celsius_to_fahrenheit(c: float) -> float:
-    return c * 9.0 / 5.0 + 32.0
+from services.weather.units import celsius_delta_to_fahrenheit_delta, celsius_to_fahrenheit
 
 
 class NBMCOGFetcher:
@@ -201,12 +200,12 @@ class NBMCOGFetcher:
                 continue
 
             temp_c, grid_lat, grid_lon = result_temp
-            temp_f = _celsius_to_fahrenheit(temp_c)
+            temp_f = celsius_to_fahrenheit(temp_c)
 
             # standard deviation of temp (tempstddev in K; ΔK == ΔC; 1 °C = 1.8 °F)
             temp_std_f = None
             if result_std is not None:
-                temp_std_f = result_std[0] * 1.8
+                temp_std_f = celsius_delta_to_fahrenheit_delta(result_std[0])
 
             p10_std_f = None
             p90_std_f = None
@@ -304,11 +303,11 @@ class NBMCOGFetcher:
                     continue
 
                 temp_c, grid_lat, grid_lon = result_temp
-                temp_f = _celsius_to_fahrenheit(temp_c)
+                temp_f = celsius_to_fahrenheit(temp_c)
 
                 temp_std_f = None
                 if result_std is not None:
-                    temp_std_f = result_std[0] * 1.8
+                    temp_std_f = celsius_delta_to_fahrenheit_delta(result_std[0])
 
                 p10_std_f = p90_std_f = None
                 if temp_f is not None and temp_std_f is not None:

@@ -31,15 +31,10 @@ from services.weather.station_registry import NWPStation
 logger = logging.getLogger(__name__)
 
 # ======================================================================
-# Unit conversions
+# Unit conversions (centralized in services.weather.units)
 # ======================================================================
 
-_K_TO_F_SCALE = 9.0 / 5.0
-_K_TO_F_OFFSET = 459.67
-
-
-def kelvin_to_fahrenheit(k: float) -> float:
-    return k * _K_TO_F_SCALE - _K_TO_F_OFFSET
+from services.weather.units import kelvin_to_fahrenheit  # noqa: F401  # re-export for backward compat
 
 
 # ======================================================================

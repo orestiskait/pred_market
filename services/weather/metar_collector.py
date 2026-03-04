@@ -23,18 +23,13 @@ import requests
 
 from services.weather.metar_storage import MetarStorage
 from services.weather.metar_parser import MetarParser
+from services.weather.units import celsius_to_fahrenheit
 
 logger = logging.getLogger(__name__)
 
 AWC_METAR_URL = "https://aviationweather.gov/api/data/metar"
 NWS_OBSERVATIONS_URL = "https://api.weather.gov/stations/{station}/observations"
 DEFAULT_USER_AGENT = "WeatherCollectionResearch/1.0 (weather data collection;)"
-
-
-def _c_to_f(celsius: float | None) -> float | None:
-    if celsius is None:
-        return None
-    return celsius * 9.0 / 5.0 + 32.0
 
 
 def _fetch_awc_metar(
@@ -90,7 +85,7 @@ def _fetch_awc_metar(
             "station": stid,
             "source": "awc_metar",
             "temp_c": temp_c,
-            "temp_f": _c_to_f(temp_c),
+            "temp_f": celsius_to_fahrenheit(temp_c),
             "raw_ob": raw_ob or None,
             "rmk": parsed.rmk,
         })
@@ -146,7 +141,7 @@ def _fetch_nws_observations(
             "station": station,
             "source": "nws_observations",
             "temp_c": temp_c,
-            "temp_f": _c_to_f(temp_c),
+            "temp_f": celsius_to_fahrenheit(temp_c),
             "raw_ob": props.get("rawMessage"),
             "rmk": None,  # NWS API doesn't provide raw METAR with RMK
             "temp_24hr_min_c": temp_24hr_min_c,

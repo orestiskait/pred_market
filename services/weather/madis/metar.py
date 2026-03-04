@@ -38,19 +38,12 @@ import pandas as pd
 
 from services.weather.metar_parser import MetarParser
 from services.weather.station_registry import NWPStation
+from services.weather.units import celsius_to_fahrenheit, kelvin_to_celsius
 
 logger = logging.getLogger(__name__)
 
 BUCKET = "noaa-madis-pds"
 REGION = "us-east-1"
-
-
-def _celsius_to_fahrenheit(c: float) -> float:
-    return c * 9.0 / 5.0 + 32.0
-
-
-def _kelvin_to_celsius(k: float) -> float:
-    return k - 273.15
 
 
 class MADISMETARFetcher:
@@ -267,28 +260,28 @@ class MADISMETARFetcher:
                 temp_val = float(temp_var[idx])
                 if not np.isnan(temp_val) and temp_val > 100:
                     # Assume Kelvin
-                    temp_c = _kelvin_to_celsius(temp_val)
+                    temp_c = kelvin_to_celsius(temp_val)
                 elif not np.isnan(temp_val):
                     temp_c = temp_val
                 else:
                     temp_c = np.nan
 
                 row["temp_c"] = float(temp_c) if not np.isnan(temp_c) else np.nan
-                row["temp_f"] = _celsius_to_fahrenheit(temp_c) if not np.isnan(temp_c) else np.nan
+                row["temp_f"] = celsius_to_fahrenheit(temp_c) if not np.isnan(temp_c) else np.nan
                 row["temp_k"] = temp_c + 273.15 if not np.isnan(temp_c) else np.nan
 
             # Dewpoint
             if dew_var is not None:
                 dew_val = float(dew_var[idx])
                 if not np.isnan(dew_val) and dew_val > 100:
-                    dew_c = _kelvin_to_celsius(dew_val)
+                    dew_c = kelvin_to_celsius(dew_val)
                 elif not np.isnan(dew_val):
                     dew_c = dew_val
                 else:
                     dew_c = np.nan
 
                 row["dewpoint_c"] = float(dew_c) if not np.isnan(dew_c) else np.nan
-                row["dewpoint_f"] = _celsius_to_fahrenheit(dew_c) if not np.isnan(dew_c) else np.nan
+                row["dewpoint_f"] = celsius_to_fahrenheit(dew_c) if not np.isnan(dew_c) else np.nan
 
             # Raw METAR + T-group parsing
             if metar_var is not None:
@@ -314,7 +307,7 @@ class MADISMETARFetcher:
                         # If T-group available, use it as primary (higher precision)
                         if tg_temp is not None:
                             row["temp_c"] = tg_temp
-                            row["temp_f"] = _celsius_to_fahrenheit(tg_temp)
+                            row["temp_f"] = celsius_to_fahrenheit(tg_temp)
                             row["temp_k"] = tg_temp + 273.15
                 except Exception:
                     pass

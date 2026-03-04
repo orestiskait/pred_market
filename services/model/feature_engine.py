@@ -36,6 +36,7 @@ from services.model.constants import (
     RRFS_LATENCY_SECONDS,
     CYCLE_AGE_CAP_MINUTES,
 )
+from services.weather.units import celsius_to_fahrenheit, fahrenheit_to_celsius
 from services.model.time_utils import (
     climate_day_end_utc,
     hours_since_midnight_lst,
@@ -584,8 +585,8 @@ def _compute_smart_max(
 
     # HFM lower bound: T°C implies true temp in [T-0.5, T+0.5); conservative bound
     if hfm_spike_max_c is not None and not math.isnan(hfm_spike_max_c):
-        hfm_lower_bound_f = (float(hfm_spike_max_c) - 0.5) * 1.8 + 32.0
-        hfm_raw_f = float(hfm_spike_max_c) * 1.8 + 32.0
+        hfm_lower_bound_f = celsius_to_fahrenheit(float(hfm_spike_max_c) - 0.5)
+        hfm_raw_f = celsius_to_fahrenheit(float(hfm_spike_max_c))
     else:
         hfm_lower_bound_f = nan
         hfm_raw_f = nan
@@ -711,7 +712,7 @@ def _process_climate_day(
             if temp_c is not None and not (isinstance(temp_c, float) and math.isnan(temp_c)):
                 tc = float(temp_c)
             else:
-                tc = (temp_f - 32.0) / 1.8
+                tc = fahrenheit_to_celsius(temp_f)
             if hfm_spike_max_c is None or tc > hfm_spike_max_c:
                 hfm_spike_max_c = tc
 

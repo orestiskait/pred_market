@@ -33,19 +33,12 @@ import numpy as np
 import pandas as pd
 
 from services.weather.station_registry import NWPStation
+from services.weather.units import celsius_to_fahrenheit, kelvin_to_celsius
 
 logger = logging.getLogger(__name__)
 
 BUCKET = "noaa-madis-pds"
 REGION = "us-east-1"
-
-
-def _celsius_to_fahrenheit(c: float) -> float:
-    return c * 9.0 / 5.0 + 32.0
-
-
-def _kelvin_to_celsius(k: float) -> float:
-    return k - 273.15
 
 
 class MADISOMOFetcher:
@@ -235,14 +228,14 @@ class MADISOMOFetcher:
                     row["temp_k"] = np.nan
                 elif temp_val > 100:
                     # Kelvin
-                    temp_c = _kelvin_to_celsius(temp_val)
+                    temp_c = kelvin_to_celsius(temp_val)
                     row["temp_c"] = temp_c
-                    row["temp_f"] = _celsius_to_fahrenheit(temp_c)
+                    row["temp_f"] = celsius_to_fahrenheit(temp_c)
                     row["temp_k"] = temp_val
                 else:
                     # Celsius
                     row["temp_c"] = temp_val
-                    row["temp_f"] = _celsius_to_fahrenheit(temp_val)
+                    row["temp_f"] = celsius_to_fahrenheit(temp_val)
                     row["temp_k"] = temp_val + 273.15
 
             rows.append(row)
