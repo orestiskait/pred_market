@@ -1,19 +1,19 @@
 """Stage 1 — Feature Engine.
 
-Transforms raw observations + NWP data into the 42-dimensional feature
+Transforms raw observations + NWP data into the 41-dimensional feature
 vector described in MODELING_IDEA.MD §5.
 
 Feature groups (DRY — every feature defined exactly once here):
   §5.1  State of the Day         (8 features)
   §5.2  Micro-Momentum           (6 features)
-  §5.3  Meteorological Context   (9 features)
+  §5.3  Meteorological Context   (8 features)
   §5.4  NBM Forecast             (6 features)
   §5.5  RRFS Forecast            (6 features)
   §5.6  Advection Gap            (2 features; uses nbm/rrfs_current_error_f from §5.4/5.5)
   §5.7  Solar Geometry           (3 features)
   §5.8  Calendar / Seasonal      (2 features)
 
-Total: 42 features.
+Total: 41 features.
 
 Latency model (§6):
   We implement the DECAY-WEIGHT approach, NOT strict-drop.
@@ -793,7 +793,7 @@ def _process_climate_day(
 # ──────────────────────────────────────────────────────────────────────
 
 class FeatureEngine:
-    """Stage 1: Convert raw data → 42-dimensional feature vector.
+    """Stage 1: Convert raw data → 41-dimensional feature vector.
 
     One FeatureEngine instance is tied to one station.  The ``build()``
     method accepts pre-loaded DataFrames (output of ModelDataLoader) for

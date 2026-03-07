@@ -67,9 +67,9 @@ P95_NOTIFICATION_LATENCY_S: dict[str, float] = {
 # python3 -m research.download_data.check_backfill_nwp.py
 # python3 -m research.download_data.backfill_nwp
 
-MODELS = ["hrrr"]           # "hrrr" | "nbm" | "rrfs" — or any combination
-START_DATE = date(2026, 1, 31) # 2025,12,16
-END_DATE = date(2026, 2, 28)  # inclusive
+MODELS = ["nbm"]           # "hrrr" | "nbm" | "rrfs" — or any combination
+START_DATE = date(2026,3, 5) # 2025,12,16
+END_DATE = date(2026, 3, 7)  # inclusive
 STATIONS = ["KMDW"]           # ICAO codes; multi-station supported
 
 # Cycles to fetch (UTC hours). None = model default.
@@ -120,59 +120,50 @@ def lst_offset_hours(tz: str) -> float:
 def compute_max_useful_fxx(
     cycle_utc: datetime, tz: str, model_max_fxx: int
 ) -> int:
-    """Maximum fxx that still targets the cycle's own LST climate day.
+    """Maximum fxx that still targets the cycle's current or *next* LST climate day.
 
-    Avoids downloading forecast files whose valid time falls past midnight
-    LST — those rows would be discarded anyway by filter_to_lst_day().
-
-    Examples (KMDW, CST = UTC-6):
-      18Z → 12:00 CST, midnight = 06:00+1 UTC → remaining = 12h → max_fxx = 12
-      23Z → 17:00 CST, midnight = 06:00+1 UTC → remaining =  7h → max_fxx = 7
-      03Z → 21:00 CST prev day,  midnight = 06:00 UTC → remaining = 3h → max_fxx = 3
+    Late cycles (e.g., 23Z) are used early the following morning. If we clip
+    them to their own LST midnight, they have 0 valid hours for the next day.
+    We extend the bound to the NEXT midnight to cover the following day's peak.
     """
     offset = lst_offset_hours(tz)
     cycle_lst = cycle_utc + timedelta(hours=offset)
     climate_day = cycle_lst.date()
-    # Midnight ending the climate day, in UTC
-    next_midnight_lst = datetime(climate_day.year, climate_day.month, climate_day.day) + timedelta(days=1)
-    next_midnight_utc = next_midnight_lst - timedelta(hours=offset)
-    hours_remaining = (next_midnight_utc - cycle_utc).total_seconds() / 3600
-    # The user specifically requested: "If we are at the beginning of the day 
-    # (after previous days lst midnight keep all 18 hours of forecast)."
-    return max(0, min(math.ceil(hours_remaining), model_max_fxx, 18))
+    # Midnight ending the NEXT climate day, in UTC
+    next_next_midnight_lst = datetime(climate_day.year, climate_day.month, climate_day.day) + timedelta(days=2)
+    next_next_midnight_utc = next_next_midnight_lst - timedelta(hours=offset)
+    hours_remaining = (next_next_midnight_utc - cycle_utc).total_seconds() / 3600
+    
+    return max(0, min(math.ceil(hours_remaining), model_max_fxx))
 
 
 def filter_to_lst_day(
     df: pd.DataFrame, cycle_utc: datetime, tz: str
 ) -> pd.DataFrame:
-    """Keep only rows whose forecast target falls on the cycle's LST climate day.
-
-    Precise row-level trim applied after download. The coarser fxx-level
-    pre-filter (compute_max_useful_fxx) already limits downloads, but for
-    sub-hourly models (HRRR 15-min steps) a few rows may still spill over.
-    """
+    """Keep only rows whose forecast target falls on the cycle's LST climate day OR the next."""
     if df.empty:
         return df
 
     offset = lst_offset_hours(tz)
     cycle_lst = cycle_utc + timedelta(hours=offset)
     climate_day = cycle_lst.date()
+    next_climate_day = climate_day + timedelta(days=1)
 
     # forecast_target_date_lst is a Python date object (added by _add_time_columns)
     if "forecast_target_date_lst" in df.columns:
-        mask = df["forecast_target_date_lst"].apply(lambda d: d == climate_day)
+        mask = df["forecast_target_date_lst"].apply(lambda d: d in (climate_day, next_climate_day))
     elif "forecast_target_time_utc" in df.columns:
         # Fallback: derive LST date from UTC column
         lst_times = df["forecast_target_time_utc"].dt.tz_localize(None) + pd.Timedelta(hours=offset)
-        mask = lst_times.dt.date == climate_day
+        mask = lst_times.dt.date.isin([climate_day, next_climate_day])
     else:
         return df
 
     filtered = df[mask].copy()
     dropped = len(df) - len(filtered)
     if dropped:
-        logger.debug("LST clamp: dropped %d/%d rows outside climate day %s (tz=%s)",
-                     dropped, len(df), climate_day, tz)
+        logger.debug("LST clamp: dropped %d/%d rows outside current/next climate day (tz=%s)",
+                     dropped, len(df), tz)
     return filtered
 
 
@@ -262,8 +253,16 @@ def save_to_nwp_realtime(
         if sort:
             combined = combined.sort_values(sort, ignore_index=True)
 
-        from services.weather.storage import _backfill_model_run_time_lst
-        combined = _backfill_model_run_time_lst(combined)
+        if "model_run_time_lst" not in combined.columns or combined["model_run_time_lst"].isna().any():
+            from services.weather.nwp.base import _add_time_columns
+            from services.weather.station_registry import nwp_station_for_icao
+            
+            stns = [nwp_station_for_icao(s) for s in combined["station"].unique()]
+            combined = _add_time_columns(combined, stns)
+            
+            # Re-sort since _add_time_columns can shuffle order due to groupby
+            if sort:
+                combined = combined.sort_values(sort, ignore_index=True)
 
         combined.to_parquet(path, index=False)
     

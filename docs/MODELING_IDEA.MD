@@ -102,7 +102,7 @@ The **National Blend of Models** provides statistically bias-corrected, consensu
 |-----------|-------|
 | Temporal resolution | Hourly lead times (60, 120, 180, …, 1380 min) |
 | Cycles | Hourly (00Z–23Z) |
-| Latency (P95) | **4048 seconds ≈ 67.5 minutes** |
+| Latency (P95) | **4852 seconds ≈ 80.9 minutes** |
 | Variable | `tmp_2m_f` — 2m air temperature in °F |
 
 **NBM schema** (from parquet):
@@ -131,8 +131,8 @@ The **Rapid Refresh Forecast System** provides higher-temporal-resolution (15-mi
 | Attribute | Value |
 |-----------|-------|
 | Temporal resolution | 15-minute lead times (15, 30, 45, 60, …) |
-| Cycles | 4x daily (00Z, 06Z, 12Z, 18Z) |
-| Latency (P95) | **3600 seconds ≈ 60 minutes** (estimated) |
+| Cycles | Hourly (24x daily, 00Z–23Z) |
+| Latency (P95) | **7291 seconds ≈ 121.5 minutes** (estimated for backtest) |
 | Variable | `tmp_2m_f` — 2m air temperature in °F |
 | **Status** | Pre-operational as of early 2026; data generation paused Dec 2024. Historical prototype data available on S3. |
 
@@ -302,7 +302,7 @@ For each training observation at time $t$, identify the **most recent available 
 
 $$\text{latest\_nbm\_cycle} = \max \{ c \mid \text{available\_at}(c) \leq t \}$$
 
-Where $\text{available\_at}(c) = \min(\text{notification\_ts\_utc}(c), c + 4048\text{s})$.
+Where $\text{available\_at}(c) = \min(\text{notification\_ts\_utc}(c), c + 4852\text{s})$.
 
 **Key change from strict-drop**: If the theoretically expected cycle is missing from the data, **do NOT drop the row**. Instead, use the most recent *available* cycle that satisfies the latency constraint. The `nbm_cycle_age_minutes` feature acts as a **decay weight** — XGBoost will naturally learn to trust stale NWP data less as this feature increases. If no NBM cycle at all is available for the entire climate day, set all NBM features to `NaN` (XGBoost handles missing values natively).
 
@@ -316,8 +316,9 @@ Extract forecast rows from the selected cycle whose `forecast_target_time_utc` f
 | `nbm_hours_of_forecast_remaining` | Hours of forecast remaining until last valid-time in climate day | `(last_forecast_target_time_utc - t).total_seconds() / 3600` |
 | `nbm_cycle_age_minutes` | **Decay weight**: how old the NBM cycle is relative to $t$ | `(t - latest_nbm_cycle).total_seconds() / 60` |
 | `nbm_heating_trend_f` | Max remaining forecast minus current forecast | `nbm_max_remaining_f - nbm_forecast_valid_at_t` |
+| `raw_nbm_model_run_time_utc` | The actual NBM cycle time used to generate features | `latest_nbm_cycle` |
 
-**Rationale**: `nbm_expected_delta` is the most informative single feature — it's the NWP model's own estimate of the remaining heating, which XGBoost can learn to bias-correct. `nbm_current_error` captures systematic warm/cold bias that may persist through the day. `nbm_cycle_age_minutes` is the **implicit trust decay** — at 70 minutes the cycle is fresh and highly trustworthy; at 180+ minutes the model learns to discount it.
+**Rationale**: `nbm_expected_delta` is the most informative single feature — it's the NWP model's own estimate of the remaining heating, which XGBoost can learn to bias-correct. `nbm_current_error` captures systematic warm/cold bias that may persist through the day. `nbm_cycle_age_minutes` is the **implicit trust decay** — at 80 minutes the cycle is fresh and highly trustworthy; at 360+ minutes the model learns to discount it.
 
 ### 5.5 RRFS Forecast Features (from latest available RRFS cycle)
 
@@ -325,9 +326,9 @@ Same decay-weight logic as NBM, but with RRFS-specific latency and cycle frequen
 
 $$\text{latest\_rrfs\_cycle} = \max \{ c \mid \text{available\_at}(c) \leq t \}$$
 
-Where $\text{available\_at}(c) = \min(\text{notification\_ts\_utc}(c), c + 3600\text{s})$.
+Where $\text{available\_at}(c) = \min(\text{notification\_ts\_utc}(c), c + 7291\text{s})$.
 
-Note: RRFS cycles are only 4x daily (00Z, 06Z, 12Z, 18Z), so `rrfs_cycle_age_minutes` will typically be **much larger** than `nbm_cycle_age_minutes`. XGBoost will learn appropriate trust levels for each. If no RRFS cycle is available at all, set all RRFS features to `NaN`.
+Note: RRFS cycles are hourly (00Z-23Z), similar to NBM. `rrfs_cycle_age_minutes` will reflect this. If no RRFS cycle is available at all, set all RRFS features to `NaN`.
 
 | Feature | Description | Derivation |
 |---------|-------------|------------|
@@ -337,8 +338,9 @@ Note: RRFS cycles are only 4x daily (00Z, 06Z, 12Z, 18Z), so `rrfs_cycle_age_min
 | `rrfs_cycle_age_minutes` | **Decay weight**: age of the RRFS cycle | `(t - latest_rrfs_cycle).total_seconds() / 60` |
 | `rrfs_nbm_delta_divergence_f` | Disagreement between models on expected delta | `rrfs_expected_delta_f - nbm_expected_delta_f` |
 | `nbm_rrfs_max_spread_f` | Absolute disagreement on max remaining temp | `|nbm_max_remaining_f - rrfs_max_remaining_f|` — NaN if either missing |
+| `raw_rrfs_model_run_time_utc` | The actual RRFS cycle time used | `latest_rrfs_cycle` |
 
-**Rationale**: RRFS provides complementary forecast information from a different dynamical core. The divergence between RRFS and NBM is itself informative — large disagreement signals higher forecast uncertainty. Because RRFS has 15-minute resolution (vs NBM hourly), it captures finer intra-hour heating dynamics. The `rrfs_cycle_age_minutes` decay weight is especially important for RRFS because cycles are 6 hours apart — the model learns that a 5-hour-old RRFS forecast carries less weight than a 70-minute-old NBM forecast.
+**Rationale**: RRFS provides complementary forecast information from a different dynamical core. The divergence between RRFS and NBM is itself informative — large disagreement signals higher forecast uncertainty. Because RRFS has 15-minute resolution (vs NBM hourly), it captures finer intra-hour heating dynamics. The `rrfs_cycle_age_minutes` decay weight indicates trust: values up to 360 minutes are utilized, beyond which the cycle may be considered fully missing.
 
 ### 5.6 Advection Gap (NWP vs. Observed Temperature Divergence)
 
@@ -388,7 +390,7 @@ The **solar elevation angle** is a physically-motivated feature that captures th
 | Advection Gap | 2 | `advection_gap_trend_60m_f`, `nwp_consensus_advection_f` |
 | Solar Geometry | 3 | `solar_elevation_deg`, `solar_azimuth_deg`, `hours_until_solar_noon` |
 | Calendar | 2 | `day_of_year`, `month` |
-| **Total** | **41** | Unique features |
+| **Total Features** | **41** | Core model features (additional raw fields are also exported for inspection) |
 
 ---
 
@@ -400,8 +402,8 @@ This is the **most critical guardrail** in backtesting. Every feature must refle
 
 | NWP Model | P95 Latency (Fallback) | Cycles per Day | Availability Rule |
 |-----------|------------------------|----------------|-------------------|
-| **NBM** | 4048s (≈ 67.5 min) | 24 (hourly) | `notification_ts_utc ≤ t` (or fallback to `cycle + 4048s`) |
-| **RRFS** | 3600s (≈ 60 min) | 4 (00Z, 06Z, 12Z, 18Z) | `notification_ts_utc ≤ t` (or fallback to `cycle + 3600s`) |
+| **NBM** | 4852s (≈ 80.9 min) | 24 (hourly) | `notification_ts_utc ≤ t` (or fallback to `cycle + 4852s`) |
+| **RRFS** | 7291s (≈ 121.5 min) | 24 (hourly) | `notification_ts_utc ≤ t` (or fallback to `cycle + 7291s`) |
 
 ### 6.2 Decay Weight Approach (Use Most Recent Available, Do Not Drop)
 
@@ -431,8 +433,8 @@ For each observation at time $t$:
 ### 6.3 Worked Example
 
 Observation at **18:00 UTC** for KMDW:
-- NBM: `t_safe = 18:00 - 67.5min = 16:52 UTC`. The 16Z cycle satisfies `16:00 ≤ 16:52` ✓. If 16Z is present → `nbm_cycle_age_minutes = 120 min`. If 16Z is **missing** but 15Z exists → use 15Z, `nbm_cycle_age_minutes = 180 min`. The row is **not dropped**.
-- RRFS: `t_safe = 18:00 - 60min = 17:00 UTC`. The 12Z cycle satisfies `12:00 ≤ 17:00` ✓ → `rrfs_cycle_age_minutes = 360 min`. If 12Z is missing but 06Z exists → use 06Z, `rrfs_cycle_age_minutes = 720 min`.
+- NBM: `t_safe = 18:00 - 80.9min = 16:39 UTC`. The 16Z cycle satisfies `16:00 ≤ 16:39` ✓. If 16Z is present → `nbm_cycle_age_minutes = 120 min`. If 16Z is **missing** but 15Z exists → use 15Z, `nbm_cycle_age_minutes = 180 min`. The row is **not dropped**.
+- RRFS: `t_safe = 18:00 - 121.5min = 15:58 UTC`. The 15Z cycle satisfies `15:00 ≤ 15:58` ✓ → `rrfs_cycle_age_minutes = 180 min`.
 - If absolutely no RRFS data exists for this date → all RRFS features = `NaN`. The row is **still included** in training.
 
 ### 6.4 Wethr Push Latency
@@ -447,7 +449,7 @@ Solar position features (`solar_elevation_deg`, `solar_azimuth_deg`, etc.) are c
 
 The pipeline **prefers ground-truth timestamps**. 
 - **Live Data**: Uses the actual `notification_ts_utc` recorded when the model cycle was first received via AWS SNS. This perfectly captures real delays, outages, and regional network latency.
-- **Backfill Data**: For files where `notification_ts_utc` is missing or NaN, the pipeline automatically falls back to adding the conservative P95 constants (`cycle + 4048s` for NBM).
+- **Backfill Data**: For files where `notification_ts_utc` is missing or NaN, the pipeline automatically falls back to adding the conservative P95 constants (`cycle + 4852s` for NBM).
 
 This hybrid approach ensures that we use the most accurate timing info available while maintaining a robust safety floor for older historical data.
 
@@ -529,7 +531,7 @@ The full inference pipeline has **6 stages**. Stages 1–5 are the Weather Brain
 
 | Stage | Component | Input | Output |
 |-------|-----------|-------|--------|
-| 1 | **Feature Engine** | Raw observations + NWP parquet | 42-dimensional feature vector $\mathbf{x}_t$ |
+| 1 | **Feature Engine** | Raw observations + NWP parquet | 41-dimensional feature vector $\mathbf{x}_t$ |
 | 2 | **Quantile Suite** | Feature vector $\mathbf{x}_t$ | 7 raw quantile predictions: $\hat{q}_{0.05}, ..., \hat{q}_{0.95}$ |
 | 3 | **Monotonic Mapper** | Raw quantile predictions | Monotonically sorted quantiles (ensures $\hat{q}_{0.90} \geq \hat{q}_{0.75} \geq ...$) |
 | 4 | **Strike Pricing** | Sorted quantiles + active Kalshi strikes | Raw probability $P_{\text{raw}}(\text{CLI\_High} \geq S)$ per strike |
@@ -538,7 +540,7 @@ The full inference pipeline has **6 stages**. Stages 1–5 are the Weather Brain
 
 ### 8.1 Stage 1 — Feature Engine
 
-See [§5 Feature Engineering](#5-feature-engineering). Produces the 42-dimensional feature vector described above.
+See [§5 Feature Engineering](#5-feature-engineering). Produces the 41-dimensional feature vector described above.
 
 ### 8.2 Stage 2 — Quantile Suite (7 × XGBoost)
 
@@ -723,7 +725,7 @@ The system is designed so the transition from historical backtesting to live pro
 |--------|-----------|------------|
 | **Observation source** | Loaded from parquet files | Received from Wethr Push SSE stream |
 | **NWP source** | Loaded from backfill parquet | Received via SNS → SQS → parquet pipeline |
-| **NWP latency** | Fixed P95 constants (4048s NBM, 3600s RRFS) | Actual `notification_ts_utc` — or same fixed constants for consistency |
+| **NWP latency** | Fixed P95 constants (4852s NBM, 7291s RRFS) | Actual `notification_ts_utc` — or same fixed constants for consistency |
 | **CLI label** | Available retroactively for Y construction | Not available until next morning — model predicts without label |
 | **Execution** | Simulated against historical market snapshots | Live orders via Kalshi API |
 | **Model retraining** | Walk-forward from start of history | Periodic retrain (e.g. weekly) with all available data |
