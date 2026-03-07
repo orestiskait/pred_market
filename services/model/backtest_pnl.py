@@ -516,13 +516,60 @@ def _settle_fills(
 # ▸ Main backtest orchestrator
 # =====================================================================
 
+def _build_test_predictions_df(
+    strategy: TradingStrategy,
+    X_full: pd.DataFrame,
+    test_dates: list[str],
+    cli_labels: dict[str, float],
+) -> pd.DataFrame:
+    """Build a dataframe for all test days: features, quantile preds, mean pred, CLI answer."""
+    if not test_dates:
+        return pd.DataFrame()
+
+    suite = getattr(strategy, "suite", None)
+    mapper = getattr(strategy, "_mapper", None)
+    mean_model = getattr(strategy, "mean_model", None)
+    if suite is None or not suite.is_fitted:
+        return pd.DataFrame()
+
+    records: list[dict] = []
+    for test_date in test_dates:
+        cli_high = cli_labels.get(test_date)
+        if cli_high is None:
+            continue
+
+        mask = X_full["climate_date_lst"] == test_date
+        X_day = X_full[mask]
+        if X_day.empty:
+            continue
+
+        for idx, row in X_day.iterrows():
+            rec = dict(row)
+            rec["cli_high_f"] = float(cli_high)
+
+            raw_q = suite.predict_row(row)
+            mono_q = mapper.transform(raw_q) if mapper else raw_q
+
+            for alpha, val in mono_q.items():
+                rec[f"pred_q_{int(alpha * 100):03d}"] = float(val)
+
+            if mean_model is not None and mean_model.is_fitted:
+                rec["pred_mean"] = float(mean_model.predict_row(row))
+            else:
+                rec["pred_mean"] = np.nan
+
+            records.append(rec)
+
+    return pd.DataFrame(records)
+
+
 def run_backtest(
     icao: str = ICAO,
     start_date: date = START_DATE,
     end_date: date = END_DATE,
     min_training_days: int = MIN_TRAINING_DAYS,
     strategy: Optional[TradingStrategy] = None,
-) -> tuple[list[SimulatedFill], pd.DataFrame]:
+) -> tuple[list[SimulatedFill], pd.DataFrame, pd.DataFrame]:
     """Run the full walk-forward P&L backtest.
 
     Returns
@@ -531,6 +578,9 @@ def run_backtest(
         All simulated trades, settled against CLI.
     summary_df : pd.DataFrame
         Per-day P&L summary.
+    test_predictions_df : pd.DataFrame
+        For all test days: each feature, predicted value per quantile,
+        predicted mean, and CLI high (actual answer).
     """
     # ── Setup ─────────────────────────────────────────────────────────
     config, config_path = load_config()
@@ -574,7 +624,7 @@ def run_backtest(
 
     if X_full.empty:
         logger.error("Training set is empty — aborting.")
-        return [], pd.DataFrame()
+        return [], pd.DataFrame(), pd.DataFrame()
 
     # Print data quality summary
     report = builder.summary_report(X_full, y_full, start_date, end_date)
@@ -591,7 +641,7 @@ def run_backtest(
             "Not enough days (%d) for train=%d + test≥1. Aborting.",
             n_dates, min_training_days,
         )
-        return [], pd.DataFrame()
+        return [], pd.DataFrame(), pd.DataFrame()
 
     # ── Step 2: Split into train / test by date ───────────────────────
     train_dates = all_dates[:min_training_days]
@@ -745,7 +795,19 @@ def run_backtest(
     if temp_metrics:
         print_temperature_report(temp_metrics, temp_predictions)
 
-    return all_fills, summary_df
+    # ── Step 10: Test predictions dataframe (features + quantiles + mean + CLI) ─
+    test_predictions_df = _build_test_predictions_df(
+        strategy=strategy,
+        X_full=X_full,
+        test_dates=test_dates,
+        cli_labels=cli_labels,
+    )
+    if not test_predictions_df.empty:
+        # out_path = data_dir / "backtest_test_predictions.parquet"
+        # test_predictions_df.to_parquet(out_path, index=False)
+        logger.info("Test predictions saved to %s", out_path)
+
+    return all_fills, summary_df, test_predictions_df
 
 
 # =====================================================================
@@ -854,9 +916,14 @@ def _build_summary(
 def main() -> int:
     configure_logging(LOG_LEVEL)
     try:
-        fills, summary = run_backtest()
+        fills, summary, test_predictions_df = run_backtest()
         if summary.empty:
             logger.info("Backtest produced no fills.")
+        if not test_predictions_df.empty:
+            logger.info(
+                "Test predictions df: %d rows, %d cols (features + pred_q_* + pred_mean + cli_high_f)",
+                len(test_predictions_df), len(test_predictions_df.columns),
+            )
         return 0
     except Exception:
         logger.exception("Backtest failed.")
