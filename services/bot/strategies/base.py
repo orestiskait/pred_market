@@ -1,14 +1,16 @@
 """Base strategy interface for the multi-strategy trading bot.
 
-All strategies must subclass BaseStrategy and implement the three event hooks.
-Each strategy instance receives its own isolated config (targets + params)
-and auto-subscribes to the EventBus on construction.
+All strategies must subclass BaseStrategy and implement at least the two
+core event hooks (on_orderbook_update, on_market_discovery).
+
+Domain-specific events (e.g. WeatherObservationEvent) are OPT-IN:
+strategies subscribe to them explicitly in their own ``__init__``.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from services.bot.events import EventBus, WeatherObservationEvent, OrderbookUpdateEvent, MarketDiscoveryEvent
+from services.bot.events import EventBus, OrderbookUpdateEvent, MarketDiscoveryEvent
 
 
 class BaseStrategy(ABC):
@@ -37,14 +39,9 @@ class BaseStrategy(ABC):
         self.params = params
         self.full_config = full_config
 
-        # Auto-subscribe to all relevant events
-        self.event_bus.subscribe(WeatherObservationEvent, self.on_weather_observation)
+        # Subscribe to core market events — every strategy needs these.
         self.event_bus.subscribe(OrderbookUpdateEvent, self.on_orderbook_update)
         self.event_bus.subscribe(MarketDiscoveryEvent, self.on_market_discovery)
-
-    @abstractmethod
-    async def on_weather_observation(self, event: WeatherObservationEvent):
-        """Called on every 1-minute ASOS observation from Synoptic."""
 
     @abstractmethod
     async def on_orderbook_update(self, event: OrderbookUpdateEvent):

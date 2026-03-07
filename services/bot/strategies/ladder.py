@@ -35,6 +35,9 @@ class LadderStrategy(BaseStrategy):
     ):
         super().__init__(strategy_id, event_bus, targets, params, full_config)
 
+        # Opt-in: subscribe to weather observations (domain-specific)
+        self.event_bus.subscribe(WeatherObservationEvent, self.on_weather_observation)
+
         # Per-instance params (from config.yaml → bot.strategies[].params)
         self.consecutive_obs_required = params.get("consecutive_obs", 2)
         self.max_price_cents = params.get("max_price_cents", 95)
@@ -170,7 +173,7 @@ class LadderStrategy(BaseStrategy):
                     max_price_cents=self.max_price_cents,
                     max_spend_cents=self.max_spend_per_event,
                     paper_mode=self.paper_mode,
-                    station=station,
                     series=info["series"],
                     event_ticker=info["event_ticker"],
+                    metadata={"station": station},
                 ))

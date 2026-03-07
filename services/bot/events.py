@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Coroutine, Dict, List
 
@@ -22,9 +22,9 @@ class OrderIntent:
     max_price_cents: int
     max_spend_cents: int = 0          # per-(strategy, event) budget in cents; 0 = uncapped
     paper_mode: bool = True
-    station: str = ""
     series: str = ""
     event_ticker: str = ""
+    metadata: dict = field(default_factory=dict)   # strategy-specific tags (e.g. station, velocity_state)
 
 @dataclass
 class MarketDiscoveryEvent:

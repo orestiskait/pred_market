@@ -1,9 +1,9 @@
-# Kalshi listener, Synoptic listener, weather bot
+# Kalshi Trading Bot — generic bot framework + weather specialization
 
 This module runs three services:
 - **Kalshi listener** — streams Kalshi market data (orderbooks, tickers) to Parquet
-- **Synoptic listener** — streams real-time weather observations to Parquet
-- **Weather bot** — paper-trading weather arbitrage bot
+- **Trading bot** — generic Kalshi trading bot (market data only — for any event type)
+- **Weather bot** — extends the trading bot with weather-specific feeds (Wethr SSE + NWP)
 
 ## Package Layout
 
@@ -31,7 +31,15 @@ services/
 │   └── listener.py          # Synoptic listener (live weather WebSocket ingest)
 │
 ├── bot/                     # Trading bots
-│   └── weather_bot.py       # Paper-trading weather arbitrage bot
+│   ├── events.py            # Event dataclasses + EventBus (pub/sub)
+│   ├── trading_bot.py       # Generic Kalshi trading bot (market data only)
+│   ├── weather_bot.py       # Weather-specific bot (extends TradingBot)
+│   ├── managers/
+│   │   ├── execution.py     # Centralized execution (risk guardrails + sweep)
+│   │   └── strategy_manager.py  # Config-driven strategy loading
+│   └── strategies/
+│       ├── base.py          # BaseStrategy ABC (orderbook + discovery hooks)
+│       └── ladder.py        # Weather ladder strategy (opt-in weather events)
 │
 ├── Dockerfile               # Container build
 ├── docker-compose.yml       # Multi-service orchestration
@@ -86,6 +94,13 @@ pred_env/bin/python -m services.kalshi.listener --config path/to/config.yaml
 
 ```bash
 pred_env/bin/python -m services.synoptic.listener
+```
+
+### Generic trading bot (market-data-only)
+
+```bash
+pred_env/bin/python -m services.bot.trading_bot
+pred_env/bin/python -m services.bot.trading_bot --series KXHIGHCHI
 ```
 
 ### Weather arbitrage bot

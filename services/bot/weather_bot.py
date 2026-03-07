@@ -1,17 +1,18 @@
 """Kalshi Weather Arbitrage Bot — trading + wethr ingest + NWP model data.
 
-Single entry point for the weather-bot container. Combines:
-  - Kalshi WebSocket (orderbook feed for paper trading)
+Extends the generic TradingBot with weather-specific data feeds:
   - Wethr.net Push API SSE (real-time obs → trading signals + parquet storage)
   - NWP model data ingest via AWS SNS/SQS (HRRR, RRFS, NBM → parquet storage)
 
 Architecture:
-    WeatherBot (Feed Manager)
-    ├── EventBus (in-memory pub/sub)
-    ├── StrategyManager
+    WeatherBot(TradingBot)
+    ├── EventBus (in-memory pub/sub)          ← inherited
+    ├── StrategyManager                       ← inherited
     │   └── LadderStrategy("chicago_fast_ladder", targets=["KXHIGHCHI"])
-    ├── ExecutionManager (risk guardrails + paper sweep)
-    └── NWPSNSListener (composed — runs HRRR/RRFS/NBM ingest tasks)
+    ├── ExecutionManager (risk guardrails)     ← inherited
+    ├── Kalshi WS (orderbook feed)            ← inherited
+    ├── Wethr SSE (real-time observations)    ← weather-specific
+    └── NWPSNSListener (HRRR/RRFS/NBM)       ← weather-specific
 
 Usage:
     python -m services.bot.weather_bot
@@ -34,35 +35,20 @@ import pandas as pd
 
 from services.core.config import (
     load_config,
-    get_event_series,
-    make_kalshi_clients,
     _read_credential,
     configure_logging,
     standard_argparser,
 )
-from services.core.service import AsyncService
-from services.kalshi.ws import KalshiWSMixin
 from services.wethr.sse import WethrSSEMixin
 from services.wethr.storage import WethrPushStorage
 from services.wethr.station_registry import wethr_stations_for_series
 from services.markets.kalshi_registry import KalshiMarketConfig, KALSHI_MARKET_REGISTRY
-from services.markets.ticker import discover_markets, resolve_event_tickers
 
-from services.bot.events import EventBus, WeatherObservationEvent, OrderbookUpdateEvent, MarketDiscoveryEvent
-from services.bot.managers.execution import ExecutionManager
-from services.bot.managers.strategy_manager import StrategyManager
+from services.bot.events import WeatherObservationEvent
+from services.bot.trading_bot import TradingBot
 
 
 logger = logging.getLogger("WeatherBot")
-
-
-def _collect_strategy_targets(config: dict) -> list[str]:
-    """Extract the union of all series targets from bot.strategies config."""
-    targets: set[str] = set()
-    for sdef in config.get("bot", {}).get("strategies", []):
-        for t in sdef.get("targets", []):
-            targets.add(t)
-    return sorted(targets)
 
 
 def _nested_get(d: dict, *keys) -> object:
@@ -84,50 +70,33 @@ def _parse_iso_ts(raw: str) -> datetime | None:
         return None
 
 
-class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
-    """Feed Manager / Bot Host for the weather-bot container.
+class WeatherBot(TradingBot, WethrSSEMixin):
+    """Weather-specific trading bot.
 
-    Responsible for:
-      - Kalshi WebSocket lifecycle (orderbook feed for trading)
+    Extends TradingBot with:
       - Wethr.net Push API SSE (real-time obs → trading signals + parquet)
       - NWP model ingest (HRRR, RRFS, NBM → parquet via composed NWPSNSListener)
-      - Periodic market re-discovery
-      - Publishing typed Events to the EventBus for strategies
     """
 
-    def __init__(self, config: dict, config_path: Path, series_filter: list[str] | None = None):
-        self.config = config
-        self._config_path = config_path
+    # ------------------------------------------------------------------
+    # TradingBot extension points
+    # ------------------------------------------------------------------
 
-        # Event Bus & Managers
-        self.event_bus = EventBus()
-        self.execution_manager = ExecutionManager(self.event_bus, config, config_path)
-        self.strategy_manager = StrategyManager(self.event_bus, config)
+    def _event_series_consumer(self) -> str:
+        return "weather_bot"
 
-        # Target series: union of event_series.weather_bot and all strategy targets
-        es_series = set(get_event_series(config, "weather_bot"))
-        strat_series = set(_collect_strategy_targets(config))
-        all_series = sorted(es_series | strat_series)
+    def _setup_feeds(self) -> None:
+        """Initialize weather-specific data feeds (Wethr SSE + NWP)."""
+        config = self.config
+        config_path = self._config_path
 
-        if series_filter:
-            self._target_series = [s for s in series_filter if s in all_series or s in KALSHI_MARKET_REGISTRY]
-        else:
-            self._target_series = all_series
-
-        if not self._target_series:
-            raise ValueError("No event_series configured or matched by --series filter")
-
+        # Market configs for weather-specific lookups
         self._market_configs: dict[str, KalshiMarketConfig] = {}
         for s in self._target_series:
             if s in KALSHI_MARKET_REGISTRY:
                 self._market_configs[s] = KALSHI_MARKET_REGISTRY[s]
             else:
                 logger.warning("Series %s not in KALSHI_MARKET_REGISTRY, skipping", s)
-
-        # Kalshi
-        self.kalshi_auth, self.kalshi_rest = make_kalshi_clients(config)
-        self.kalshi_ws_url = config["kalshi"]["ws_url"]
-        self._kalshi_channels = ["orderbook_delta"]
 
         # Wethr
         wethr_cfg = config.get("wethr", {})
@@ -144,20 +113,31 @@ class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
         self.flush_interval = config["storage"].get("flush_interval_seconds", 300)
 
         # NWP model ingest (HRRR, RRFS, NBM) — composed as a separate service
-        # whose tasks run in the same event loop as WeatherBot
         self._nwp_listener = self._build_nwp_listener(config, config_path.parent)
 
-        # Event rollover
-        rollover = config.get("event_rollover", {})
-        self.rediscover_interval = rollover.get("rediscover_interval_seconds", 300)
+    def _get_feed_tasks(self) -> list:
+        """Return weather-specific async tasks."""
+        tasks = [
+            self.wethr_sse_loop(),
+            self._flush_loop(),
+        ]
+        if self._nwp_listener is not None:
+            try:
+                tasks.extend(self._nwp_listener._get_tasks())
+            except Exception:
+                logger.exception("NWP listener task setup failed; NWP ingest disabled")
+        return tasks
 
-        # State required by mixins
-        self._running = False
-        self.market_tickers: list[str] = []
-        self.orderbooks: dict[str, dict] = {}
-        self._kalshi_subscribe_tickers: list[str] = []
+    def _on_feed_shutdown(self) -> None:
+        """Flush weather buffers and shut down NWP listener."""
+        self._flush()
+        logger.info("Wethr flush complete.")
+        if self._nwp_listener is not None:
+            self._nwp_listener._on_shutdown()
 
-        self._log_startup_banner()
+    # ------------------------------------------------------------------
+    # NWP listener builder
+    # ------------------------------------------------------------------
 
     def _build_nwp_listener(self, config: dict, config_dir: Path):
         """Build NWPSNSListener if NWP is configured, else return None."""
@@ -182,6 +162,10 @@ class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
             logger.exception("Failed to initialize NWP listener; NWP ingest disabled")
             return None
 
+    # ------------------------------------------------------------------
+    # Startup banner override
+    # ------------------------------------------------------------------
+
     def _log_startup_banner(self):
         nwp_status = "enabled" if self._nwp_listener else "disabled"
         logger.info(
@@ -191,30 +175,6 @@ class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
         for sid, strat in self.strategy_manager.strategies.items():
             mode = "PAPER" if strat.params.get("paper_mode", True) else "LIVE"
             logger.info("  %s [%s]: %s", sid, mode, strat.targets)
-
-    # -------------------------------------------------------------------------
-    # Market discovery
-    # -------------------------------------------------------------------------
-
-    def _discover(self):
-        """Resolve events and publish MarketDiscoveryEvent to the bus."""
-        event_tickers = resolve_event_tickers(self.kalshi_rest, self.config, consumer="weather_bot")
-        if not event_tickers:
-            return
-        tickers, info = discover_markets(self.kalshi_rest, event_tickers)
-
-        self.market_tickers = tickers
-
-        for tk in tickers:
-            if tk not in self.orderbooks:
-                self.orderbooks[tk] = {"yes": {}, "no": {}}
-
-        self.event_bus.publish(MarketDiscoveryEvent(
-            market_tickers=tickers,
-            market_info=info,
-        ))
-
-        self._kalshi_subscribe_tickers = self.market_tickers
 
     # -------------------------------------------------------------------------
     # WethrSSEMixin hooks — trading signals + parquet storage
@@ -337,24 +297,6 @@ class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
         self._on_wethr_extreme("new_low", data, received_ts)
 
     # -------------------------------------------------------------------------
-    # KalshiWSMixin hook
-    # -------------------------------------------------------------------------
-
-    def on_kalshi_message(self, mtype: str, data: dict) -> None:
-        """Forward orderbook state to the EventBus after the mixin applies it."""
-        if mtype in ("orderbook_snapshot", "orderbook_delta"):
-            tk = data.get("market_ticker")
-            if tk and tk in self.orderbooks:
-                ob = self.orderbooks[tk]
-                self.event_bus.publish(OrderbookUpdateEvent(
-                    market_ticker=tk,
-                    orderbook={
-                        "yes": dict(ob["yes"]),
-                        "no": dict(ob["no"]),
-                    },
-                ))
-
-    # -------------------------------------------------------------------------
     # Flush logic
     # -------------------------------------------------------------------------
 
@@ -392,64 +334,12 @@ class WeatherBot(AsyncService, KalshiWSMixin, WethrSSEMixin):
                 last = time.monotonic()
 
     # -------------------------------------------------------------------------
-    # Async loops
+    # Lifecycle overrides
     # -------------------------------------------------------------------------
-
-    async def _rediscover_loop(self):
-        """Periodic re-discovery of event tickers (handles market rollover)."""
-        if self.rediscover_interval <= 0:
-            return
-        while self._running:
-            await asyncio.sleep(self.rediscover_interval)
-            if not self._running:
-                break
-            try:
-                event_tickers = resolve_event_tickers(self.kalshi_rest, self.config, consumer="weather_bot")
-                if not event_tickers:
-                    continue
-                tickers, info = discover_markets(self.kalshi_rest, event_tickers)
-                if set(tickers) != set(self.market_tickers):
-                    logger.info(
-                        "Event rollover: %s → %s",
-                        sorted(self.market_tickers)[:3],
-                        sorted(tickers)[:3],
-                    )
-                    self._discover()
-                    self.request_kalshi_reconnect()
-            except Exception as e:
-                logger.exception("Rediscover failed: %s", e)
-
-    # -------------------------------------------------------------------------
-    # AsyncService overrides
-    # -------------------------------------------------------------------------
-
-    def _get_tasks(self) -> list:
-        tasks = [
-            self.kalshi_ws_loop(),
-            self.wethr_sse_loop(),
-            self._flush_loop(),
-        ]
-        if self.rediscover_interval > 0:
-            tasks.append(self._rediscover_loop())
-        if self._nwp_listener is not None:
-            try:
-                tasks.extend(self._nwp_listener._get_tasks())
-            except Exception:
-                logger.exception("NWP listener task setup failed; NWP ingest disabled")
-        return tasks
-
-    def _on_shutdown(self) -> None:
-        self._flush()
-        logger.info("Wethr flush complete.")
-        if self._nwp_listener is not None:
-            self._nwp_listener._on_shutdown()
 
     async def run(self):
-        self._running = True
         if self._nwp_listener is not None:
             self._nwp_listener._running = True
-        self._discover()
-        logger.info("WeatherBot ready.")
         await super().run()
 
     def shutdown(self):

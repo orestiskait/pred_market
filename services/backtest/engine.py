@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import copy
 import csv
+import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -105,7 +106,7 @@ class Fill:
     strategy_id: str
     event_ticker: str
     series: str
-    station: str
+    metadata: dict
     market_ticker: str
     side: str
     contracts_filled: int
@@ -214,7 +215,7 @@ class BacktestExecutionManager:
                 strategy_id=intent.strategy_id,
                 event_ticker=intent.event_ticker,
                 series=intent.series,
-                station=intent.station,
+                metadata=dict(intent.metadata),
                 market_ticker=intent.market_ticker,
                 side=intent.side,
                 contracts_filled=int(total_contracts_bought),
@@ -473,7 +474,7 @@ class BacktestResult:
                 "strategy_id": f.strategy_id,
                 "event_ticker": f.event_ticker,
                 "series": f.series,
-                "station": f.station,
+                "metadata": json.dumps(f.metadata) if f.metadata else "",
                 "market_ticker": f.market_ticker,
                 "side": f.side,
                 "contracts_filled": f.contracts_filled,
@@ -516,7 +517,7 @@ class BacktestResult:
         if not self.fills:
             return
         keys = [
-            "wall_clock", "strategy_id", "event_ticker", "series", "station",
+            "wall_clock", "strategy_id", "event_ticker", "series", "metadata",
             "market_ticker", "side", "contracts_filled", "avg_fill_price_cents",
             "total_cost_cents", "strategy_event_spent_cents",
         ]
@@ -524,5 +525,7 @@ class BacktestResult:
             writer = csv.DictWriter(f, fieldnames=keys)
             writer.writeheader()
             for fill in self.fills:
-                writer.writerow({k: getattr(fill, k) for k in keys})
+                row = {k: getattr(fill, k) for k in keys}
+                row["metadata"] = json.dumps(fill.metadata) if fill.metadata else ""
+                writer.writerow(row)
         logger.info("Exported %d fills to %s", len(self.fills), path)

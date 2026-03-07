@@ -25,6 +25,7 @@ PAPER / LIVE EQUIVALENCE:
 
 from __future__ import annotations
 
+import json
 import logging
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -71,7 +72,7 @@ class ExecutionManager:
             "strategy_id": intent.strategy_id,
             "event_ticker": intent.event_ticker,
             "series": intent.series,
-            "station": intent.station,
+            "metadata": json.dumps(intent.metadata) if intent.metadata else "",
             "market_ticker": intent.market_ticker,
             "side": intent.side,
             "contracts_filled": int(filled),
