@@ -5,7 +5,7 @@ Replaces GRIB2-based fetcher for lower latency and official COG bucket.
 
 NBM COG specifics:
   - Path: blendv4.3/conus/YYYY/MM/DD/HH00/temp/blendv4.3_conus_temp_RUN_VALID.tif
-  - Temp in Celsius (NBM COG standard)
+  - Temp in Fahrenheit, natively stored as 16-bit integer (NBM COG standard)
   - Runs every hour (00Z–23Z)
   - One file per (run, valid) pair
 
@@ -199,13 +199,12 @@ class NBMCOGFetcher:
             if result_temp is None:
                 continue
 
-            temp_c, grid_lat, grid_lon = result_temp
-            temp_f = celsius_to_fahrenheit(temp_c)
+            temp_f, grid_lat, grid_lon = result_temp
 
-            # standard deviation of temp (tempstddev in K; ΔK == ΔC; 1 °C = 1.8 °F)
+            # standard deviation of temp natively in °F
             temp_std_f = None
             if result_std is not None:
-                temp_std_f = celsius_delta_to_fahrenheit_delta(result_std[0])
+                temp_std_f = result_std[0]
 
             p10_std_f = None
             p90_std_f = None
@@ -302,12 +301,11 @@ class NBMCOGFetcher:
                 if result_temp is None:
                     continue
 
-                temp_c, grid_lat, grid_lon = result_temp
-                temp_f = celsius_to_fahrenheit(temp_c)
+                temp_f, grid_lat, grid_lon = result_temp
 
                 temp_std_f = None
                 if result_std is not None:
-                    temp_std_f = celsius_delta_to_fahrenheit_delta(result_std[0])
+                    temp_std_f = result_std[0]
 
                 p10_std_f = p90_std_f = None
                 if temp_f is not None and temp_std_f is not None:

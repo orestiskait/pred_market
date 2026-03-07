@@ -622,6 +622,15 @@ def run_backtest(
     )
     X_full, y_full = builder.build(start_date, end_date, save_log=False)
 
+    # Save dataframes for inspection
+    try:
+        inspection_dir = data_dir / "inspection"
+        inspection_dir.mkdir(parents=True, exist_ok=True)
+        X_full.to_csv(inspection_dir / "X_full_features.csv", index=False)
+        logger.info("Saved feature dataset for inspection to %s", inspection_dir)
+    except Exception as e:
+        logger.warning("Failed to save inspection dataframe: %s", e)
+
     if X_full.empty:
         logger.error("Training set is empty — aborting.")
         return [], pd.DataFrame(), pd.DataFrame()

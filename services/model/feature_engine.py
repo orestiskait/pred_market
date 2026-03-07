@@ -219,9 +219,14 @@ def _extract_nwp_features(
         result[f"{prefix}_expected_delta_f"] = nan
         result[f"{prefix}_current_error_f"]  = nan
         result[f"{prefix}_cycle_age_minutes"] = nan
+        result[f"raw_{prefix}_max_remaining_f"] = nan
+        result[f"raw_{prefix}_expected_delta_f"] = nan
+        result[f"raw_{prefix}_current_error_f"]  = nan
+        result[f"raw_{prefix}_model_run_time_utc"] = pd.NaT
         if extra_features:
             result[f"{prefix}_heating_trend_f"]           = nan
             result[f"{prefix}_hours_of_forecast_remaining"] = nan
+            result[f"raw_{prefix}_heating_trend_f"] = nan
         return result
 
     result[f"{prefix}_cycle_age_minutes"] = age
@@ -243,9 +248,14 @@ def _extract_nwp_features(
         result[f"{prefix}_max_remaining_f"]  = nan
         result[f"{prefix}_expected_delta_f"] = nan
         result[f"{prefix}_current_error_f"]  = nan
+        result[f"raw_{prefix}_max_remaining_f"] = nan
+        result[f"raw_{prefix}_expected_delta_f"] = nan
+        result[f"raw_{prefix}_current_error_f"]  = nan
+        result[f"raw_{prefix}_model_run_time_utc"] = cycle_time
         if extra_features:
             result[f"{prefix}_heating_trend_f"]           = nan
             result[f"{prefix}_hours_of_forecast_remaining"] = nan
+            result[f"raw_{prefix}_heating_trend_f"] = nan
         return result
 
     max_remaining = float(remaining["tmp_2m_f"].max())
@@ -267,6 +277,12 @@ def _extract_nwp_features(
             last_forecast_ts - obs_ts
         ).total_seconds() / 3600.0
         result[f"{prefix}_heating_trend_f"] = max_remaining - nwp_at_t
+        result[f"raw_{prefix}_heating_trend_f"] = max_remaining - nwp_at_t
+
+    result[f"raw_{prefix}_max_remaining_f"] = max_remaining
+    result[f"raw_{prefix}_expected_delta_f"] = max_remaining - custom_intraday_max_f
+    result[f"raw_{prefix}_current_error_f"] = current_temp_f - nwp_at_t
+    result[f"raw_{prefix}_model_run_time_utc"] = cycle_time
 
     return result
 
@@ -366,6 +382,10 @@ def _momentum_features(
         "acceleration_15m_f":   accel_15,
         "temp_volatility_30m_f": vol_30,
         "temp_volatility_60m_f": vol_60,
+        "raw_temp_0m_f":        t0,
+        "raw_temp_15m_f":       t15,
+        "raw_temp_30m_f":       t30,
+        "raw_temp_60m_f":       t60,
     }
 
 
@@ -442,6 +462,12 @@ def _build_feature_row_for_hr_obs(
         "wind_dir_cos": wind_cos,
         "altimeter_inhg": float(altimeter) if pd.notna(altimeter) else float("nan"),
         "visibility_miles": visibility_mi,
+        "raw_temp_f": temp_f,
+        "raw_dew_point_f": float(dew_f) if pd.notna(dew_f) else float("nan"),
+        "raw_wind_speed_mph": wind_s,
+        "raw_wind_direction": getattr(row, "wind_direction", None),
+        "raw_visibility_miles": vis_raw,
+        "raw_altimeter_inhg": altimeter,
     }
 
     # §5.4 NBM features
@@ -741,6 +767,11 @@ def _process_climate_day(
             dsm_update_received=dsm_update_received,
         )
         feature_row["pressure_tendency_1h_inhg"] = pressure_tendency
+        feature_row["raw_hr_anchor_max_f"] = hr_anchor_max_f
+        feature_row["raw_hfm_spike_max_c"] = hfm_spike_max_c
+        feature_row["raw_official_floor_max_f"] = official_floor_max_f
+        feature_row["raw_smart_max_source"] = _peak_source
+
         rows.append(feature_row)
 
     # Build tail for next day

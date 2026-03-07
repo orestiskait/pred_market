@@ -260,6 +260,13 @@ class TrainingSetBuilder:
             }
             feat_dict["observation_time_utc"] = obs_time
             feat_dict["climate_date_lst"]     = climate_date
+            
+            # Add all raw equivalents for inspection
+            for col in row.index:
+                if col.startswith("raw_"):
+                    feat_dict[col] = row[col]
+            feat_dict["raw_y_target_delta_f"] = y_raw
+
             keep_rows.append(feat_dict)
             y_values.append(y_raw)
 
@@ -281,6 +288,7 @@ class TrainingSetBuilder:
             self.icao, len(X), len(FeatureEngine.FEATURE_COLUMNS),
             float(y.mean()), float(y.max()),
         )
+        
         return X, y
 
     # ------------------------------------------------------------------
