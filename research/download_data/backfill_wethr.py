@@ -47,8 +47,8 @@ logger = logging.getLogger(__name__)
 # python3 -m research.download_data.backfill_wethr
 
 STATIONS = ["KMDW"]
-START_DATE = date(2026, 3, 6)
-END_DATE = date(2026, 3, 8)
+START_DATE = date(2025, 5, 26)
+END_DATE = date(2026, 3, 7)
 
 RATE_LIMIT_SLEEP = 0.25  # seconds between requests — well within 300 req/min
 
