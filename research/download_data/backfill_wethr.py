@@ -23,7 +23,8 @@ import time
 from datetime import date, datetime, timedelta, timezone
 
 # P95 latency assumed for backfilled data (observation_time_utc + this = received_ts_utc)
-_P95_LATENCY = timedelta(minutes=3)
+_OBS_LATENCY = timedelta(minutes=3)
+_SUMMARY_LATENCY = timedelta(hours=1, minutes=30)
 from pathlib import Path
 
 import pandas as pd
@@ -46,8 +47,8 @@ logger = logging.getLogger(__name__)
 # python3 -m research.download_data.backfill_wethr
 
 STATIONS = ["KMDW"]
-START_DATE = date(2026, 1, 31)
-END_DATE = date(2026, 2, 28)
+START_DATE = date(2026, 3, 6)
+END_DATE = date(2026, 3, 8)
 
 RATE_LIMIT_SLEEP = 0.25  # seconds between requests — well within 300 req/min
 
@@ -95,7 +96,7 @@ def fetch_and_split_day(station: str, target_date: date, api_key: str):
 
     for item in data:
         ob_ts = _parse_iso_ts(item.get("observation_time", ""))
-        received_ts = (ob_ts + _P95_LATENCY) if ob_ts is not None else pd.Timestamp.now(tz="UTC")
+        received_ts = (ob_ts + _OBS_LATENCY) if ob_ts is not None else pd.Timestamp.now(tz="UTC")
         for_date_str = target_date.isoformat()
 
         # NWS Logic / probable extremes
@@ -141,7 +142,7 @@ def fetch_and_split_day(station: str, target_date: date, api_key: str):
             dsm_rows.append({
                 "station_code": station,
                 "for_date_lst": for_date_str,
-                "received_ts_utc": ob_ts + _P95_LATENCY,
+                "received_ts_utc": ob_ts + _SUMMARY_LATENCY,
                 "live": False,
                 "high_f": dsm_hi_f,
                 "high_c": _f(item.get("dsm_high")),
@@ -161,7 +162,7 @@ def fetch_and_split_day(station: str, target_date: date, api_key: str):
             cli_rows.append({
                 "station_code": station,
                 "for_date_lst": for_date_str,
-                "received_ts_utc": ob_ts + _P95_LATENCY,
+                "received_ts_utc": ob_ts + _SUMMARY_LATENCY,
                 "live": False,
                 "high_f": cli_hi_f,
                 "high_c": _f(item.get("cli_high")),

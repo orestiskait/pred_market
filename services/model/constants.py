@@ -14,7 +14,7 @@ from __future__ import annotations
 #   c + LATENCY_SECONDS ≤ t
 # This prevents future-seeing in both backtesting and production.
 
-NBM_LATENCY_SECONDS: int = 4852   # 1h 20m 52.28s (P95)
+NBM_LATENCY_SECONDS: int = 4860   # 1h 21m 00s (P95 conservative)
 RRFS_LATENCY_SECONDS: int = 7291  # 2h 1m 30.76s (P95 for backtest)
 
 # ──────────────────────────────────────────────────────────────────────

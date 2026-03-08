@@ -102,7 +102,7 @@ The **National Blend of Models** provides statistically bias-corrected, consensu
 |-----------|-------|
 | Temporal resolution | Hourly lead times (60, 120, 180, …, 1380 min) |
 | Cycles | Hourly (00Z–23Z) |
-| Latency (P95) | **4852 seconds ≈ 80.9 minutes** |
+| Latency (P95) | **4860 seconds = 81.0 minutes** |
 | Variable | `tmp_2m_f` — 2m air temperature in °F |
 
 **NBM schema** (from parquet):
@@ -302,7 +302,7 @@ For each training observation at time $t$, identify the **most recent available 
 
 $$\text{latest\_nbm\_cycle} = \max \{ c \mid \text{available\_at}(c) \leq t \}$$
 
-Where $\text{available\_at}(c) = \min(\text{notification\_ts\_utc}(c), c + 4852\text{s})$.
+Where $\text{available\_at}(c) = \min(\text{notification\_ts\_utc}(c), c + 4860\text{s})$.
 
 **Key change from strict-drop**: If the theoretically expected cycle is missing from the data, **do NOT drop the row**. Instead, use the most recent *available* cycle that satisfies the latency constraint. The `nbm_cycle_age_minutes` feature acts as a **decay weight** — XGBoost will naturally learn to trust stale NWP data less as this feature increases. If no NBM cycle at all is available for the entire climate day, set all NBM features to `NaN` (XGBoost handles missing values natively).
 
@@ -402,7 +402,7 @@ This is the **most critical guardrail** in backtesting. Every feature must refle
 
 | NWP Model | P95 Latency (Fallback) | Cycles per Day | Availability Rule |
 |-----------|------------------------|----------------|-------------------|
-| **NBM** | 4852s (≈ 80.9 min) | 24 (hourly) | `notification_ts_utc ≤ t` (or fallback to `cycle + 4852s`) |
+| **NBM** | 4860s (= 81.0 min) | 24 (hourly) | `notification_ts_utc ≤ t` (or fallback to `cycle + 4860s`) |
 | **RRFS** | 7291s (≈ 121.5 min) | 24 (hourly) | `notification_ts_utc ≤ t` (or fallback to `cycle + 7291s`) |
 
 ### 6.2 Decay Weight Approach (Use Most Recent Available, Do Not Drop)
@@ -433,7 +433,7 @@ For each observation at time $t$:
 ### 6.3 Worked Example
 
 Observation at **18:00 UTC** for KMDW:
-- NBM: `t_safe = 18:00 - 80.9min = 16:39 UTC`. The 16Z cycle satisfies `16:00 ≤ 16:39` ✓. If 16Z is present → `nbm_cycle_age_minutes = 120 min`. If 16Z is **missing** but 15Z exists → use 15Z, `nbm_cycle_age_minutes = 180 min`. The row is **not dropped**.
+- NBM: `t_safe = 18:00 - 81.0min = 16:39 UTC`. The 16Z cycle satisfies `16:00 ≤ 16:39` ✓. If 16Z is present → `nbm_cycle_age_minutes = 120 min`. If 16Z is **missing** but 15Z exists → use 15Z, `nbm_cycle_age_minutes = 180 min`. The row is **not dropped**.
 - RRFS: `t_safe = 18:00 - 121.5min = 15:58 UTC`. The 15Z cycle satisfies `15:00 ≤ 15:58` ✓ → `rrfs_cycle_age_minutes = 180 min`.
 - If absolutely no RRFS data exists for this date → all RRFS features = `NaN`. The row is **still included** in training.
 
@@ -449,7 +449,7 @@ Solar position features (`solar_elevation_deg`, `solar_azimuth_deg`, etc.) are c
 
 The pipeline **prefers ground-truth timestamps**. 
 - **Live Data**: Uses the actual `notification_ts_utc` recorded when the model cycle was first received via AWS SNS. This perfectly captures real delays, outages, and regional network latency.
-- **Backfill Data**: For files where `notification_ts_utc` is missing or NaN, the pipeline automatically falls back to adding the conservative P95 constants (`cycle + 4852s` for NBM).
+- **Backfill Data**: For files where `notification_ts_utc` is missing or NaN, the pipeline automatically falls back to adding the conservative P95 constants (`cycle + 4860s` for NBM).
 
 This hybrid approach ensures that we use the most accurate timing info available while maintaining a robust safety floor for older historical data.
 
@@ -725,7 +725,7 @@ The system is designed so the transition from historical backtesting to live pro
 |--------|-----------|------------|
 | **Observation source** | Loaded from parquet files | Received from Wethr Push SSE stream |
 | **NWP source** | Loaded from backfill parquet | Received via SNS → SQS → parquet pipeline |
-| **NWP latency** | Fixed P95 constants (4852s NBM, 7291s RRFS) | Actual `notification_ts_utc` — or same fixed constants for consistency |
+| **NWP latency** | Fixed P95 constants (4860s NBM, 7291s RRFS) | Actual `notification_ts_utc` — or same fixed constants for consistency |
 | **CLI label** | Available retroactively for Y construction | Not available until next morning — model predicts without label |
 | **Execution** | Simulated against historical market snapshots | Live orders via Kalshi API |
 | **Model retraining** | Walk-forward from start of history | Periodic retrain (e.g. weekly) with all available data |

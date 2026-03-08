@@ -19,7 +19,7 @@ LST-day clamping:
 
 P95 notification latency constants (measured from live production data):
   HRRR : 5135s  (~85 min after cycle init — S3 notification to SQS arrival)
-  NBM  : 4852.28s (1h 20m 52.28s, P95)
+  NBM  : 4860s (1h 21m, P95)
   RRFS : 7290.76s (2h 1m 30.76s, for backtest)
 
 Usage:
@@ -56,8 +56,8 @@ logger = logging.getLogger(__name__)
 # ══════════════════════════════════════════════════════════════════════
 
 P95_NOTIFICATION_LATENCY_S: dict[str, float] = {
-    "hrrr": 5135.0,   # measured: P95 of (notification_ts - cycle_time) over ~6800 live rows
-    "nbm":  4852.275262900,   # 1h 20m 52.28s (P95)
+    "hrrr": 7290.76,  # to match rrfs # measured: P95 of (notification_ts - cycle_time) over ~6800 live rows
+    "nbm":  4860.0,   # 1h 21m 00s (P95)
     "rrfs": 7290.764944800,   # 2h 1m 30.76s (P95 for backtest)
 }
 
@@ -67,7 +67,7 @@ P95_NOTIFICATION_LATENCY_S: dict[str, float] = {
 # python3 -m research.download_data.check_backfill_nwp.py
 # python3 -m research.download_data.backfill_nwp
 
-MODELS = ["nbm"]           # "hrrr" | "nbm" | "rrfs" — or any combination
+MODELS = ["nbm", 'rrfs']           # "hrrr" | "nbm" | "rrfs" — or any combination
 START_DATE = date(2026,3, 5) # 2025,12,16
 END_DATE = date(2026, 3, 7)  # inclusive
 STATIONS = ["KMDW"]           # ICAO codes; multi-station supported

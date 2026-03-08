@@ -369,4 +369,12 @@ cd scripts/oci_collector/maintenance
 # 4. View container logs (if issues)
 ssh ubuntu@129.158.203.11 'docker logs -f kalshi-listener'
 ssh ubuntu@129.158.203.11 'docker logs -f weather-bot'
+
+# 5. Data Cleanup (Wipes local or remote data - USE WITH CAUTION)
+
+# Remote (SSH): nbm, rrfs, cli, dsm, observations
+ssh ubuntu@129.158.203.11 'rm -rf ~/collector-data/weather/nwp_realtime/{nbm,rrfs,hrrr}/* ~/collector-data/weather/wethr_push/{cli,dsm,observations,new_high,new_low}/*'
+
+# Local (current machine): nbm, rrfs, cli, dsm, observations
+rm -rf data/weather/nwp_realtime/{nbm,rrfs,hrrr}/* data/weather/wethr_push/{cli,dsm,observations,new_high,new_low}/*
 ```
