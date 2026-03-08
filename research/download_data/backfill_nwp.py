@@ -36,9 +36,12 @@ import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from pathlib import Path
+import warnings
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+
+warnings.filterwarnings("ignore", message="Will not remove GRIB file because it previously existed.")
 
 _project_root = Path(__file__).resolve().parent.parent.parent
 if str(_project_root) not in sys.path:
@@ -67,9 +70,9 @@ P95_NOTIFICATION_LATENCY_S: dict[str, float] = {
 # python3 -m research.download_data.check_backfill_nwp.py
 # python3 -m research.download_data.backfill_nwp
 
-MODELS = ["nbm", 'rrfs']           # "hrrr" | "nbm" | "rrfs" — or any combination
+MODELS = ["hrrr","nbm"]           # "hrrr" | "nbm" | "rrfs" — or any combination
 START_DATE = date(2025, 5, 26) # 2025,12,16
-END_DATE = date(2026, 3, 7)  # inclusive
+END_DATE = date(2026, 3, 6)  # inclusive
 STATIONS = ["KMDW"]           # ICAO codes; multi-station supported
 
 # NBM started on May 27, 2025 == date(2025, 5, 27)
